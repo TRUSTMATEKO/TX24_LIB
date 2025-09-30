@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/jdk-21.0.8.9-hotspot">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="lib" path="lib/attoparser-2.0.7.RELEASE.jar"/>
+	<classpathentry kind="lib" path="lib/browscap-java-1.5.1.jar"/>
+	<classpathentry kind="lib" path="lib/caffeine-3.2.2.jar"/>
+	<classpathentry kind="lib" path="lib/commons-codec-1.19.0.jar"/>
+	<classpathentry kind="lib" path="lib/commons-collections4-4.5.0.jar"/>
+	<classpathentry kind="lib" path="lib/commons-compress-1.28.0.jar"/>
+	<classpathentry kind="lib" path="lib/commons-io-2.20.0.jar"/>
+	<classpathentry kind="lib" path="lib/commons-lang3-3.18.0.jar"/>
+	<classpathentry kind="lib" path="lib/commons-logging-1.3.5.jar"/>
+	<classpathentry kind="lib" path="lib/commons-math3-3.6.1.jar"/>
+	<classpathentry kind="lib" path="lib/commons-text-1.14.0.jar"/>
+	<classpathentry kind="lib" path="lib/curvesapi-1.08.jar"/>
+	<classpathentry kind="lib" path="lib/ecj-3.42.0.jar"/>
+	<classpathentry kind="lib" path="lib/fontbox-3.0.5.jar"/>
+	<classpathentry kind="lib" path="lib/groovy-4.0.28.jar"/>
+	<classpathentry kind="lib" path="lib/groovy-extensions-3.0.0.jar"/>
+	<classpathentry kind="lib" path="lib/guava-33.4.8-jre.jar"/>
+	<classpathentry kind="lib" path="lib/HikariCP-7.0.2.jar"/>
+	<classpathentry kind="lib" path="lib/jackson-2.20.0-fat.jar"/>
+	<classpathentry kind="lib" path="lib/jakarta.annotation-api-3.0.0.jar"/>
+	<classpathentry kind="lib" path="lib/jakarta.servlet-api-6.1.0.jar"/>
+	<classpathentry kind="lib" path="lib/javaparser-core-3.27.0.jar"/>
+	<classpathentry kind="lib" path="lib/javax.el-api-3.0.0.jar"/>
+	<classpathentry kind="lib" path="lib/jsoup-1.21.2.jar"/>
+	<classpathentry kind="lib" path="lib/lettuce-core-6.8.1.RELEASE.jar"/>
+	<classpathentry kind="lib" path="lib/mariadb-java-client-3.5.6.jar"/>
+	<classpathentry kind="lib" path="lib/netty-4.2.6-fat.jar"/>
+	<classpathentry kind="lib" path="lib/okhttp-5.1.0-fat.jar"/>
+	<classpathentry kind="lib" path="lib/pdfbox-3.0.5.jar"/>
+	<classpathentry kind="lib" path="lib/pdfbox-io-3.0.5.jar"/>
+	<classpathentry kind="lib" path="lib/poi-5.4.1.jar"/>
+	<classpathentry kind="lib" path="lib/poi-ooxml-full-5.4.1.jar"/>
+	<classpathentry kind="lib" path="lib/reactive-streams-1.0.4.jar"/>
+	<classpathentry kind="lib" path="lib/reactor-core-3.7.11.jar"/>
+	<classpathentry kind="lib" path="lib/slf4j-2.0.17_logback-1.5.18-fat.jar"/>
+	<classpathentry kind="lib" path="lib/spring-6.2.11-fat.jar"/>
+	<classpathentry kind="lib" path="lib/thymeleaf-3.1.3.RELEASE.jar"/>
+	<classpathentry kind="lib" path="lib/thymeleaf-expression-processor-3.2.0.jar"/>
+	<classpathentry kind="lib" path="lib/thymeleaf-layout-dialect-3.4.0.jar"/>
+	<classpathentry kind="lib" path="lib/thymeleaf-spring6-3.1.3.RELEASE.jar"/>
+	<classpathentry kind="lib" path="lib/tika-core-3.2.3.jar"/>
+	<classpathentry kind="lib" path="lib/tomcat-annotations-api-11.0.11.jar"/>
+	<classpathentry kind="lib" path="lib/tomcat-embed-core-11.0.11.jar"/>
+	<classpathentry kind="lib" path="lib/tomcat-embed-el-11.0.11.jar"/>
+	<classpathentry kind="lib" path="lib/tomcat-embed-jasper-11.0.11.jar"/>
+	<classpathentry kind="lib" path="lib/tomcat-embed-programmatic-11.0.11.jar"/>
+	<classpathentry kind="lib" path="lib/tomcat-embed-websocket-11.0.11.jar"/>
+	<classpathentry kind="lib" path="lib/unbescape-1.1.6.RELEASE.jar"/>
+	<classpathentry kind="lib" path="lib/univocity-parsers-2.9.1.jar"/>
+	<classpathentry kind="lib" path="lib/xmlbeans-5.3.0.jar"/>
+	<classpathentry kind="lib" path="lib/stax2-api-4.2.2.jar"/>
+	<classpathentry kind="output" path="classes"/>
+</classpath>

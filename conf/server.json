@@ -1,0 +1,18 @@
+{
+  "serverName" : "TX24",
+  "contextPath" : "./",
+  "host" : "0.0.0.0",
+  "port" : 8080,
+  "basePackage" : "kr.tx24.app",
+  "maxPostSize" : 20971520,
+  "acceptCount" : 128,
+  "maxThreads" : 512,
+  "minSpareThreads" : 128,
+  "maxConnection" : 2048,
+  "connectionTimeout" : 60000,
+  "tcpNoDelay" : true,
+  "reloadable" : true,
+  "isRESTful" : false,
+  "uploadDirectory" : "",
+  "parameter" : { }
+}

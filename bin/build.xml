@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project basedir="../../TX24_LIB" default="compile" name="LNK1P">
+	
+	<!-- Project Default Directory -->
+	<property name="src.dir" location="${basedir}\src"/>
+	<property name="lib.dir" location="${basedir}\lib"/>
+	<property name="dist.dir" location="${basedir}\dist"/>
+	<property name="classes.dir" location="${basedir}\classes"/>
+	<property name="conf.dir" location="${basedir}\conf"/>
+	<property name="doc.dir" location="${basedir}\doc"/>
+	
+	<!-- Project Default Classpath -->
+	<path id="project.classpath">
+		<fileset dir="${lib.dir}">
+			<include name="*.jar"/>
+		</fileset>
+	</path>
+
+	<echo message ="#### SET PROJECT CLASSPATH ####"/>
+
+	<!-- Make Directory -->
+	<target name="init">
+		<tstamp>
+			<format property="time" pattern="yyyy-MM-dd hh:mm:ss" />
+			<format property="jardate" pattern="yyMM" />
+		</tstamp>
+		<mkdir dir="${basedir}\classes"/>
+		<mkdir dir="${basedir}\dist"/>
+		<delete dir="${basedir}\doc"/>
+		<mkdir dir="${basedir}\doc"/>
+		<!--
+		<javadoc destdir="${doc.dir}" classpathref="project.classpath" sourcepath="${src.dir}" 
+			locale="ko_KR" encoding="UTF-8" docencoding="UTF-8" charset="UTF-8" use="true" failonerror="off" 
+			packagenames = "syslink.lib.*"/>
+		-->
+	</target>
+
+	<echo message ="#### COMPILE COMPLETE ####"/>
+
+	<target name="compile" depends="init">
+		<javac destdir="${basedir}\classes" srcdir="${src.dir}" includes="kr/tx24/lib/**"  
+			optimize="true" debug="true" deprecation="true" encoding="utf-8" includeantruntime="false">
+			<classpath refid="project.classpath"/>
+		</javac>
+		<copy todir="${classes.dir}">
+            <fileset dir="${basedir}" includes="tx24.properties"/>
+        </copy>
+		<jar destfile="${dist.dir}\tx24_lib_${jardate}.jar" basedir="${classes.dir}" excludes="kr/tx24/test/**,kr/tx24/was/**">
+			<manifest>
+				<attribute name="Built-By" value="TX24"/>
+				<attribute name="Jar-Title" value="Core library"/>
+				<attribute name="Jar-Version" value="0.0.1"/>
+				<attribute name="Last-Updated-Date" value="${time}"/>
+			</manifest>
+		</jar>
+		
+	</target>
+</project>

@@ -1,0 +1,14 @@
+{
+  "jdbcurl"     : "jdbc:mariadb://112.175.48.155:13306",
+  "username"    : "mik",
+  "password"    : "mik1016!",
+  "driver"      : "org.mariadb.jdbc.Driver",
+  "pool"        : "POOLNAME",
+  "max"         : 10,
+  "min"         : 5,
+  "lifetime"    : 1200000,
+  "timeout"     : 60000,
+  "idleTimeout" : 600000,
+  "autocommit"  : true,
+  "injectionFilter" : false
+}
