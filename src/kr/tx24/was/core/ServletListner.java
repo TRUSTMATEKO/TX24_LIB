@@ -9,7 +9,7 @@ import jakarta.servlet.ServletContextListener;
 import jakarta.servlet.annotation.WebListener;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
-import kr.tx24.was.main.Server;
+import kr.tx24.was.conf.TomcatConfigLoader;
 
 /**
  * @author juseop
@@ -37,9 +37,9 @@ public class ServletListner implements ServletContextListener{
 		ServletContext ctx = event.getServletContext();
 		ctx.setSessionTimeout(0); //JSESSION DISABLE
 		
-		if(!CommonUtils.isEmpty(Server.config.parameter)) {
-			for(String key: Server.config.parameter.keySet()) {
-				System.setProperty(key, Server.config.parameter.get(key));
+		if(!CommonUtils.isEmpty(TomcatConfigLoader.load().parameter)) {
+			for(String key: TomcatConfigLoader.load().parameter.keySet()) {
+				System.setProperty(key, TomcatConfigLoader.load().parameter.get(key));
 			}
 		}
 

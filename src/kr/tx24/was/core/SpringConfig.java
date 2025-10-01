@@ -58,7 +58,7 @@ import nz.net.ultraq.thymeleaf.layoutdialect.LayoutDialect;
  */
 @Configuration
 @EnableWebMvc
-@ComponentScan(basePackages = {"tx24.app"})
+@ComponentScan(basePackages = {"kr.tx24.app"})
 public class SpringConfig implements WebMvcConfigurer {
 	
 	
@@ -78,7 +78,7 @@ public class SpringConfig implements WebMvcConfigurer {
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
         mapper.setDateFormat(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"));
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS); // ISO 8601 대신 DateFormat 사용
-        
+        	
         return mapper;
     }	
 	

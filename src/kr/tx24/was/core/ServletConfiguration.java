@@ -19,7 +19,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRegistration;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
-import kr.tx24.was.main.Server;
+import kr.tx24.was.conf.TomcatConfigLoader;
 import kr.tx24.was.util.Was;
 
 /**
@@ -39,7 +39,7 @@ public class ServletConfiguration implements WebApplicationInitializer {
 		
 		// 1. Root Application Context (Service, Repository, etc.)
 		AnnotationConfigWebApplicationContext rootContext = new AnnotationConfigWebApplicationContext();
-		String basePackage = Server.config.basePackage;
+		String basePackage = TomcatConfigLoader.load().basePackage;
 		if(!basePackage.isEmpty()) {
 			rootContext.scan(basePackage.split(","));
 		}
@@ -55,7 +55,6 @@ public class ServletConfiguration implements WebApplicationInitializer {
 		// 일반적으로 Root Context를 그대로 사용하거나, 별도의 Web 전용 Context를 사용합니다.
 		// 여기서는 Root Context와 동일한 설정을 사용하도록 등록합니다.
 		DispatcherServlet dispatcher = new DispatcherServlet(rootContext);
-		dispatcher.setThrowExceptionIfNoHandlerFound(true);
 		ServletRegistration.Dynamic servlet = servletContext.addServlet("dispatcher", dispatcher);
 		
 		
@@ -75,7 +74,7 @@ public class ServletConfiguration implements WebApplicationInitializer {
 		debug.addMappingForUrlPatterns(dispatcherTypes, true, "/*");
 		
 		// 6. Multipart Config 설정 (File Upload)
-		String uploadDirectory = Server.config.uploadDirectory; 
+		String uploadDirectory = TomcatConfigLoader.load().uploadDirectory; 
 		if(CommonUtils.isEmpty(uploadDirectory)) {
 			// 시스템 임시 디렉토리 사용 (null to blank 변환은 필요 없음)
 			uploadDirectory = System.getProperty("java.io.tmpdir"); 

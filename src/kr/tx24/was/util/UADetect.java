@@ -123,9 +123,11 @@ public final class UADetect {
 	
 	
 
+	 
 	
 	public static UserAgent set(String userAgent) {
-        UserAgent ua = new UserAgent();
+		UserAgent ua = new UserAgent(); 
+		
         
         if (parser == null) {
             initialize(); // 혹시 모를 늦은 초기화 재시도

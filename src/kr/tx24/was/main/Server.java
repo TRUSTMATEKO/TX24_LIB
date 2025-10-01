@@ -4,8 +4,6 @@ package kr.tx24.was.main;
 import java.io.File;
 import java.net.InetAddress;
 import java.util.Locale;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 
 import org.apache.catalina.WebResourceRoot;
 import org.apache.catalina.WebResourceSet;
@@ -43,13 +41,13 @@ import kr.tx24.was.util.Was;
 public class Server{
 
 	private static Logger logger 				= LoggerFactory.getLogger(Server.class );
-	private static final String CONFIG_PATH		= SystemUtils.getConfigDirectory()+File.separator+"server.json";
+	
 	private static final String COMPRESSABLE	= "text/html,text/xml,text/plain,application/javascript,application/json,text/css,text/csv,application/x-javascript,application/vnd.api+json,image/svg+xml";
 	public static TomcatConfig config			= loadConfig();
 
 	
 	public void start()throws Exception {
-		
+		 
 		// 기존 JUL 핸들러를 제거하여 JUL의 콘솔/파일 출력 중복을 방지합니다.
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         // JUL 로깅 요청을 SLF4J로 전달하도록 설치합니다.
@@ -221,32 +219,7 @@ public class Server{
 	}
 	
 	
-	public static TomcatConfig loadConfig() {
-		if(Server.config == null) {
-			try {
-				config 	= new JacksonUtils().deserialize(new File(CONFIG_PATH).toPath(), TomcatConfig.class);
-				
-				if(config == null || CommonUtils.isEmpty(config)) {
-					throw new Exception(CONFIG_PATH + " config is emtpy");
-				}
-				
-				
-				if(!CommonUtils.isEmpty(config.parameter)) {
-					for(String key: config.parameter.keySet()) {
-						System.setProperty(key, config.parameter.get(key));
-					}
-				}
-				
-				JvmStatusUtils.setMaxThreads(config.maxThreads);
-				
-			} catch (Exception e) {
-				logger.error("server config read error : {} , {}",CONFIG_PATH, e.getMessage()); // System.exit(0) 대신 에러 로깅
-				System.exit(0);
-			}
-		}
-		return Server.config;
-		
-	}
+	
 	
 
 	

@@ -39,7 +39,7 @@
 
 	<target name="compile" depends="init">
 		<javac destdir="${basedir}\classes" srcdir="${src.dir}" includes="kr/tx24/**"  
-			optimize="true" debug="true" deprecation="true" encoding="utf-8" includeantruntime="false">
+			optimize="true" debug="true" deprecation="true" encoding="utf-8" includeantruntime="false" release="17">
 			<classpath refid="project.classpath"/>
 		</javac>
 		<copy todir="${classes.dir}">
