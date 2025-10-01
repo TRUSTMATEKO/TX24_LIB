@@ -2,22 +2,37 @@ package kr.tx24.lib.inter;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInput;
+import java.io.InvalidObjectException;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.io.OutputStream;
 import java.io.Serializable;
+import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.Charset;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,12 +79,14 @@ import kr.tx24.lib.lb.LoadBalancer;
 		  
  */
 public class INet implements java.io.Serializable{
-	private static final long serialVersionUID = -3518167926980673854L;
+	private static final long serialVersionUID 	= -3518167926980673854L;
 	private static final Logger logger = LoggerFactory.getLogger(INet.class);
 	
-	private static final int CONNECT_TIMEOUT		= 1000*2;	//2초
+	private static final int DEFAULT_CONNECT_TIMEOUT= 1000*2;	//2초
+	private static final String TIMEOUT_CONNECT = "connect timeout";
+	private static final String TIMEOUT_READ = "read timeout";
 	
-	private String addr		= null;
+	private String host		= null;
 	private int port		= 0;
 	private int timeout		= 2*60*1000 ; 	//2분 
 	
@@ -89,6 +106,7 @@ public class INet implements java.io.Serializable{
 		this.message.head.put("proc"	, SystemUtils.getLocalProcessName());
 		this.message.head.put("procId"	, SystemUtils.getLocalProcessId());
 		this.message.head.put("procIp"	, SystemUtils.getLocalAddress());
+		this.message.head.put("procHost"	, SystemUtils.getLocalHostname());
 		this.message.head.put("source"	, source);
 		this.message.head.put("target"	, target);
 	}
@@ -100,14 +118,14 @@ public class INet implements java.io.Serializable{
 		return this;
 	}
 	
-	public INet headPut(Map<String,Object> map){
+	public INet head(Map<String,Object> map){
 		if(map != null){
 			this.message.head.putAll(map);
 		}
 		return this;
 	}
 	
-	public INet dataPut(Map<String,Object> map){
+	public INet data(Map<String,Object> map){
 		if(map != null){
 			this.message.data.putAll(map);
 		}
@@ -138,16 +156,16 @@ public class INet implements java.io.Serializable{
 	 * @param timeout
 	 * @return
 	 */
-	public INMessage connect(String addr , int port , int timeout) {
-		this.addr = addr;
+	public INMessage connect(String host , int port , int timeout) {
+		this.host = host;
 		this.port = port;
 		this.timeout = timeout;
 		
 		this.head("result"	, false);
 		
 		
-		if(this.addr == null || this.addr.trim().equals("")) {
-			logger.info("address is null");	
+		if(this.host == null || this.host.trim().equals("")) {
+			logger.info("");	
 			this.head("message"	, "서버 주소가 없습니다. ");
 			return this.message;
 		}
@@ -188,7 +206,7 @@ public class INet implements java.io.Serializable{
 			endPoint = LoadBalancer.getExcludeBrokenServer(server);
 			if(endPoint != null && !endPoint.trim().equals("")) {
 				String[] endPoints = LoadBalancer.getExcludeBrokenServer(server).split(":");
-				this.addr = endPoints[0];
+				this.host = endPoints[0];
 				if(endPoints.length > 1) {
 					this.port = Integer.parseInt(endPoints[1]);
 				}else {
@@ -209,8 +227,9 @@ public class INet implements java.io.Serializable{
 		
 		INMessage msg = execute();
 		//통신장애에 의한 실패의 경우 브로큰 서버로 등록한다.
-		if(!msg.head.isTrue("result") && msg.head.isEquals("message","connect failure")) {
+		if(!msg.head.isTrue("result") && msg.head.isEquals("message",TIMEOUT_CONNECT)) {
 			LoadBalancer.setBrokenServer(server, endPoint);
+			logger.info("connect failure , reconnect other server");
 			msg = execute();
 		}
 		
@@ -254,75 +273,78 @@ public class INet implements java.io.Serializable{
 	}
 
 	
-	
+	/* 2025.10.01 NIO 기반으로 변경하면서 기존 소스 남겨놈.
 	private INMessage execute() {
-		if(this.message.data.isEmpty()) {
-			this.head("message"	, "전송할 데이터가 없습니다. data is empty");
-			return this.message;
-		}
-		
-		long startTime		= System.nanoTime();
-		this.head("message"	, "ready");
-		
-		
-		
-		InetSocketAddress endPoint 	= null;
-		Socket socket 				= null;
-		InputStream input 			= null;
-		OutputStream output 		= null;
-		
-		try {
-			byte[] data = serialize();
-			
-			endPoint 	= new InetSocketAddress(this.addr,this.port);
-			socket 		= new Socket();
-			socket.setSoTimeout(timeout);
-			this.head("message"	, "connect failure");
-			socket.connect(endPoint,CONNECT_TIMEOUT);
-			this.head("message"	, "connected");
-			
-			
-			//send buffer
-			ByteBuffer buffer = ByteBuffer.allocate(4+data.length);
-			buffer.putInt(data.length);
-			buffer.put(data);
-			
-			if(SystemUtils.deepview()) {
-				logger.info("INET {} > {} : [{}] bytes",this.message.head.getString("proc"),this.message.head.getString("target"), data.length);
-			}
-			
-			output	= socket.getOutputStream();
-			output.write(buffer.array());
-			output.flush();
-			this.head("message"	, "message sent");
-			
-			input 	= socket.getInputStream();
-			byte[] length 	= recv(input,4);
-			int read = ByteBuffer.wrap(length).getInt();
-			data			= recv(input,read);
-			
-			if(SystemUtils.deepview()) {
-				logger.info("INET {} < {} : [{}] bytes",this.message.head.getString("proc"),this.message.head.getString("target"), length.length+data.length);
-			}
-			
-			deserialize(data);	
-		}catch(Exception e) {
-			this.head("message"	, "execute step : "+this.message.head.getString("message")+" exception :"+e.getMessage());
-		}finally{
-			try{
-				if(input 	!= null){ input.close();}
-				if(output 	!= null){ output.close();}
-				if(socket 	!= null){ socket.close();}	
-			}catch(Exception ex){
-			}
-			
-			this.message.head.put("time", System.nanoTime()- startTime);
-			if(SystemUtils.deepview()) {
-				logger.info(String.format("elapsed Time in %.3fms%n",this.message.head.getLong("time") / 1e6d));
-			}
-		}
-		
-		return message;
+	    if (this.message.data.isEmpty()) {
+	        this.head("message", "전송할 데이터가 없습니다. data is empty");
+	        return this.message;
+	    }
+
+	    long startTime = System.nanoTime();
+	    this.head("message", "ready");
+
+	    InetSocketAddress endPoint = new InetSocketAddress(this.host, this.port);
+
+	    try (Socket socket = new Socket()) {
+	        // 연결 설정
+	        socket.setSoTimeout(timeout);
+	        this.head("message"	, TIMEOUT_CONNECT);
+	        socket.connect(endPoint, DEFAULT_COONECT_TIMEOUT);
+	        this.head("message", "connected");
+
+	        byte[] data = serialize();
+
+	        // 전송 데이터 준비 (길이 + 내용)
+	        ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES + data.length);
+	        buffer.putInt(data.length);
+	        buffer.put(data);
+
+	        if (SystemUtils.deepview()) {
+	            logger.info("INET {} > {} : [{}] bytes",
+	                    this.message.head.getString("proc"),
+	                    this.message.head.getString("target"),
+	                    data.length);
+	        }
+
+	        // 데이터 전송
+	        try (OutputStream output = socket.getOutputStream()) {
+	            output.write(buffer.array());
+	            output.flush();
+	        }
+	        this.head("message", "message sent");
+
+	        // 응답 수신
+	        try (InputStream input = socket.getInputStream()) {
+	            byte[] lengthBytes = recv(input, Integer.BYTES);
+	            int length = ByteBuffer.wrap(lengthBytes).getInt();
+	            byte[] response = recv(input, length);
+
+	            if (SystemUtils.deepview()) {
+	                logger.info("INET {} < {} : [{}] bytes",
+	                        this.message.head.getString("proc"),
+	                        this.message.head.getString("target"),
+	                        lengthBytes.length + response.length);
+	            }
+
+	            // 응답 역직렬화
+	            deserialize(response);
+	        }
+
+	    } catch (Exception e) {
+	        this.head("message",
+	                "execute step : " + this.message.head.getString("message") +
+	                        " exception: " + e.getMessage());
+	        logger.warn("INet execute exception", e);
+	    } finally {
+	        long elapsed = System.nanoTime() - startTime;
+	        this.message.head.put("time", elapsed);
+
+	        if (SystemUtils.deepview()) {
+	            logger.info(String.format("elapsed Time in %.3fms%n", elapsed / 1e6d));
+	        }
+	    }
+
+	    return this.message;
 	}
 	
 	private byte[] recv(InputStream input ,int size) throws IOException{
@@ -342,30 +364,221 @@ public class INet implements java.io.Serializable{
 		}
 		return recv;
 	}
+	*/
+	
+	private INMessage execute() {
+	    if (this.message.data.isEmpty()) {
+	        this.head("message", "전송할 데이터가 없습니다. data is empty");
+	        return this.message;
+	    }
+
+	    long startTime = System.nanoTime();
+	    this.head("message", "ready");
+
+	    byte[] data;
+	    try {
+	        data = serialize();
+	    } catch (Exception e) {
+	        this.head("message", "serialize failed: " + e.getMessage());
+	        logger.warn("Serialization failed", e);
+	        return this.message;
+	    }
+
+	    InetSocketAddress endPoint = new InetSocketAddress(this.host, this.port);
+
+	    try (SocketChannel channel = SocketChannel.open();
+	         Selector selector = Selector.open()) {
+
+	        channel.configureBlocking(false);
+	        channel.connect(endPoint);
+	        channel.register(selector, SelectionKey.OP_CONNECT);
+
+	        // 접속
+	        if (!waitForConnect(channel, selector, DEFAULT_CONNECT_TIMEOUT)) {
+	            this.head("message", TIMEOUT_CONNECT);
+	            logger.info("Connect timeout to {}:{}", this.host, this.port);
+	            return this.message;
+	        }
+	        this.head("message", "connected");
+
+	        // 송신
+	        if (!writeFullyOnce(channel, selector, data, this.message)) {
+	            return this.message;
+	        }
+
+	        // 수신
+	        byte[] response = readFully(channel, selector, this.timeout, this.message);
+	        if (response == null) return this.message;
+
+	        deserialize(response);
+
+	    } catch (Exception e) {
+	        this.head("message",
+	                		"execute step : " + this.message.head.getString("message") +
+	                        " exception: " + e.getMessage());
+	        logger.info("INet execute exception", e);
+	    } finally {
+	        long elapsed = System.nanoTime() - startTime;
+	        this.message.head.put("time", elapsed);
+	        if (SystemUtils.deepview()) {
+	            logger.info(String.format("elapsed Time in %.3fms%n", elapsed / 1e6d));
+	        }
+	    }
+
+	    return message;
+	}
+
+
+	// Connect 완료까지 대기 + timeout 체크
+	private boolean waitForConnect(SocketChannel channel, Selector selector, long timeoutMs) throws IOException {
+	    long start = System.currentTimeMillis();
+	    while (!channel.finishConnect()) {
+	        long elapsed = System.currentTimeMillis() - start;
+	        if (elapsed > timeoutMs) return false;
+
+	        selector.select(Math.max(timeoutMs - elapsed, 1));
+	        Iterator<SelectionKey> it = selector.selectedKeys().iterator();
+	        while (it.hasNext()) {
+	            SelectionKey key = it.next();
+	            it.remove();
+	            if (key.isConnectable()) channel.finishConnect();
+	        }
+	    }
+	    return true;
+	}
+
+	// write 완료 후 단 한 번만 OP_READ로 전환
+	private boolean writeFullyOnce(SocketChannel channel, Selector selector, byte[] data, INMessage msg) throws IOException {
+	    ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES + data.length);
+	    buffer.putInt(data.length).put(data).flip();
+	    channel.register(selector, SelectionKey.OP_WRITE);
+
+	    while (buffer.hasRemaining()) {
+	        selector.select(100);
+	        Iterator<SelectionKey> it = selector.selectedKeys().iterator();
+	        while (it.hasNext()) {
+	            SelectionKey key = it.next();
+	            it.remove();
+	            if (!key.isValid()) continue;
+
+	            if (key.isWritable()) {
+	                channel.write(buffer);
+	                if (!buffer.hasRemaining()) {
+	                    // write 완료 후 한 번만 OP_READ로 변경
+	                    key.interestOps(SelectionKey.OP_READ);
+	                    msg.head.put("message", "message sent");
+
+	                    if (SystemUtils.deepview()) {
+	                        logger.info("INET {} > {} : [{}] bytes",
+	                                msg.head.getString("proc"),
+	                                msg.head.getString("target"),
+	                                data.length);
+	                    }
+	                    return true;
+	                }
+	            }
+	        }
+	    }
+	    return true;
+	}
+
+	// length + payload 안전하게 읽기 + read timeout 적용
+	private byte[] readFully(SocketChannel channel, Selector selector, long timeoutMs, INMessage msg) throws IOException {
+	    ByteBuffer lengthBuffer = ByteBuffer.allocate(Integer.BYTES);
+	    ByteBuffer payloadBuffer = null;
+	    long start = System.currentTimeMillis();
+
+	    while (true) {
+	        long elapsed = System.currentTimeMillis() - start;
+	        if (elapsed > timeoutMs) {
+	            msg.head.put("message", TIMEOUT_READ);
+	            logger.warn("Read timeout after {} ms", timeoutMs);
+	            return null;
+	        }
+
+	        selector.select(Math.max(timeoutMs - elapsed, 1));
+	        Iterator<SelectionKey> it = selector.selectedKeys().iterator();
+	        while (it.hasNext()) {
+	            SelectionKey key = it.next();
+	            it.remove();
+	            if (!key.isValid()) continue;
+
+	            if (key.isReadable()) {
+	                // 1. length 읽기
+	                if (lengthBuffer.hasRemaining()) {
+	                    int r = channel.read(lengthBuffer);
+	                    if (r == -1) throw new EOFException("EOF while reading length");
+	                    if (!lengthBuffer.hasRemaining()) {
+	                        lengthBuffer.flip();
+	                        int len = lengthBuffer.getInt();
+	                        payloadBuffer = ByteBuffer.allocate(len);
+	                    }
+	                }
+	                // 2. payload 읽기
+	                else if (payloadBuffer != null && payloadBuffer.hasRemaining()) {
+	                    int r = channel.read(payloadBuffer);
+	                    if (r == -1) throw new EOFException("EOF while reading payload");
+	                    if (!payloadBuffer.hasRemaining()) {
+	                        payloadBuffer.flip();
+	                        byte[] resp = new byte[payloadBuffer.remaining()];
+	                        payloadBuffer.get(resp);
+
+	                        if (SystemUtils.deepview()) {
+	                            logger.info("INET {} < {} : [{}] bytes",
+	                                    msg.head.getString("proc"),
+	                                    msg.head.getString("target"),
+	                                    resp.length + Integer.BYTES);
+	                        }
+	                        return resp;
+	                    }
+	                }
+	            }
+	        }
+	    }
+	}
+
+
+	
 	
 
 	
 	
 	
-	public INet deserialize(byte[] data) throws Exception{
+	public INet deserialize(byte[] data) throws IOException, ClassNotFoundException{
 		 
-		ByteArrayInputStream bis 	= new ByteArrayInputStream(data);
-		ObjectInput in 				= new ObjectInputStream(bis);
-		this.message = 				(INMessage)in.readObject(); 
-		in.close();
-		return this;
+		Objects.requireNonNull(data, "data is null");
+
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
+             ObjectInputStream in = new ObjectInputStream(bis)) {
+
+            ObjectInputFilter filter = info -> {
+                Class<?> clazz = info.serialClass();
+                if (clazz == null) return ObjectInputFilter.Status.UNDECIDED;
+                if (INMessage.class.equals(clazz)) return ObjectInputFilter.Status.ALLOWED;
+                return ObjectInputFilter.Status.REJECTED;
+            };
+            in.setObjectInputFilter(filter);
+
+            Object obj = in.readObject();
+            if (!(obj instanceof INMessage msg)) {
+                throw new InvalidObjectException(
+                        "Deserialized object is not INMessage: " + obj.getClass());
+            }
+
+            this.message = msg;
+            return this;
+        }
 	}
 	
 	
-	public byte[] serialize() throws Exception{
-		
-		ByteArrayOutputStream bos 	= new ByteArrayOutputStream();
-		ObjectOutputStream out = new ObjectOutputStream(bos);
-		out.writeObject(this.message);
-		out.flush();
-		byte[] data = bos.toByteArray();
-		out.close();
-		return data;
+	public byte[] serialize() throws IOException{
+		try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
+	         ObjectOutputStream out = new ObjectOutputStream(bos)) {
+
+	            out.writeObject(this.message);
+	            out.flush();
+	            return bos.toByteArray();
+	        }
 	}
 	
 	
@@ -383,7 +596,10 @@ public class INet implements java.io.Serializable{
 
 
 	public class INMap extends LinkedHashMap<String, Object> implements Serializable {
+		
 	    private static final long serialVersionUID = 1L;
+	    private static final DateTimeFormatter DF =
+	            DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss.S");
 
 	    public INMap() {}
 
@@ -396,33 +612,66 @@ public class INet implements java.io.Serializable{
 	        return this;
 	    }
 
-	    // ---------------------- String ----------------------
 	    public String getString(String key) {
 	        Object o = get(key);
 	        if (o == null) return "";
-	        return switch (o) {
-	            case String s -> s;
-	            case Integer i -> i.toString();
-	            case Long l -> l.toString();
-	            case Double d -> d.toString();
-	            case Float f -> f.toString();
-	            case Byte b -> b.toString();
-	            case byte[] b -> new String(b);
-	            case Character c -> String.valueOf(c);
-	            case char[] c -> String.valueOf(c);
-	            case BigInteger bi -> bi.toString();
-	            case BigDecimal bd -> bd.toString();
-	            case Boolean bool -> bool.toString();
-	            case Timestamp ts -> DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss.S").format(ts.toLocalDateTime());
-	            case String[] arr -> String.join(",", arr);
-	            case ByteBuffer bb -> {
-	                byte[] dst = new byte[bb.remaining()];
-	                bb.get(dst);
-	                yield new String(dst);
-	            }
-	            default -> o.toString();
-	        };
+	        try {
+		        // 1. 문자열 / 숫자 / 불리언 등 기본형 계열
+			    if (o instanceof String s) return s;
+			    if (o instanceof Character c) return String.valueOf(c);
+			    if (o instanceof Boolean b) return b.toString();
+	
+			    if (o instanceof Byte v) return v.toString();
+			    if (o instanceof Short v) return v.toString();
+			    if (o instanceof Integer v) return v.toString();
+			    if (o instanceof Long v) return v.toString();
+			    if (o instanceof Float v) return v.toString();
+			    if (o instanceof Double v) return v.toString();
+			    if (o instanceof AtomicInteger v) return Integer.toString(v.get());
+			    if (o instanceof AtomicLong v) return Long.toString(v.get());
+	
+			    if (o instanceof BigInteger v) return v.toString();
+			    if (o instanceof BigDecimal v) return v.toString();
+	
+			    // 2. 배열 / 버퍼
+			    if (o instanceof char[] arr) return String.valueOf(arr);
+			    if (o instanceof byte[] arr) return new String(arr, Charset.defaultCharset());
+			    if (o instanceof String[] arr) return String.join(",", arr);
+			    if (o instanceof ByteBuffer bb) {
+			        ByteBuffer dup = bb.duplicate(); // position 보호
+			        byte[] dst = new byte[dup.remaining()];
+			        dup.get(dst);
+			        return new String(dst, Charset.defaultCharset());
+			    }
+	
+			    // 3. 날짜/시간 관련
+			    if (o instanceof Timestamp ts) return DF.format(ts.toLocalDateTime());
+			    if (o instanceof java.sql.Date d) return DF.format(d.toLocalDate().atStartOfDay());
+			    if (o instanceof java.util.Date d) return DF.format(d.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime());
+			    if (o instanceof Calendar cal) return DF.format(cal.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime());
+			    if (o instanceof LocalDate ld) return DF.format(ld.atStartOfDay());
+			    if (o instanceof LocalDateTime ldt) return DF.format(ldt);
+			    if (o instanceof Instant inst) return DF.format(inst.atZone(ZoneId.systemDefault()).toLocalDateTime());
+	
+			    // 4. 컬렉션 / 맵 / Enum / Optional
+			    if (o instanceof Collection<?> c) {
+			        return String.join(",", c.stream().map(Objects::toString).toList());
+			    }
+			    if (o instanceof Map<?,?> m) return m.entrySet().toString();
+			    if (o instanceof Enum<?> e) return e.name();
+			    if (o instanceof Optional<?> opt) return opt.map(Objects::toString).orElse("");
+	
+			    // 5. 예외 및 그 외
+			    if (o instanceof Throwable t) return t.getMessage();
+	        }catch(Exception e) {
+	        	logger.warn("Failed to convert key '{}' with value '{}' to String: {}", key, o, e.getMessage());
+	        }
+
+		    // Default
+		    return o.toString();
+	        
 	    }
+
 
 	    public String getString(String key, String replace) {
 	        String val = getString(key);
@@ -441,20 +690,25 @@ public class INet implements java.io.Serializable{
 	    public int getInt(String key) {
 	        Object obj = get(key);
 	        if (obj == null) return 0;
+
 	        try {
-	            return switch (obj) {
-	                case Integer i -> i;
-	                case Long l -> l.intValue();
-	                case Double d -> d.intValue();
-	                case Float f -> f.intValue();
-	                case BigDecimal bd -> bd.intValue();
-	                case Boolean b -> b ? 1 : 0;
-	                case Byte b -> b.intValue();
-	                case String s -> Integer.parseInt(s.trim());
-	                case byte[] b -> Integer.parseInt(new String(b).trim());
-	                default -> 0;
-	            };
+
+	            if (obj instanceof Number n) {
+	                return n.intValue(); 
+	            }
+	            if (obj instanceof Boolean b) {
+	                return b ? 1 : 0;
+	            }
+	            if (obj instanceof String s) {
+	                return Integer.parseInt(s.trim());
+	            }
+	            if (obj instanceof byte[] arr) {
+	                return Integer.parseInt(new String(arr).trim());
+	            }
+
+	            return 0; // 그 외 타입
 	        } catch (Exception e) {
+	        	logger.warn("Failed to parse '{}' to int: {}", obj, e.getMessage());
 	            return 0;
 	        }
 	    }
@@ -468,24 +722,28 @@ public class INet implements java.io.Serializable{
 	    public long getLong(String key) {
 	        Object obj = get(key);
 	        if (obj == null) return 0L;
+
 	        try {
-	            return switch (obj) {
-	                case Long l -> l;
-	                case Integer i -> i.longValue();
-	                case Double d -> d.longValue();
-	                case Float f -> f.longValue();
-	                case BigDecimal bd -> bd.longValue();
-	                case BigInteger bi -> bi.longValue();
-	                case Boolean b -> b ? 1L : 0L;
-	                case Byte b -> b.longValue();
-	                case String s -> Long.parseLong(s.trim());
-	                case byte[] b -> Long.parseLong(new String(b).trim());
-	                default -> 0L;
-	            };
+	        	if (obj instanceof Number n) {
+	                return n.longValue(); 
+	            }
+	            if (obj instanceof Boolean b) {
+	                return b ? 1L : 0L;
+	            }
+	            if (obj instanceof String s) {
+	                return Long.parseLong(s.trim());
+	            }
+	            if (obj instanceof byte[] arr) {
+	                return Long.parseLong(new String(arr).trim());
+	            }
+	            
+	            return 0L;
 	        } catch (Exception e) {
+	        	logger.warn("Failed to parse '{}' to long: {}", obj, e.getMessage());
 	            return 0L;
 	        }
 	    }
+
 
 	    public long getLong(String key, long replace) {
 	        long val = getLong(key);
@@ -496,24 +754,28 @@ public class INet implements java.io.Serializable{
 	    public double getDouble(String key) {
 	        Object obj = get(key);
 	        if (obj == null) return 0.0;
+
 	        try {
-	            return switch (obj) {
-	                case Double d -> d;
-	                case Float f -> f.doubleValue();
-	                case Long l -> l.doubleValue();
-	                case Integer i -> i.doubleValue();
-	                case BigDecimal bd -> bd.doubleValue();
-	                case BigInteger bi -> bi.doubleValue();
-	                case Boolean b -> b ? 1.0 : 0.0;
-	                case Byte b -> b.doubleValue();
-	                case String s -> Double.parseDouble(s.trim());
-	                case byte[] b -> Double.parseDouble(new String(b).trim());
-	                default -> 0.0;
-	            };
+	            if (obj instanceof Number n) {
+	                return n.doubleValue(); 
+	            }
+	            if (obj instanceof Boolean b) {
+	                return b ? 1.0 : 0.0;
+	            }
+	            if (obj instanceof String s) {
+	                return Double.parseDouble(s.trim());
+	            }
+	            if (obj instanceof byte[] arr) {
+	                return Double.parseDouble(new String(arr).trim());
+	            }
+
+	            return 0.0; // 그 외 타입
 	        } catch (Exception e) {
+	        	logger.warn("Failed to parse '{}' to double: {}", obj, e.getMessage());
 	            return 0.0;
 	        }
 	    }
+
 
 	    public double getDouble(String key, double replace) {
 	        double val = getDouble(key);
@@ -568,6 +830,22 @@ public class INet implements java.io.Serializable{
 	        Object obj = get(key);
 	        return obj == value || (obj != null && obj.equals(value));
 	    }
+	    
+	    public boolean isEmpty(String key) {
+	    	Object value = get(key);
+	    	if (value == null) return true;
+
+	        if (value instanceof String s) return s.trim().isEmpty();
+	        if (value instanceof Collection<?> c) return c.isEmpty();
+	        if (value instanceof Map<?,?> m) return m.isEmpty();
+	        if (value instanceof Optional<?> opt) return opt.isEmpty();
+	        if (value.getClass().isArray()) return Array.getLength(value) == 0;
+	        if (value instanceof Number n) return n.doubleValue() == 0;
+	        if (value instanceof Boolean b) return !b;
+	        
+	        return false;
+	    }
+	    
 	}
 
 	

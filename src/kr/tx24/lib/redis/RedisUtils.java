@@ -31,8 +31,9 @@ public class RedisUtils {
         return action.execute(conn);
     }
 
+    @SuppressWarnings("unchecked")
     private static <K, V> void withRedisAsync(StatefulRedisConnection<K, V> conn, K key, V val) {
-        RedisFuture<Long> future = conn.async().rpush(key, val);
+		RedisFuture<Long> future = conn.async().rpush(key, val);
         future.thenAccept(v -> logger.debug("rpush key : {}", v));
     }
 
@@ -186,7 +187,8 @@ public class RedisUtils {
         });
     }
 
-    public static boolean setHash(String key, String field, Object val) {
+    @SuppressWarnings("unchecked")
+	public static boolean setHash(String key, String field, Object val) {
         StatefulRedisConnection<String, Object> conn = (StatefulRedisConnection<String, Object>) determineConnection(val);
         return withRedis(conn, c -> c.sync().hset(key, field, val));
     }
@@ -197,31 +199,37 @@ public class RedisUtils {
 
     // ------------------- List -------------------
 
+    @SuppressWarnings("unchecked")
     public static long rpush(String key, Object val) {
         StatefulRedisConnection<String, Object> conn = (StatefulRedisConnection<String, Object>) determineConnection(val);
         return withRedis(conn, c -> c.sync().rpush(key, val));
     }
 
+    @SuppressWarnings("unchecked")
     public static void rpushAsync(String key, Object val) {
         StatefulRedisConnection<String, Object> conn = (StatefulRedisConnection<String, Object>) determineConnection(val);
         withRedisAsync(conn, key, val);
     }
 
+    @SuppressWarnings("unchecked")
     public static long lpush(String key, Object val) {
         StatefulRedisConnection<String, Object> conn = (StatefulRedisConnection<String, Object>) determineConnection(val);
         return withRedis(conn, c -> c.sync().lpush(key, val));
     }
 
+    @SuppressWarnings("unchecked")
     public static void lpushAsync(String key, Object val) {
         StatefulRedisConnection<String, Object> conn = (StatefulRedisConnection<String, Object>) determineConnection(val);
         withRedisAsync(conn, key, val);
     }
 
+    @SuppressWarnings("unchecked")
     public static <T> T rpop(String key, Class<T> clazz) {
         StatefulRedisConnection<String, Object> conn = (StatefulRedisConnection<String, Object>) determineConnection(clazz);
         return clazz.cast(withRedis(conn, c -> c.sync().rpop(key)));
     }
 
+    @SuppressWarnings("unchecked")
     public static <T> T lpop(String key, Class<T> clazz) {
         StatefulRedisConnection<String, Object> conn = (StatefulRedisConnection<String, Object>) determineConnection(clazz);
         return clazz.cast(withRedis(conn, c -> c.sync().lpop(key)));

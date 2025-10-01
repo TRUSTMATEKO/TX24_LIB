@@ -666,55 +666,56 @@ public class CommonUtils {
 	public static String toString(Object o) {
 	    if (o == null) return "";
 
-	    return switch (o) {
-	        // 1. 문자열 / 숫자 / 불리언 등 기본형 계열
-	        case String s         -> s;
-	        case Character c      -> String.valueOf(c);
-	        case Boolean b        -> b.toString();
+	    // 1. 문자열 / 숫자 / 불리언 등 기본형 계열
+	    if (o instanceof String s) return s;
+	    if (o instanceof Character c) return String.valueOf(c);
+	    if (o instanceof Boolean b) return b.toString();
 
-	        case Byte v           -> v.toString();
-	        case Short v          -> v.toString();
-	        case Integer v        -> v.toString();
-	        case Long v           -> v.toString();
-	        case Float v          -> v.toString();
-	        case Double v         -> v.toString();
-	        case AtomicInteger v  -> Integer.toString(v.get());
-	        case AtomicLong v     -> Long.toString(v.get());
+	    if (o instanceof Byte v) return v.toString();
+	    if (o instanceof Short v) return v.toString();
+	    if (o instanceof Integer v) return v.toString();
+	    if (o instanceof Long v) return v.toString();
+	    if (o instanceof Float v) return v.toString();
+	    if (o instanceof Double v) return v.toString();
+	    if (o instanceof AtomicInteger v) return Integer.toString(v.get());
+	    if (o instanceof AtomicLong v) return Long.toString(v.get());
 
-	        case BigInteger v     -> v.toString();
-	        case BigDecimal v     -> v.toString();
+	    if (o instanceof BigInteger v) return v.toString();
+	    if (o instanceof BigDecimal v) return v.toString();
 
-	        // 2. 배열 / 버퍼
-	        case char[] arr       -> String.valueOf(arr);
-	        case byte[] arr       -> new String(arr, Charset.defaultCharset());
-	        case String[] arr     -> String.join(",", arr);
-	        case ByteBuffer bb    -> {
-	            byte[] dst = new byte[bb.remaining()];
-	            bb.get(dst);
-	            yield new String(dst, Charset.defaultCharset());
-	        }
+	    // 2. 배열 / 버퍼
+	    if (o instanceof char[] arr) return String.valueOf(arr);
+	    if (o instanceof byte[] arr) return new String(arr, Charset.defaultCharset());
+	    if (o instanceof String[] arr) return String.join(",", arr);
+	    if (o instanceof ByteBuffer bb) {
+	        ByteBuffer dup = bb.duplicate(); // position 보호
+	        byte[] dst = new byte[dup.remaining()];
+	        dup.get(dst);
+	        return new String(dst, Charset.defaultCharset());
+	    }
 
-	        // 3. 날짜/시간 관련
-	        case Timestamp ts     -> DateUtils.toString(ts);
-	        case java.sql.Date d  -> DateUtils.toString(new Timestamp(d.getTime()));
-	        case java.util.Date d -> DateUtils.toString(new Timestamp(d.getTime()));
-	        case Calendar cal     -> DateUtils.toString(new Timestamp(cal.getTimeInMillis()));
-	        case LocalDate ld     -> ld.toString();
-	        case LocalDateTime ldt-> ldt.toString();
-	        case Instant inst     -> inst.toString();
+	    // 3. 날짜/시간 관련
+	    if (o instanceof Timestamp ts) return DateUtils.toString(ts);
+	    if (o instanceof java.sql.Date d) return DateUtils.toString(new Timestamp(d.getTime()));
+	    if (o instanceof java.util.Date d) return DateUtils.toString(new Timestamp(d.getTime()));
+	    if (o instanceof Calendar cal) return DateUtils.toString(new Timestamp(cal.getTimeInMillis()));
+	    if (o instanceof LocalDate ld) return ld.toString();
+	    if (o instanceof LocalDateTime ldt) return ldt.toString();
+	    if (o instanceof Instant inst) return inst.toString();
 
-	        // 4. 컬렉션 / 맵 / Enum / Optional
-	        case Collection<?> c  -> String.join(",", c.stream().map(Objects::toString).toList());
-	        case Map<?,?> m       -> m.entrySet().toString();
-	        case Enum<?> e        -> e.name();
-	        case Optional<?> opt  -> opt.map(Objects::toString).orElse("");
+	    // 4. 컬렉션 / 맵 / Enum / Optional
+	    if (o instanceof Collection<?> c) {
+	        return String.join(",", c.stream().map(Objects::toString).toList());
+	    }
+	    if (o instanceof Map<?,?> m) return m.entrySet().toString();
+	    if (o instanceof Enum<?> e) return e.name();
+	    if (o instanceof Optional<?> opt) return opt.map(Objects::toString).orElse("");
 
-	        // 5. 예외 및 그 외
-	        case Throwable t      -> getExceptionMessage(t);
+	    // 5. 예외 및 그 외
+	    if (o instanceof Throwable t) return getExceptionMessage(t);
 
-	        // Default
-	        default               -> o.toString();
-	    };
+	    // Default
+	    return o.toString();
 	}
 
 	
@@ -724,13 +725,18 @@ public class CommonUtils {
         if (obj == null) return defaultValue(targetClass);
 
         try {
-            Object result = switch (obj) {
-                case String s      -> convertFromString(s.trim(), targetClass);
-                case Number n      -> convertFromNumber(n, targetClass);
-                case Boolean b     -> convertFromNumber(b ? 1 : 0, targetClass);
-                case byte[] arr    -> convertFromString(new String(arr, Charset.defaultCharset()).trim(), targetClass);
-                default            -> defaultValue(targetClass);
-            };
+        	Object result;
+            if (obj instanceof String s) {
+                result = convertFromString(s.trim(), targetClass);
+            } else if (obj instanceof Number n) {
+                result = convertFromNumber(n, targetClass);
+            } else if (obj instanceof Boolean b) {
+                result = convertFromNumber(b ? 1 : 0, targetClass);
+            } else if (obj instanceof byte[] arr) {
+                result = convertFromString(new String(arr, Charset.defaultCharset()).trim(), targetClass);
+            } else {
+                result = defaultValue(targetClass);
+            }
             return (T) result;
         } catch (Exception e) {
             return defaultValue(targetClass);
@@ -765,14 +771,18 @@ public class CommonUtils {
         return null;
     }
 
-    // 편의 메서드
+    // 기존 사용하던 호환성을 위하여 
     public static int parseInt(Object obj) { return parse(obj, int.class); }
     public static long parseLong(Object obj) { return parse(obj, long.class); }
     public static double parseDouble(Object obj) { return parse(obj, double.class); }
     public static BigDecimal parseBigDecimal(Object obj) { return parse(obj, BigDecimal.class); }
     public static BigInteger parseBigInteger(Object obj) { return parse(obj, BigInteger.class); }
 
-
+    public static int toInt(Object obj) { return parse(obj, int.class); }
+    public static long toLong(Object obj) { return parse(obj, long.class); }
+    public static double toDouble(Object obj) { return parse(obj, double.class); }
+    public static BigDecimal toBigDecimal(Object obj) { return parse(obj, BigDecimal.class); }
+    public static BigInteger toBigInteger(Object obj) { return parse(obj, BigInteger.class); }
 	
 	
 	public static byte[] hexToByte(String hex) { 

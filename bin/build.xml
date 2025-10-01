@@ -38,7 +38,7 @@
 	<echo message ="#### COMPILE COMPLETE ####"/>
 
 	<target name="compile" depends="init">
-		<javac destdir="${basedir}\classes" srcdir="${src.dir}" includes="kr/tx24/lib/**"  
+		<javac destdir="${basedir}\classes" srcdir="${src.dir}" includes="kr/tx24/**"  
 			optimize="true" debug="true" deprecation="true" encoding="utf-8" includeantruntime="false">
 			<classpath refid="project.classpath"/>
 		</javac>
@@ -52,7 +52,14 @@
 				<attribute name="Jar-Version" value="0.0.1"/>
 				<attribute name="Last-Updated-Date" value="${time}"/>
 			</manifest>
+			
+			<fileset dir="${classes.dir}">
+            <include name="**/*.class"/> 
+            <include name="tx24.properties"/>
+            <exclude name="kr/tx24/test/**"/>
+            <exclude name="kr/tx24/was/**"/>
+        </fileset>
+			
 		</jar>
-		
 	</target>
 </project>
