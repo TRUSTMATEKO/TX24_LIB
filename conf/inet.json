@@ -1,0 +1,14 @@
+{
+  "host" : "0.0.0.0",
+  "port" : 10103,
+  "logging" : false,
+  "property" : {
+    "proc" : "name"
+  },
+  "sample" : {
+    "host" : "https://twebapi.billgate.net:10443",
+    "connectTimeout" : 5000,
+    "writeTimeout" : 10000,
+    "readTimeout" : 20000
+  }
+}

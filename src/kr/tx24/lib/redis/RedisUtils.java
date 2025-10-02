@@ -16,6 +16,8 @@ import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.SharedMap;
 import kr.tx24.lib.map.ThreadSafeLinkedMap;
 
+
+
 public class RedisUtils {
 
     private static final Logger logger = LoggerFactory.getLogger(RedisUtils.class);
@@ -270,4 +272,245 @@ public class RedisUtils {
             return list;
         });
     }
+    
+
+
+    // ---------------- String ----------------
+    public static String get(String key) {
+        return get(key, 0);
+    }
+
+    public static String get(String key, long expire) {
+        return getValue(key, expire, Redis.get());
+    }
+
+    public static String set(String key, String val) {
+        return set(key, val, 0);
+    }
+
+    public static String set(String key, String val, long expire) {
+        return setValue(key, val, expire, Redis.get());
+    }
+
+    // ---------------- SharedMap ----------------
+    public static SharedMap<String, Object> getSharedMap(String key) {
+        return getSharedMap(key, 0);
+    }
+
+    public static SharedMap<String, Object> getSharedMap(String key, long expire) {
+        return getValue(key, expire, Redis.getSharedMap());
+    }
+
+    public static String set(String key, SharedMap<String, Object> val) {
+        return set(key, val, 0);
+    }
+
+    public static String set(String key, SharedMap<String, Object> val, long expire) {
+        return setValue(key, val, expire, Redis.getSharedMap());
+    }
+
+    // ---------------- SharedMap<String,String> ----------------
+    public static SharedMap<String, String> getSharedMapString(String key) {
+        return getSharedMapString(key, 0);
+    }
+
+    public static SharedMap<String, String> getSharedMapString(String key, long expire) {
+        return getValue(key, expire, Redis.getSharedMapString());
+    }
+
+    public static String setString(String key, SharedMap<String, String> val) {
+        return setString(key, val, 0);
+    }
+
+    public static String setString(String key, SharedMap<String, String> val, long expire) {
+        return setValue(key, val, expire, Redis.getSharedMapString());
+    }
+
+    // ---------------- SharedMap<String,Object> List ----------------
+    public static List<SharedMap<String, Object>> getSharedMapList(String key) {
+        return getSharedMapList(key, 0);
+    }
+
+    public static List<SharedMap<String, Object>> getSharedMapList(String key, long expire) {
+        return getValue(key, expire, Redis.getSharedMapList());
+    }
+
+    public static String setSharedMapList(String key, List<SharedMap<String, Object>> vals) {
+        return setSharedMapList(key, vals, 0);
+    }
+
+    public static String setSharedMapList(String key, List<SharedMap<String, Object>> vals, long expire) {
+        return setValue(key, vals, expire, Redis.getSharedMapList());
+    }
+
+    // ---------------- SharedMap<String,String> List ----------------
+    public static List<SharedMap<String, String>> getSharedMapListString(String key) {
+        return getSharedMapListString(key, 0);
+    }
+
+    public static List<SharedMap<String, String>> getSharedMapListString(String key, long expire) {
+        return getValue(key, expire, Redis.getSharedMapListString());
+    }
+
+    public static String setShared(String key, List<SharedMap<String, String>> vals) {
+        return setShared(key, vals, 0);
+    }
+
+    public static String setShared(String key, List<SharedMap<String, String>> vals, long expire) {
+        return setValue(key, vals, expire, Redis.getSharedMapListString());
+    }
+
+    // ---------------- LinkedMap ----------------
+    public static LinkedMap<String, Object> getLinkedMap(String key) {
+        return getLinkedMap(key, 0);
+    }
+
+    public static LinkedMap<String, Object> getLinkedMap(String key, long expire) {
+        return getValue(key, expire, Redis.getLinkedMap());
+    }
+
+    public static String setLinkedMap(String key, LinkedMap<String, Object> val) {
+        return setLinkedMap(key, val, 0);
+    }
+
+    public static String setLinkedMap(String key, LinkedMap<String, Object> val, long expire) {
+        return setValue(key, val, expire, Redis.getLinkedMap());
+    }
+
+    // ---------------- LinkedMap<String,String> ----------------
+    public static LinkedMap<String, String> getLinkedMapString(String key) {
+        return getLinkedMapString(key, 0);
+    }
+
+    public static LinkedMap<String, String> getLinkedMapString(String key, long expire) {
+        return getValue(key, expire, Redis.getLinkedMapString());
+    }
+
+    public static String set(String key, LinkedMap<String, String> val) {
+        return set(key, val, 0);
+    }
+
+    public static String set(String key, LinkedMap<String, String> val, long expire) {
+        return setValue(key, val, expire, Redis.getLinkedMapString());
+    }
+
+    // ---------------- LinkedMap<String,Object> List ----------------
+    public static List<LinkedMap<String, Object>> getLinkedMapList(String key) {
+        return getLinkedMapList(key, 0);
+    }
+
+    public static List<LinkedMap<String, Object>> getLinkedMapList(String key, long expire) {
+        return getValue(key, expire, Redis.getLinkedMapList());
+    }
+
+    public static String setLinkedMapList(String key, List<LinkedMap<String, Object>> vals) {
+        return setLinkedMapList(key, vals, 0);
+    }
+
+    public static String setLinkedMapList(String key, List<LinkedMap<String, Object>> vals, long expire) {
+        return setValue(key, vals, expire, Redis.getLinkedMapList());
+    }
+
+    // ---------------- LinkedMap<String,String> List ----------------
+    public static List<LinkedMap<String, String>> getLinkedMapListString(String key) {
+        return getLinkedMapListString(key, 0);
+    }
+
+    public static List<LinkedMap<String, String>> getLinkedMapListString(String key, long expire) {
+        return getValue(key, expire, Redis.getLinkedMapListString());
+    }
+
+    public static String setLinkedMapListString(String key, List<LinkedMap<String, String>> vals) {
+        return setLinkedMapListString(key, vals, 0);
+    }
+
+    public static String setLinkedMapListString(String key, List<LinkedMap<String, String>> vals, long expire) {
+        return setValue(key, vals, expire, Redis.getLinkedMapListString());
+    }
+
+    // ---------------- ThreadSafeLinkedMap ----------------
+    public static ThreadSafeLinkedMap<String, Object> getThreadSafeLinkedMap(String key) {
+        return getThreadSafeLinkedMap(key, 0);
+    }
+
+    public static ThreadSafeLinkedMap<String, Object> getThreadSafeLinkedMap(String key, long expire) {
+        return getValue(key, expire, Redis.getThreadSafeLinkedMap());
+    }
+
+    public static String setThreadSafeLinkedMap(String key, ThreadSafeLinkedMap<String, Object> val) {
+        return setThreadSafeLinkedMap(key, val, 0);
+    }
+
+    public static String setThreadSafeLinkedMap(String key, ThreadSafeLinkedMap<String, Object> val, long expire) {
+        return setValue(key, val, expire, Redis.getThreadSafeLinkedMap());
+    }
+
+    // ---------------- ThreadSafeLinkedMap<String,String> ----------------
+    public static ThreadSafeLinkedMap<String, String> getThreadSafeLinkedMapString(String key) {
+        return getThreadSafeLinkedMapString(key, 0);
+    }
+
+    public static ThreadSafeLinkedMap<String, String> getThreadSafeLinkedMapString(String key, long expire) {
+        return getValue(key, expire, Redis.getThreadSafeLinkedMapString());
+    }
+
+    public static String set(String key, ThreadSafeLinkedMap<String, String> val) {
+        return set(key, val, 0);
+    }
+
+    public static String set(String key, ThreadSafeLinkedMap<String, String> val, long expire) {
+        return setValue(key, val, expire, Redis.getThreadSafeLinkedMapString());
+    }
+
+    // ---------------- ThreadSafeLinkedMap<String,Object> List ----------------
+    public static List<ThreadSafeLinkedMap<String, Object>> getThreadSafeLinkedMapList(String key) {
+        return getThreadSafeLinkedMapList(key, 0);
+    }
+
+    public static List<ThreadSafeLinkedMap<String, Object>> getThreadSafeLinkedMapList(String key, long expire) {
+        return getValue(key, expire, Redis.getThreadSafeLinkedMapList());
+    }
+
+    public static String setThreadSafeLinkedList(String key, List<ThreadSafeLinkedMap<String, Object>> vals) {
+        return setThreadSafeLinkedList(key, vals, 0);
+    }
+
+    public static String setThreadSafeLinkedList(String key, List<ThreadSafeLinkedMap<String, Object>> vals, long expire) {
+        return setValue(key, vals, expire, Redis.getThreadSafeLinkedMapList());
+    }
+
+    // ---------------- ThreadSafeLinkedMap<String,String> List ----------------
+    public static List<ThreadSafeLinkedMap<String, String>> getThreadSafeLinkedMapListString(String key) {
+        return getThreadSafeLinkedMapListString(key, 0);
+    }
+
+    public static List<ThreadSafeLinkedMap<String, String>> getThreadSafeLinkedMapListString(String key, long expire) {
+        return getValue(key, expire, Redis.getThreadSafeLinkedMapListString());
+    }
+
+    public static String setThreadSafeLinkedListString(String key, List<ThreadSafeLinkedMap<String, String>> vals) {
+        return setThreadSafeLinkedListString(key, vals, 0);
+    }
+
+    public static String setThreadSafeLinkedListString(String key, List<ThreadSafeLinkedMap<String, String>> vals, long expire) {
+        return setValue(key, vals, expire, Redis.getThreadSafeLinkedMapListString());
+    }
+
+    // ---------------- 내부 유틸 (getValue/setValue) ----------------
+    private static <T> T getValue(String key, long expire, StatefulRedisConnection<String, T> conn) {
+        // 실제 Redis 조회 로직 구현
+        // 예: conn.sync().get(key) 또는 JSON deserialize
+        return null;
+    }
+
+    private static <T> String setValue(String key, T val, long expire, StatefulRedisConnection<String, T> conn) {
+        // 실제 Redis 저장 로직 구현
+        // 예: conn.sync().set(key, val) + expire 처리
+        return "OK";
+    }
+
+    
+	
+	
+	
 }

@@ -590,6 +590,18 @@ public class CommonUtils {
 	
 	
 	
+	public static String toString(byte[] b, Charset charset) {
+		if(b == null) {
+			return "";
+		}else {
+			try {
+				return new String(b, charset);
+			}catch(Exception e) {
+				logger.info("exception : {}",e.getMessage());
+				return "";
+			}
+		}
+	}
 	
 	
 	public static String toString(byte[] b, String charsetName) {
@@ -629,6 +641,27 @@ public class CommonUtils {
 		}else {
 			try {
 			return new String(b,offset,length,charsetName);
+			}catch(Exception e) {
+				logger.info("exception : {}",e.getMessage());
+			}
+		}
+		return "";
+	}
+	
+	
+	public static String toString(byte[] b, int offset , int length,Charset charset) {
+		int len = b.length;
+		if(len < offset || len == 0) {
+			return "";
+		}else if(len < offset + length) {
+			try {
+				return new String(b,offset,len,charset);
+			}catch(Exception e) {
+				logger.info("exception : {}",e.getMessage());
+			}
+		}else {
+			try {
+			return new String(b,offset,length,charset);
 			}catch(Exception e) {
 				logger.info("exception : {}",e.getMessage());
 			}

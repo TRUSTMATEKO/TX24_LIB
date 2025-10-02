@@ -22,7 +22,7 @@
 	<target name="init">
 		<tstamp>
 			<format property="time" pattern="yyyy-MM-dd hh:mm:ss" />
-			<format property="jardate" pattern="yyMM" />
+			<format property="jardate" pattern="yyMMdd" />
 		</tstamp>
 		<mkdir dir="${basedir}\classes"/>
 		<mkdir dir="${basedir}\dist"/>
@@ -48,8 +48,8 @@
 		<jar destfile="${dist.dir}\tx24_lib_${jardate}.jar" basedir="${classes.dir}" includes="kr/tx24/lib/**,tx24.properties">
 			<manifest>
 				<attribute name="Built-By" value="TX24"/>
-				<attribute name="Jar-Title" value="Core library"/>
-				<attribute name="Jar-Version" value="0.0.1"/>
+				<attribute name="Jar-Title" value="Tx24 Core Library"/>
+				<attribute name="Jar-Version" value="${jardate}"/>
 				<attribute name="Last-Updated-Date" value="${time}"/>
 			</manifest>
 		</jar>
