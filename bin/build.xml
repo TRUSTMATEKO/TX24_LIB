@@ -43,9 +43,9 @@
 			<classpath refid="project.classpath"/>
 		</javac>
 		<copy todir="${classes.dir}">
-            <fileset dir="${basedir}" includes="tx24.properties"/>
+            <fileset dir="${conf.dir}" includes="tx24.properties"/>
         </copy>
-		<jar destfile="${dist.dir}\tx24_lib_${jardate}.jar" basedir="${classes.dir}" excludes="kr/tx24/test/**,kr/tx24/was/**">
+		<jar destfile="${dist.dir}\tx24_lib_${jardate}.jar" basedir="${classes.dir}" excludes="kr/tx24/test/**,kr/tx24/was/**,work/**">
 			<manifest>
 				<attribute name="Built-By" value="TX24"/>
 				<attribute name="Jar-Title" value="Core library"/>
@@ -53,12 +53,7 @@
 				<attribute name="Last-Updated-Date" value="${time}"/>
 			</manifest>
 			
-			<fileset dir="${classes.dir}">
-            <include name="**/*.class"/> 
-            <include name="tx24.properties"/>
-            <exclude name="kr/tx24/test/**"/>
-            <exclude name="kr/tx24/was/**"/>
-        </fileset>
+
 			
 		</jar>
 	</target>

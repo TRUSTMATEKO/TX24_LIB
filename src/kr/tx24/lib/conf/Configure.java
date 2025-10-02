@@ -35,7 +35,7 @@ public class Configure {
     private Scanner scanner = null;
 
     public Configure() {
-        path = Paths.get(getRootDirectory(), "classes", Configure.NAME);
+        path = Paths.get(getRootDirectory(), "conf", Configure.NAME);
     }
 
     public void execute() {
