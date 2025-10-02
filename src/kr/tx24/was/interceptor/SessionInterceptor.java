@@ -1,27 +1,32 @@
 package kr.tx24.was.interceptor;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.ModelAndView;
 
 import io.netty.handler.codec.http.HttpMethod;
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import kr.tx24.lib.db.Create;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.SharedMap;
-import kr.tx24.lib.map.ThreadSafeLinkedMap;
 import kr.tx24.was.annotation.SessionIgnore;
+import kr.tx24.was.annotation.UserDid;
 import kr.tx24.was.util.CookieUtils;
 import kr.tx24.was.util.SessionUtils;
+import kr.tx24.was.util.UserDidAware;
 import kr.tx24.was.util.Was;
 
 /**
@@ -38,7 +43,6 @@ public class SessionInterceptor implements HandlerInterceptor{
 	private static final String LOGIN_REDIRECT_URI 	= "/init";
 	private static final String POPUP_PARAM 		= "P";
 	private static final String FORM_SUFFIX 		= "form";
-	private static final String DID_TABLE_NAME 		= "USER_DID";
 	private static final String LAST_URI_KEY 		= "LASTURI";
 	private static final String AJAX_LOGIC_KEYWORD 	= "axios"; // reqUri.contains("axios")에 사용됨
 	private static final String LASTURI_UPDATE_FLAG = "HAS_LASTURI_UPDATE";
@@ -51,9 +55,24 @@ public class SessionInterceptor implements HandlerInterceptor{
 	);
 	
  
+	@Autowired
+    private ListableBeanFactory beanFactory;
 	
+    private final List<UserDidAware> userDidLists = new ArrayList<>();
 
-	
+    @PostConstruct
+    public void init() {
+        Map<String, Object> beans = beanFactory.getBeansWithAnnotation(UserDid.class);
+        for (Object bean : beans.values()) {
+            if (bean instanceof UserDidAware aware) {
+            	userDidLists.add(aware);
+            }
+        }
+        if(!userDidLists.isEmpty()) {
+        	logger.info("userdid beans : {}", userDidLists.toString());
+        }
+        
+    }
 	
 	@Override
 	public boolean preHandle(HttpServletRequest request,HttpServletResponse response, Object handler) throws java.lang.Exception {
@@ -136,9 +155,9 @@ public class SessionInterceptor implements HandlerInterceptor{
 	        }
 	        
 	        // 4. 사용자 행동 기록 (USER_DID)
-	        if (!isRequestUriSkipped) { // SKIP 조건 재사용
+	        if (!isRequestUriSkipped && !userDidLists.isEmpty()) { // SKIP 조건 재사용
 	            
-	            ThreadSafeLinkedMap<String,Object> userDidMap = new ThreadSafeLinkedMap<String,Object>();
+	            SharedMap<String,Object> userDidMap = new SharedMap<String,Object>();
 	            userDidMap.put("sessionId"	, sessionMap.getString(SessionUtils.SESSION_ID));
 	            userDidMap.put("id"			, sessionMap.getString(SessionUtils.SESSION_USERID));
 	            userDidMap.put("uri"		, reqUri);
@@ -147,8 +166,11 @@ public class SessionInterceptor implements HandlerInterceptor{
 	            userDidMap.put("payload"	, "");
 	            userDidMap.put("regDay"		, DateUtils.getRegDay());
 	            
-	            // LinkedMap 오류 방지: getMap()을 사용하여 내부 Map을 전달합니다.
-	            new Create().table(DID_TABLE_NAME).record(userDidMap.getMap()).insertAsync();
+	            for (UserDidAware bean : userDidLists) {
+	                bean.setUserDid(userDidMap);
+	            }
+	            
+	            
 	        }
 	        
 	        request.setAttribute(Was.SESSION_ID, sessionMap); // Attribute 세션 저장

@@ -25,7 +25,6 @@ import org.springframework.web.multipart.support.StandardServletMultipartResolve
 import org.springframework.web.servlet.ViewResolver;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.DefaultServletHandlerConfigurer;
-import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
@@ -57,7 +56,6 @@ import nz.net.ultraq.thymeleaf.layoutdialect.LayoutDialect;
  * Spring 6.x / Thymeleaf 기반 WebMVC 설정
  */
 @Configuration
-@EnableWebMvc
 @ComponentScan(basePackages = {"kr.tx24.app"})
 public class SpringConfig implements WebMvcConfigurer {
 	
@@ -196,7 +194,7 @@ public class SpringConfig implements WebMvcConfigurer {
         resolver.setPrefix("/"); // 웹 루트를 기준으로 템플릿 탐색 시작
         resolver.setSuffix(".html");
         resolver.setCacheTTLMs(60 * 1000L); // 1분 TTL
-        resolver.setCacheable(false); // 개발 모드 설정
+        resolver.setCacheable(true); // 개발 모드에서는 false 처리 
         resolver.setCharacterEncoding(Was.DEFAULT_CHARSET.name());
         resolver.setTemplateMode(TemplateMode.HTML);
         return resolver;

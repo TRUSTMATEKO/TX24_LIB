@@ -5,6 +5,7 @@ import java.util.EnumSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.web.WebApplicationInitializer;
 import org.springframework.web.context.ContextLoaderListener;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
@@ -19,6 +20,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRegistration;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
+import kr.tx24.was.conf.TomcatConfig;
 import kr.tx24.was.conf.TomcatConfigLoader;
 import kr.tx24.was.util.Was;
 
@@ -36,14 +38,16 @@ public class ServletConfiguration implements WebApplicationInitializer {
 	@Override
 	public void onStartup(ServletContext servletContext) throws ServletException {
 		
+		TomcatConfig config = TomcatConfigLoader.load();
 		
 		// 1. Root Application Context (Service, Repository, etc.)
 		AnnotationConfigWebApplicationContext rootContext = new AnnotationConfigWebApplicationContext();
-		String basePackage = TomcatConfigLoader.load().basePackage;
-		if(!basePackage.isEmpty()) {
-			rootContext.scan(basePackage.split(","));
+		rootContext.setDisplayName(config.serverName);
+		if(!config.basePackage.isEmpty()) {
+			rootContext.scan(config.basePackage.split(","));
 		}
 		rootContext.register(SpringConfig.class);
+		
 		
 		// 2. ContextLoaderListener를 사용하여 Root Context를 웹 애플리케이션에 연결
 		// 이 리스너가 context.refresh() 호출을 담당합니다.
@@ -55,6 +59,12 @@ public class ServletConfiguration implements WebApplicationInitializer {
 		// 일반적으로 Root Context를 그대로 사용하거나, 별도의 Web 전용 Context를 사용합니다.
 		// 여기서는 Root Context와 동일한 설정을 사용하도록 등록합니다.
 		DispatcherServlet dispatcher = new DispatcherServlet(rootContext);
+		/*
+		dispatcher.setContextInitializers(ctx -> {
+		    if (ctx instanceof AbstractApplicationContext aac) {
+		        aac.setDisplayName(config.serverName);
+		    }
+		});*/
 		ServletRegistration.Dynamic servlet = servletContext.addServlet("dispatcher", dispatcher);
 		
 		

@@ -35,7 +35,7 @@ public class ServletListner implements ServletContextListener{
 		}
 		
 		ServletContext ctx = event.getServletContext();
-		ctx.setSessionTimeout(0); //JSESSION DISABLE
+		ctx.setSessionTimeout(-1); //JSESSION DISABLE
 		
 		if(!CommonUtils.isEmpty(TomcatConfigLoader.load().parameter)) {
 			for(String key: TomcatConfigLoader.load().parameter.keySet()) {

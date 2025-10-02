@@ -23,12 +23,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
-import kr.tx24.lib.lang.CommonUtils;
-import kr.tx24.lib.lang.JvmStatusUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lb.LoadBalancer;
-import kr.tx24.lib.mapper.JacksonUtils;
 import kr.tx24.was.conf.TomcatConfig;
+import kr.tx24.was.conf.TomcatConfigLoader;
 import kr.tx24.was.util.Was;
 
 
@@ -43,11 +41,14 @@ public class Server{
 	private static Logger logger 				= LoggerFactory.getLogger(Server.class );
 	
 	private static final String COMPRESSABLE	= "text/html,text/xml,text/plain,application/javascript,application/json,text/css,text/csv,application/x-javascript,application/vnd.api+json,image/svg+xml";
-	public static TomcatConfig config			= loadConfig();
+
 
 	
 	public void start()throws Exception {
-		 
+		
+		TomcatConfig config = new TomcatConfigLoader().load();
+		
+		
 		// 기존 JUL 핸들러를 제거하여 JUL의 콘솔/파일 출력 중복을 방지합니다.
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         // JUL 로깅 요청을 SLF4J로 전달하도록 설치합니다.

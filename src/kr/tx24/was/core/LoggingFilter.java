@@ -19,7 +19,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.SharedMap;
-import kr.tx24.was.util.SessionUtils;
 import kr.tx24.was.util.Was;
 
 /**
@@ -86,16 +85,7 @@ public class LoggingFilter implements Filter {
 							logger.info("response:{},{},{}",httpServletResponse.getStatus(),contentType,httpServletResponse.getContentSize());
 						}
 					}
-				
-					SharedMap<String,Object> sessionMap = (SharedMap<String,Object>)request.getAttribute(Was.SESSION_ID);
-					if(sessionMap != null && !httpServletRequest.getRequestURI().startsWith("/axios")) {
-						userDidMap.put("sessionId"	, sessionMap.getString(SessionUtils.SESSION_ID));
-						userDidMap.put("id"			, sessionMap.getString(SessionUtils.SESSION_USERID));
-						
-						//사용자 활동 기록 보관 
-//						userDidMap.put("regDay"		, DateUtils.getRegDay());
-//						new Create("SYSLINK.USER_DID").record(userDidMap).insertAsync();
-					}
+				    
 					
 					httpServletResponse.copyBodyToResponse();
 					
@@ -133,7 +123,7 @@ public class LoggingFilter implements Filter {
 		}
 		
 		for(String s: Was.EXCLUDE_SUFFIXS) {
-			if(uri.startsWith(s)) {
+			if(uri.endsWith(s)) {
 				isDynamic = false;
 				break;
 			}
