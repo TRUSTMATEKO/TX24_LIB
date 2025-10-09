@@ -32,8 +32,11 @@ public class INetServer extends Thread{
 	private static final int MAX_MESSAGE_SIZE = 100*1024*1024; //100 Mega
 	
 	// Write buffer water mark 설정 (백프레셔 제어)
-    private static final int LOW_WATER_MARK = 32 * 1024;  // 32KB
-    private static final int HIGH_WATER_MARK = 64 * 1024; // 64KB
+	// 대용량 패킷이 증가하면 (5% 이상): ~ 1MB / 4MB로 변경
+	// 연결 수가 급증하면 (500개 이상): ~ 256KB / 1MB로 축소
+	// 응답 시간이 중요하면: 	→ 2MB / 8MB로 확대
+	private static final int LOW_WATER_MARK = 512 * 1024;      // 512KB
+    private static final int HIGH_WATER_MARK = 2 * 1024 * 1024; // 2MB
 	
 	private volatile  EventLoopGroup bossGroup 	= null;
 	private volatile  EventLoopGroup workerGroup 	= null;
@@ -67,28 +70,16 @@ public class INetServer extends Thread{
                     .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                     
                     // Child options - 각 클라이언트 연결에 적용되는 옵션들
-                    .childOption(ChannelOption.SO_KEEPALIVE, false)
-                    .childOption(ChannelOption.TCP_NODELAY, true)
-                    .childOption(ChannelOption.SO_LINGER, 0)
-                    .childOption(ChannelOption.SO_SNDBUF, MAX_MESSAGE_SIZE)
-                    .childOption(ChannelOption.SO_RCVBUF, MAX_MESSAGE_SIZE)
-                    .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                    
-                    // Write buffer water mark - 백프레셔 제어
-                    .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, 
-                            new WriteBufferWaterMark(LOW_WATER_MARK, HIGH_WATER_MARK))
-                    
-                    // Auto read - 자동으로 읽기를 계속할지 여부
-                    .childOption(ChannelOption.AUTO_READ, true)
-                    
-                    // Connection timeout
-                    .childOption(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
-                    
-                    // Message size estimator - 메시지 크기 추정 (메모리 관리)
-                    .childOption(ChannelOption.MESSAGE_SIZE_ESTIMATOR, 
-                            io.netty.channel.DefaultMessageSizeEstimator.DEFAULT)
-                    
-                    
+                    .childOption(ChannelOption.SO_KEEPALIVE, false)							//KeepAlive 설정
+                    .childOption(ChannelOption.TCP_NODELAY, true)							//Nagle 알고리즘 비활성화
+                    .childOption(ChannelOption.SO_LINGER, 0)								//소켓 닫기 시 대기 시간
+                    .childOption(ChannelOption.SO_SNDBUF, MAX_MESSAGE_SIZE)					//송신 버퍼 크기 
+                    .childOption(ChannelOption.SO_RCVBUF, MAX_MESSAGE_SIZE)					//수신 버퍼 크기
+                    .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)	//
+                    .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(LOW_WATER_MARK, HIGH_WATER_MARK)) // Write buffer water mark - 백프레셔 제어
+                    .childOption(ChannelOption.AUTO_READ, true)								//Auto read - 자동으로 읽기를 계속할지 여부
+                    .childOption(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)				// Connection timeout
+                    .childOption(ChannelOption.MESSAGE_SIZE_ESTIMATOR,io.netty.channel.DefaultMessageSizeEstimator.DEFAULT) // Message size estimator - 메시지 크기 추정 (메모리 관리)
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel sc) throws Exception {
@@ -144,10 +135,10 @@ public class INetServer extends Thread{
             }
             logger.info("... server stop! ...");
         } catch (InterruptedException  ex) {
-            //logger.error("shutdown exception : {}", e.getMessage(), e);
+            logger.info("shutdown exception : {}", ex.getMessage(), ex);
         	Thread.currentThread().interrupt();
         } catch (Exception e) {
-            //logger.error("Error during shutdown", e);
+            logger.info("Error during shutdown", e);
         }
     }
 	
