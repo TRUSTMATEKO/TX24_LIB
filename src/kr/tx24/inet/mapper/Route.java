@@ -12,4 +12,5 @@ import java.lang.annotation.Target;
 public @interface Route {
 	public String[] target() default "";
 	public boolean loggable() default false;
+	public boolean authRequired() default true;
 }

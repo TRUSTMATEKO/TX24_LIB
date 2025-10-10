@@ -14,14 +14,16 @@ public class RouteInvoker {
     private final Class<?> controllerClass;
     private final Supplier<?>[] parameterSuppliers;
     private final boolean loggable;
+    private final boolean authRequired;
     
     // 생성자에서 메타데이터 캐싱 (한 번만 수행)
-    public RouteInvoker(Method method, Class<?> controllerClass, boolean loggable) {
+    public RouteInvoker(Method method, Class<?> controllerClass, boolean loggable, boolean authRequired) {
         this.method = method;
         this.controllerClass = controllerClass;
         this.loggable = loggable;
+        this.authRequired = authRequired;
         this.method.setAccessible(true);
-        
+       
         // 파라미터 공급자 미리 생성 (성능 최적화)
         Parameter[] parameters = method.getParameters();
         this.parameterSuppliers = new Supplier<?>[parameters.length];
@@ -147,6 +149,10 @@ public class RouteInvoker {
     
     public boolean isLoggable() {
         return loggable;
+    }
+    
+    public boolean isAuthRequired() {
+    	return authRequired;
     }
     
     @Override

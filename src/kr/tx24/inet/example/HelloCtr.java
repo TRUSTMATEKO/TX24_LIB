@@ -63,7 +63,7 @@ public class HelloCtr {
 	}
 	
 	
-	@Route(target ="/ctx")
+	@Route(target ="/ctx", loggable =true, authentication=false)
 	public INet ctx(@Data LinkedMap<String,Object> data) {
 		
 		logger.info("Autowhired INet : \nhead : {},\ndata:{}", new JacksonUtils().toJson(this.inet.head()), new JacksonUtils().toJson(this.inet.data()));

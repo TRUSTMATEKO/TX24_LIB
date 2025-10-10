@@ -120,7 +120,7 @@ public class Router {
         Route route = method.getAnnotation(Route.class);
         
         // RouteInvoker 생성 (메타데이터 캐싱)
-        RouteInvoker invoker = new RouteInvoker(method, clazz, route.loggable());
+        RouteInvoker invoker = new RouteInvoker(method, clazz, route.loggable(),route.authRequired());
         
         for (String target : route.target()) {
             String fullTarget = rootTarget + normalizeTarget(target);
@@ -188,10 +188,11 @@ public class Router {
         StringBuilder sb = new StringBuilder("\n========== Route Map ==========\n");
         
         ROUTE_MAP.forEach((target, invoker) -> {
-            sb.append(String.format("%-30s => %s (loggable: %s)\n",
+            sb.append(String.format("%-30s => %s (loggable: %s, authentication: %s)\n",
                     Abbreviator.format(target, '/', 29),
                     invoker.toString(),
-                    invoker.isLoggable()));
+                    invoker.isLoggable(),
+                    invoker.isAuthRequired()));
         });
         
         sb.append("==============================");
