@@ -30,6 +30,10 @@ public class INetConfigLoader {
 		return configMap.getInt("port", 10000);
 	}
 	
+	public static String getBasePackage() {
+		return configMap.getString("basePackage", "kr.tx24");
+	}
+	
 	
 	
 	public static boolean enableLoggingHandler() {

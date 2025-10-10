@@ -25,6 +25,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import kr.tx24.inet.codec.INetDecoder;
 import kr.tx24.inet.codec.INetEncoder;
 import kr.tx24.inet.conf.INetConfigLoader;
+import kr.tx24.inet.mapper.Router;
 
 public class INetServer extends Thread{
 
@@ -47,7 +48,8 @@ public class INetServer extends Thread{
 	
 	
 	public INetServer(){
-		//Router.start("syslink.ext.v1");	
+		INetConfigLoader.start();
+		Router.start(INetConfigLoader.getBasePackage());	
 	}
 	
 	@Override
@@ -144,7 +146,6 @@ public class INetServer extends Thread{
 	
 	
 	public static void main(String[] args) {
-		INetConfigLoader.start();
 		new INetServer().start();
 	}
 }

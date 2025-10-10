@@ -73,7 +73,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
     }
 
     private void processRequest(ChannelHandlerContext ctx, RouteInvoker invoker,INet inet, String extTrxId) {
-
+    	
 		INet resInet = new INet()													// 기본 응답 객체 생성
 				.head("id", ctx.channel().id().asShortText())
 				.head("result", true)

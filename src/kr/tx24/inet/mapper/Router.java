@@ -25,7 +25,7 @@ public class Router {
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
     private static final AtomicBoolean initializing = new AtomicBoolean(false);
 	
-    public static void start(String packageName) {
+    public static void start(String packageNames) {
         if (initialized.get()) {
             logger.debug("Router already initialized");
             return;
@@ -38,16 +38,21 @@ public class Router {
         }
         
         try {
-            if (CommonUtils.isEmpty(packageName)) {
+            if (CommonUtils.isEmpty(packageNames)) {
                 throw new IllegalArgumentException("Package name cannot be empty");
             }
             
-            logger.info("Scanning package: {}", packageName);
-            
-            scanPackage(packageName);
+            String[] packages = packageNames.split(",");
+            for (String pkg : packages) {
+                String trimmed = pkg.trim();
+                if (!trimmed.isEmpty()) {
+                    logger.info("Scanning package: {}", trimmed);
+                    scanPackage(trimmed);
+                }
+            }
             
             if (ROUTE_MAP.isEmpty()) {
-                logger.warn("No routes found in package: {}", packageName);
+                logger.warn("No routes found in package: {}", packageNames);
             } else {
                 logger.info("Registered {} routes", ROUTE_MAP.size());
             }
