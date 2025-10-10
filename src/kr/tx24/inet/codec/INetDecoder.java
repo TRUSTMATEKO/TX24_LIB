@@ -1,4 +1,4 @@
-package kr.tx24.inter.codec;
+package kr.tx24.inet.codec;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;

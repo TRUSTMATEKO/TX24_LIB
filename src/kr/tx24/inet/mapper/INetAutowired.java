@@ -1,4 +1,4 @@
-package kr.tx24.inter.mapper;
+package kr.tx24.inet.mapper;
  
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;

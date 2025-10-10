@@ -1,4 +1,4 @@
-package kr.tx24.inter.conf;
+package kr.tx24.inet.conf;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

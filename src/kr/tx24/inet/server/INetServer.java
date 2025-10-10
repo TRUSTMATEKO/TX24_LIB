@@ -1,4 +1,4 @@
-package kr.tx24.inter.server;
+package kr.tx24.inet.server;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -22,9 +22,9 @@ import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import io.netty.handler.timeout.IdleStateHandler;
-import kr.tx24.inter.codec.INetDecoder;
-import kr.tx24.inter.codec.INetEncoder;
-import kr.tx24.inter.conf.INetConfigLoader;
+import kr.tx24.inet.codec.INetDecoder;
+import kr.tx24.inet.codec.INetEncoder;
+import kr.tx24.inet.conf.INetConfigLoader;
 
 public class INetServer extends Thread{
 

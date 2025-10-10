@@ -1,4 +1,4 @@
-package kr.tx24.inter.mapper;
+package kr.tx24.inet.mapper;
 
 import io.netty.channel.ChannelHandlerContext;
 import kr.tx24.lib.inter.INet;
@@ -8,20 +8,20 @@ final class ThreadLocalContext {
     private static final ThreadLocal<ChannelHandlerContext> CONTEXT = new ThreadLocal<>();
     private static final ThreadLocal<INet> INET = new ThreadLocal<>();
     
-    static void set(ChannelHandlerContext ctx, INet inet) {
+    public static void set(ChannelHandlerContext ctx, INet inet) {
         CONTEXT.set(ctx);
         INET.set(inet);
     }
     
-    static ChannelHandlerContext getContext() {
+    public static ChannelHandlerContext getContext() {
         return CONTEXT.get();
     }
     
-    static INet getINet() {
+    public static INet getINet() {
         return INET.get();
     }
     
-    static void clear() {
+    public static void clear() {
         CONTEXT.remove();
         INET.remove();
     }

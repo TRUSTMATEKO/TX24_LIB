@@ -1,4 +1,5 @@
-package kr.tx24.inter.mapper;
+
+package kr.tx24.inet.mapper;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -8,6 +9,6 @@ import java.lang.annotation.Target;
 
 @Target(ElementType.PARAMETER)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Head {
+public @interface Data {
 
 }

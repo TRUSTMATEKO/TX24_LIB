@@ -1,4 +1,4 @@
-package kr.tx24.inter.util;
+package kr.tx24.inet.util;
 
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.DateUtils;

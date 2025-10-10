@@ -1,5 +1,6 @@
-package kr.tx24.inter.mapper;
+package kr.tx24.inet.mapper;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.function.Supplier;
@@ -46,9 +47,9 @@ public class RouteInvoker {
     
     private Object createController(ChannelHandlerContext ctx, INet inet) throws Exception {
         // 생성자 파라미터 확인
-        var constructors = controllerClass.getDeclaredConstructors();
+    	Constructor<?>[] constructors = controllerClass.getDeclaredConstructors();
         
-        for (var constructor : constructors) {
+        for (Constructor<?> constructor : constructors) {
             Class<?>[] paramTypes = constructor.getParameterTypes();
             
             if (paramTypes.length == 0) {

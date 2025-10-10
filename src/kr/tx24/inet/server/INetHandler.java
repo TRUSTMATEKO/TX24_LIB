@@ -1,4 +1,4 @@
-package kr.tx24.inter.server;
+package kr.tx24.inet.server;
 
 import java.util.Map;
 
@@ -9,9 +9,9 @@ import org.slf4j.MDC;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import kr.tx24.inter.mapper.RouteInvoker;
-import kr.tx24.inter.mapper.Router;
-import kr.tx24.inter.util.INetUtils;
+import kr.tx24.inet.mapper.RouteInvoker;
+import kr.tx24.inet.mapper.Router;
+import kr.tx24.inet.util.INetUtils;
 import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;

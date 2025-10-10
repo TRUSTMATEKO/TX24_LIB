@@ -1,4 +1,4 @@
-package kr.tx24.inter.mapper;
+package kr.tx24.inet.mapper;
  
 import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;
