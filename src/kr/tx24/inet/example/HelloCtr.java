@@ -7,7 +7,7 @@ import io.netty.channel.ChannelHandlerContext;
 import kr.tx24.inet.mapper.Controller;
 import kr.tx24.inet.mapper.Data;
 import kr.tx24.inet.mapper.Head;
-import kr.tx24.inet.mapper.INetAutowired;
+import kr.tx24.inet.mapper.Autowired;
 import kr.tx24.inet.mapper.Route;
 import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.map.LinkedMap;
@@ -19,10 +19,10 @@ public class HelloCtr {
 	private static final Logger logger = LoggerFactory.getLogger(HelloCtr.class);
 	
 	
-	@INetAutowired
+	@Autowired
 	private INet inet;
 	
-	@INetAutowired
+	@Autowired
 	private ChannelHandlerContext ctx;
 	
 	
