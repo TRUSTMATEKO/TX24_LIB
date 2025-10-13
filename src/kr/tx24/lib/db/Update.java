@@ -2,11 +2,14 @@ package kr.tx24.lib.db;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import kr.tx24.lib.lang.AsyncExecutor;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.LinkedMap;
@@ -382,49 +385,6 @@ public class Update {
 	}
 	
 	
-	/**
-	 * 설정된 값으로 UPDATE 를 '비동기' 실행한다.
-	 * UPDATE 완료 후에는 init() 이 자동 호출 된다.
-	 */
-	public void updateAsync() {
-		LinkedMap<String, Object> snapshot = new LinkedMap<>(record);
-	    String query = buildPreparedQuery();
-		
-	    Thread async = new Thread(() -> {
-	        DBManager db = null;
-	        Connection conn = null;
-	        long startTime = System.nanoTime();
-	        int result = 0;
-
-	        try {
-	        	
-	        	db = DBFactory.get();
-	            conn = db.getConnection();
-	        	
-	            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-	                conn.setAutoCommit(false);
-	                DBUtils.setValues(pstmt, snapshot.values());
-	                result = pstmt.executeUpdate();
-	                conn.commit();
-
-	            } catch (Exception e) {
-	            	try { if (conn != null) conn.rollback(); } catch (Exception ex) {}
-	                logger.warn("sql error : {}", CommonUtils.getExceptionMessage(e));
-	            }
-
-	        }catch(Exception ex) {
-	        	logger.warn("async insert failed : {}", CommonUtils.getExceptionMessage(ex));
-	        }finally {
-	        	if (db != null) db.close(conn);
-	            if (deepview) {
-	                logger.info("Async query : {} = [{}]", result, query);
-	                logger.info(SystemUtils.getElapsedTime(System.nanoTime() - startTime));
-	            }
-	        }
-	    });
-
-	    async.start();
-	}
 	
 	
 	
@@ -563,8 +523,81 @@ public class Update {
 	
 	
 	
-
 	
+	/**
+     * 비동기 UPDATE
+     * AsyncExecutor를 사용하여 스레드 풀에서 실행
+     * 
+     * @return CompletableFuture<Integer> - 완료 시 수정된 행 수 반환
+     */
+    public CompletableFuture<Integer> updateAsync() {
+        // 스레드 안전성을 위한 불변 복사본
+        final LinkedMap<String, Object> snapshot = new LinkedMap<>(record);
+        final String query = buildPreparedQuery();
+        final boolean enableLog = deepview;
+        
+        return CompletableFuture.supplyAsync(() -> {
+            DBManager db = null;
+            Connection conn = null;
+            PreparedStatement pstmt = null;
+            int result = 0;
+            long startTime = System.nanoTime();
+
+            try {
+                db = DBFactory.get();
+                conn = db.getConnection();
+                conn.setAutoCommit(false);
+                
+                pstmt = conn.prepareStatement(query);
+                DBUtils.setValues(pstmt, snapshot.values());
+                result = pstmt.executeUpdate();
+                
+                conn.commit();
+                
+                if (enableLog) {
+                    logger.info("Async update completed: {} row(s) updated", result);
+                }
+                
+            } catch (Exception e) {
+                if (conn != null) {
+                    try {
+                        conn.rollback();
+                    } catch (SQLException rollbackEx) {
+                        logger.error("Rollback failed", rollbackEx);
+                    }
+                }
+                logger.error("Async update failed: {}", CommonUtils.getExceptionMessage(e));
+                throw new RuntimeException("Async update failed", e);
+                
+            } finally {
+                if (db != null) {
+                    db.close(pstmt);
+                    db.close(conn);
+                }
+                
+                if (enableLog) {
+                    logger.info("Async update query: [{}]", query);
+                    logger.info(SystemUtils.getElapsedTime(System.nanoTime() - startTime));
+                }
+            }
+            
+            return result;
+            
+        }, AsyncExecutor.getExecutor());
+    }
+    
+    /**
+     * 비동기 UPDATE 후 자동 init()
+     * 
+     * @return CompletableFuture<Integer>
+     */
+    public CompletableFuture<Integer> updateAsyncAndInit() {
+        return updateAsync().thenApply(result -> {
+            init();
+            return result;
+        });
+    }
+    
 	
 	
 	

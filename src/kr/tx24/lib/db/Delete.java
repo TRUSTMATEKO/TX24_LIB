@@ -2,10 +2,13 @@ package kr.tx24.lib.db;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import kr.tx24.lib.lang.AsyncExecutor;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 
@@ -232,49 +235,7 @@ public class Delete {
 	
 
 	
-	/**
-	 * 설정된 값으로 DELETE 를 '비동기' 실행한다.
-	 * DELETE 완료 후에는 init() 이 자동 호출 된다.
-	 */
 	
-	public void deleteAsync() {
-		   
-	    String query =  build();
-	    init();
-	    
-	    Thread async = new Thread(() -> {
-	        DBManager db = null;
-	        Connection conn = null;
-	        long startTime = System.nanoTime();
-	        int result = 0;
-
-	        try {
-	        	
-	        	db = DBFactory.get();
-	            conn = db.getConnection();
-	            conn.setAutoCommit(false);
-	            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-	                result = pstmt.executeUpdate();
-	                conn.commit();
-
-	            } catch (Exception e) {
-	            	try { if (conn != null) conn.rollback(); } catch (Exception ex) {}
-	                logger.warn("sql error : {}", CommonUtils.getExceptionMessage(e));
-	            }
-
-	        }catch(Exception ex) {
-	        	logger.warn("async delete failed : {}", CommonUtils.getExceptionMessage(ex));
-	        }finally {
-	        	if (db != null) db.close(conn);
-	            if (deepview) {
-	                logger.info("Async query : {} = [{}]", result, query);
-	                logger.info(SystemUtils.getElapsedTime(System.nanoTime() - startTime));
-	            }
-	        }
-	    });
-
-	    async.start();
-	}
 	
 	
 	/**
@@ -403,7 +364,78 @@ public class Delete {
 	
 	
 	
+	/**
+     * 비동기 DELETE
+     * AsyncExecutor를 사용하여 스레드 풀에서 실행
+     * 
+     * @return CompletableFuture<Integer> - 완료 시 삭제된 행 수 반환
+     */
+    public CompletableFuture<Integer> deleteAsync() {
+        final String query = build();
+        final boolean enableLog = deepview;
+        
+        // init()은 호출하지 않음 - 비동기 작업 완료 후에도 재사용 가능
+        
+        return CompletableFuture.supplyAsync(() -> {
+            DBManager db = null;
+            Connection conn = null;
+            PreparedStatement pstmt = null;
+            int result = 0;
+            long startTime = System.nanoTime();
 
+            try {
+                db = DBFactory.get();
+                conn = db.getConnection();
+                conn.setAutoCommit(false);
+                
+                pstmt = conn.prepareStatement(query);
+                result = pstmt.executeUpdate();
+                
+                conn.commit();
+                
+                if (enableLog) {
+                    logger.info("Async delete completed: {} row(s) deleted", result);
+                }
+                
+            } catch (Exception e) {
+                if (conn != null) {
+                    try {
+                        conn.rollback();
+                    } catch (SQLException rollbackEx) {
+                        logger.error("Rollback failed", rollbackEx);
+                    }
+                }
+                logger.error("Async delete failed: {}", CommonUtils.getExceptionMessage(e));
+                throw new RuntimeException("Async delete failed", e);
+                
+            } finally {
+                if (db != null) {
+                    db.close(pstmt);
+                    db.close(conn);
+                }
+                
+                if (enableLog) {
+                    logger.info("Async delete query: [{}]", query);
+                    logger.info(SystemUtils.getElapsedTime(System.nanoTime() - startTime));
+                }
+            }
+            
+            return result;
+            
+        }, AsyncExecutor.getExecutor());
+    }
+    
+    /**
+     * 비동기 DELETE 후 자동 init()
+     * 
+     * @return CompletableFuture<Integer>
+     */
+    public CompletableFuture<Integer> deleteAsyncAndInit() {
+        return deleteAsync().thenApply(result -> {
+            init();
+            return result;
+        });
+    }
 	
 	
 	

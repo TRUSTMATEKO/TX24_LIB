@@ -6,10 +6,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import kr.tx24.lib.lang.AsyncExecutor;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.LinkedMap;
@@ -218,51 +220,7 @@ public class Create {
 	}
 	
 	
-	/**
-	 * Async Insert
-	 * 스레드 안전성을 위해 현재 레코드 snapshot을 사용
-	 */
-	public void insertAsync() {
-	   
-	    LinkedMap<String, Object> snapshot = new LinkedMap<>(record);
-	    String query = buildPreparedQuery();
-	    
-	    
-	    Thread async = new Thread(() -> {
-	        DBManager db = null;
-	        Connection conn = null;
-	        long startTime = System.nanoTime();
-	        int result = 0;
-
-	        try {
-	        	
-	        	db = DBFactory.get();
-	            conn = db.getConnection();
-	        	
-	            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-	                conn.setAutoCommit(false);
-	                DBUtils.setValues(pstmt, snapshot.values());
-	                result = pstmt.executeUpdate();
-	                conn.commit();
-
-	            } catch (Exception e) {
-	            	try { if (conn != null) conn.rollback(); } catch (Exception ex) {}
-	                logger.warn("sql error : {}", CommonUtils.getExceptionMessage(e));
-	            }
-
-	        }catch(Exception ex) {
-	        	logger.warn("async insert failed : {}", CommonUtils.getExceptionMessage(ex));
-	        }finally {
-	        	if (db != null) db.close(conn);
-	            if (deepview) {
-	                logger.info("Async query : {} = [{}]", result, query);
-	                logger.info(SystemUtils.getElapsedTime(System.nanoTime() - startTime));
-	            }
-	        }
-	    });
-
-	    async.start();
-	}
+	
 	
 
 	
@@ -443,6 +401,106 @@ public class Create {
 		}
 		return result;
 	}
+	
+	
+	/**
+     * 비동기 INSERT
+     * AsyncExecutor를 사용하여 스레드 풀에서 실행
+     * 
+     * @return CompletableFuture<Integer> - 완료 시 영향받은 행 수 반환
+     */
+    public CompletableFuture<Integer> insertAsync() {
+        // 스레드 안전성을 위해 현재 레코드의 불변 복사본 생성
+        final LinkedMap<String, Object> snapshot = new LinkedMap<>(record);
+        final String query = buildPreparedQuery();
+        final boolean enableLog = deepview;
+        
+        // CompletableFuture로 비동기 실행
+        return CompletableFuture.supplyAsync(() -> {
+            DBManager db = null;
+            Connection conn = null;
+            PreparedStatement pstmt = null;
+            int result = 0;
+            long startTime = System.nanoTime();
+
+            try {
+                db = DBFactory.get();
+                conn = db.getConnection();
+                conn.setAutoCommit(false);
+                
+                pstmt = conn.prepareStatement(query);
+                DBUtils.setValues(pstmt, snapshot.values());
+                result = pstmt.executeUpdate();
+                
+                conn.commit();
+                
+                if (enableLog) {
+                    logger.info("Async insert completed: {} row(s) affected", result);
+                }
+                
+            } catch (Exception e) {
+                // 롤백 처리
+                if (conn != null) {
+                    try {
+                        conn.rollback();
+                    } catch (SQLException rollbackEx) {
+                        logger.error("Rollback failed", rollbackEx);
+                    }
+                }
+                logger.error("Async insert failed: {}", CommonUtils.getExceptionMessage(e));
+                throw new RuntimeException("Async insert failed", e);
+                
+            } finally {
+                // 리소스 정리
+                if (db != null) {
+                    db.close(pstmt);
+                    db.close(conn);
+                }
+                
+                if (enableLog) {
+                    logger.info("Async insert query: [{}]", query);
+                    logger.info(SystemUtils.getElapsedTime(System.nanoTime() - startTime));
+                }
+            }
+            
+            return result;
+            
+        }, AsyncExecutor.getExecutor());
+    }
+    
+    /**
+     * 비동기 INSERT (콜백 방식)
+     * 성공/실패 콜백을 제공하는 버전
+     * 
+     * @param onSuccess 성공 시 실행될 콜백 (영향받은 행 수 전달)
+     * @param onFailure 실패 시 실행될 콜백 (예외 전달)
+     */
+    public void insertAsync(java.util.function.Consumer<Integer> onSuccess,
+                           java.util.function.Consumer<Throwable> onFailure) {
+        insertAsync()
+            .thenAccept(result -> {
+                if (onSuccess != null) {
+                    onSuccess.accept(result);
+                }
+            })
+            .exceptionally(throwable -> {
+                if (onFailure != null) {
+                    onFailure.accept(throwable);
+                }
+                return null;
+            });
+    }
+    
+    /**
+     * Fire-and-forget 방식의 비동기 INSERT
+     * 결과를 기다리지 않고 즉시 반환
+     */
+    public void insertAsyncFireAndForget() {
+        insertAsync().exceptionally(throwable -> {
+            logger.error("Fire-and-forget insert failed", throwable);
+            return null;
+        });
+    }
 	
 
 	

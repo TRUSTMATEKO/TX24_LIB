@@ -51,19 +51,28 @@ public class DBManager {
 				config.setUsername(dbMap.getString("username"));
 				config.setPassword(dbMap.getString("password"));
 				config.setDriverClassName(dbMap.getString("driver"));
+				
+				
 				config.setAutoCommit(dbMap.isTrue("autocommit"));
-				config.setPoolName(dbMap.getString("pool"));
+				config.setPoolName(dbMap.getString("pool","tx24-pool"));
 				//pool에 유지시킬 수 있는 최대 커넥션 수. pool의 커넥션 수가 옵션 값에 도달하게 되면 idle인 상태는 존재하지 않음.(default: 10)
 				config.setMaximumPoolSize(dbMap.getInt("max"));
 				//아무런 일을 하지않아도 적어도 이 옵션에 설정 값 size로 커넥션들을 유지해주는 설정. 최적의 성능과 응답성을 요구한다면 이 값은 설정하지 않는게 좋음. default값을 보면 이해할 수있음.
 				config.setMinimumIdle(dbMap.getInt("min"));
+				
+				//onnection 타임아웃 설정
+	            config.setKeepaliveTime(300000);     // 5분 (keep-alive)
+	            
+	            //Leak detection
+	            config.setLeakDetectionThreshold(60000);  // 1분
+				
 				//커넥션 풀에서 살아있을 수 있는 커넥션의 최대 수명시간. 사용중인 커넥션은 maxLifetime에 상관없이 제거되지않음. 사용중이지 않을 때만 제거됨. 
 				//풀 전체가아닌 커넥션 별로 적용이되는데 그 이유는 풀에서 대량으로 커넥션들이 제거되는 것을 방지하기 위함임. 
 				//강력하게 설정해야하는 설정 값으로 데이터베이스나 인프라의 적용된 connection time limit보다 작아야함. 
 				//0으로 설정하면 infinite lifetime이 적용됨(idleTimeout설정 값에 따라 적용 idleTimeout값이 설정되어 있을 경우 0으로 설정해도 무한 lifetime 적용 안됨). (default: 1800000 (30minutes))
 				config.setMaxLifetime(Math.min(dbMap.getLong("lifetime"), 30 * 60 * 1000L));
 				//pool에서 커넥션을 얻어오기전까지 기다리는 최대 시간, 허용가능한 wait time을 초과하면 SQLException을 던짐. 설정가능한 가장 작은 시간은 250ms (default: 30000 (30s))
-				config.setConnectionTimeout(Math.max(dbMap.getLong("timeout"), 250L));
+				config.setConnectionTimeout(Math.max(dbMap.getLong("timeout"), 30000));
 				//pool에 일을 안하는 커넥션을 유지하는 시간. 이 옵션은 minimumIdle이 maximumPoolSize보다 작게 설정되어 있을 때만 설정. pool에서 유지하는 최소 커넥션 수는 minimumIdle (A connection will never be retired as idle before this timeout.). 최솟값은 10000ms (default: 600000 (10minutes))
 				config.setIdleTimeout(Math.min(dbMap.getLong("idleTimeout"), config.getMaxLifetime()));
 				config.addDataSourceProperty("cachePrepStmts", "true");
@@ -209,7 +218,6 @@ public class DBManager {
 
 		try {
 			conn		= getConnection();
-			conn.setAutoCommit(false);
 			pstmt		= conn.prepareStatement(query);
 			result  	= pstmt.executeUpdate();
 			conn.commit();
@@ -238,7 +246,6 @@ public class DBManager {
 		try {
 			
 			conn		= getConnection();
-			conn.setAutoCommit(false);
 			pstmt		= conn.prepareStatement(query);
 			DBUtils.setValues(pstmt, record);
 			result  	= pstmt.executeUpdate();
@@ -268,7 +275,6 @@ public class DBManager {
 		
 		try {
 			conn		= getConnection();
-			conn.setAutoCommit(false);
 			pstmt		= conn.prepareStatement(query);
 			DBUtils.setValues(pstmt, record);
 			result  	= pstmt.executeUpdate();
@@ -301,7 +307,6 @@ public class DBManager {
 
 		try {
 			conn		= getConnection();
-			conn.setAutoCommit(false);
 			stmt		= conn.createStatement();
 			result  	= stmt.executeUpdate(query);
 			conn.commit();
