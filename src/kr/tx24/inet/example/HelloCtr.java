@@ -27,6 +27,18 @@ public class HelloCtr {
 	private ChannelHandlerContext ctx;
 	
 	
+	/*
+	 * 생성자는 반드시 Autowired 를 하거나 또는 default 생성자만 허용을 한다.
+	 * 그 외의 생성자는 무시된다.
+	 * @Autowired가 있으면 → 그 생성자 사용 , 없으면 → 기본 생성자 사용 , 둘 다 없으면 → 에러
+	 */
+	@Autowired
+	public HelloCtr(ChannelHandlerContext ctx, INet inet) {
+		this.ctx = ctx;
+		this.inet = inet;
+	}
+	
+	
 	@Route(target ="/")
 	public INet init() {
 		

@@ -2,6 +2,7 @@ package kr.tx24.inet.util;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -164,21 +165,17 @@ public class INetRespUtils {
         
         future.addListener((ChannelFutureListener) f -> {
             if (f.isSuccess()) {
-                logger.debug("Response sent successfully (async)");
                 completableFuture.complete(null);
             } else {
-                logger.error("Failed to send response (async)", f.cause());
                 completableFuture.completeExceptionally(f.cause());
             }
             
-            if (autoClose) {
-                if (delayBeforeClose > 0) {
-                    try {
-                        Thread.sleep(delayBeforeClose);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
+            if (autoClose && delayBeforeClose > 0) {
+                // 스케줄러 사용
+                f.channel().eventLoop().schedule(() -> {
+                    f.channel().close();
+                }, delayBeforeClose, TimeUnit.MILLISECONDS);
+            } else if (autoClose) {
                 f.channel().close();
             }
         });

@@ -6,6 +6,7 @@ import java.lang.reflect.Parameter;
 import java.util.function.Supplier;
 
 import io.netty.channel.ChannelHandlerContext;
+import kr.tx24.inet.mapper.Autowired;
 import kr.tx24.inet.mapper.Data;
 import kr.tx24.inet.mapper.Head;
 import kr.tx24.lib.inter.INet;
@@ -49,43 +50,87 @@ public class RouteInvoker {
         return method.invoke(controller, args);
     }
     
+    
     private Object createController(ChannelHandlerContext ctx, INet inet) throws Exception {
-        // 생성자 파라미터 확인
-    	Constructor<?>[] constructors = controllerClass.getDeclaredConstructors();
+        Constructor<?>[] constructors = controllerClass.getDeclaredConstructors();
+        
+        // @Autowired 생성자 개수 확인
+        int autowiredCount = 0;
+        Constructor<?> autowiredConstructor = null;
         
         for (Constructor<?> constructor : constructors) {
-            Class<?>[] paramTypes = constructor.getParameterTypes();
-            
-            if (paramTypes.length == 0) {
-                return constructor.newInstance();
+            if (constructor.isAnnotationPresent(Autowired.class)) {
+                autowiredCount++;
+                autowiredConstructor = constructor;
             }
-            
-            // 생성자 파라미터 준비
-            Object[] params = new Object[paramTypes.length];
-            for (int i = 0; i < paramTypes.length; i++) {
-                params[i] = resolveParameter(paramTypes[i], ctx, inet);
-            }
-            
-            return constructor.newInstance(params);
         }
         
-        throw new IllegalStateException("No suitable constructor found for " + controllerClass);
+        // @Autowired가 여러 개면 에러
+        if (autowiredCount > 1) {
+            throw new IllegalStateException(
+                "Multiple @Autowired constructors found in " + controllerClass.getName() + 
+                ". Only one @Autowired constructor is allowed."
+            );
+        }
+        
+        // @Autowired 생성자 사용
+        if (autowiredConstructor != null) {
+            return instantiateWithAutowired(autowiredConstructor, ctx, inet);
+        }
+        
+        // 기본 생성자 찾기
+        for (Constructor<?> constructor : constructors) {
+            if (constructor.getParameterCount() == 0) {
+                constructor.setAccessible(true);
+                return constructor.newInstance();
+            }
+        }
+        
+        // 생성자를 찾지 못함
+        throw new IllegalStateException(
+                controllerClass.getName() + 
+                " 에 맞는 생성자를 찾을 수 없습니다. @Autowired 생성자를 사용하거나 default 생성자를 사용하시기 바랍니다."
+            );
     }
+
+    private Object instantiateWithAutowired(Constructor<?> constructor, 
+                                           ChannelHandlerContext ctx, 
+                                           INet inet) throws Exception {
+        constructor.setAccessible(true);
+        
+        Class<?>[] paramTypes = constructor.getParameterTypes();
+        Object[] params = new Object[paramTypes.length];
+        
+        for (int i = 0; i < paramTypes.length; i++) {
+            params[i] = resolveParameter(paramTypes[i], ctx, inet);
+            
+            // null 체크
+            if (params[i] == null) {
+                throw new IllegalArgumentException(
+                    "Cannot resolve parameter type " + paramTypes[i].getName() + 
+                    " in @Autowired constructor of " + controllerClass.getName()
+                );
+            }
+        }
+        
+        return constructor.newInstance(params);
+    }
+    
+    
     
     private Object[] prepareArguments(ChannelHandlerContext ctx, INet inet) {
         Object[] args = new Object[parameterSuppliers.length];
         
-        for (int i = 0; i < parameterSuppliers.length; i++) {
-            // Context 설정
-        	ThreadLocalContext.set(ctx, inet);
-            try {
+        ThreadLocalContext.set(ctx, inet);
+        try {
+            for (int i = 0; i < parameterSuppliers.length; i++) {
                 args[i] = parameterSuppliers[i].get();
-            } finally {
-                ThreadLocalContext.clear();
             }
+            return args;
+        } finally {
+            ThreadLocalContext.clear(); // 항상 실행되도록
         }
         
-        return args;
     }
     
     private Supplier<?> createParameterSupplier(Parameter param) {
