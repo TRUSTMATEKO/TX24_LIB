@@ -1,4 +1,4 @@
-package kr.tx24.inet.mapper;
+package kr.tx24.inet.route;
 
 import io.netty.channel.ChannelHandlerContext;
 import kr.tx24.lib.inter.INet;

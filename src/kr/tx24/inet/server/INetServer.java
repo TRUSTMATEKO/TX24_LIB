@@ -25,7 +25,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import kr.tx24.inet.codec.INetDecoder;
 import kr.tx24.inet.codec.INetEncoder;
 import kr.tx24.inet.conf.INetConfigLoader;
-import kr.tx24.inet.mapper.Router;
+import kr.tx24.inet.route.Router;
 
 public class INetServer extends Thread{
 
@@ -98,14 +98,14 @@ public class INetServer extends Thread{
                     });	
 					
 					
-            logger.info("... server started ... : [{}:{}]", INetConfigLoader.getHost(), INetConfigLoader.getPort());
+            logger.info("Server started ... : [{}:{}]", INetConfigLoader.getHost(), INetConfigLoader.getPort());
             logger.info("Boss threads: 1, Worker threads: {}", Runtime.getRuntime().availableProcessors() * 2);
             
             ChannelFuture future = bootstrap.bind( INetConfigLoader.getHost(), INetConfigLoader.getPort()).sync();
 
             future.addListener((ChannelFutureListener) channelFuture -> {
                 if (channelFuture.isSuccess()) {
-                	 logger.info("... channel binded ...");
+                	 logger.info("Channel binded ...");
                 } else {
                     logger.error("Failed to bind server", channelFuture.cause());
                 }

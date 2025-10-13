@@ -1,4 +1,4 @@
-package kr.tx24.inet.mapper;
+package kr.tx24.inet.route;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -6,6 +6,8 @@ import java.lang.reflect.Parameter;
 import java.util.function.Supplier;
 
 import io.netty.channel.ChannelHandlerContext;
+import kr.tx24.inet.mapper.Data;
+import kr.tx24.inet.mapper.Head;
 import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.map.LinkedMap;
 

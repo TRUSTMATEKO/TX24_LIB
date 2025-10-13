@@ -1,4 +1,4 @@
-package kr.tx24.inet.mapper;
+package kr.tx24.inet.route;
  
 import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;
@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.reflect.ClassPath;
 
+import kr.tx24.inet.mapper.Controller;
+import kr.tx24.inet.mapper.Route;
 import kr.tx24.lib.lang.Abbreviator;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
@@ -46,7 +48,9 @@ public class Router {
             for (String pkg : packages) {
                 String trimmed = pkg.trim();
                 if (!trimmed.isEmpty()) {
-                    logger.info("Scanning package: {}", trimmed);
+                	if(SystemUtils.deepview()) {
+                		logger.info("Scanning package: {}", trimmed);
+                	}
                     scanPackage(trimmed);
                 }
             }
@@ -54,7 +58,9 @@ public class Router {
             if (ROUTE_MAP.isEmpty()) {
                 logger.warn("No routes found in package: {}", packageNames);
             } else {
-                logger.info("Registered {} routes", ROUTE_MAP.size());
+            	if(SystemUtils.deepview()) {
+            		logger.info("Registered {} routes", ROUTE_MAP.size());
+            	}
             }
             
             if (SystemUtils.deepview()) {
@@ -128,10 +134,13 @@ public class Router {
             
             RouteInvoker existing = ROUTE_MAP.putIfAbsent(normalizedTarget, invoker);
             if (existing != null) {
-                logger.warn("Duplicate route: {} (overwritten)", normalizedTarget);
+                logger.info("Duplicate route: {} (overwritten)", normalizedTarget);
                 ROUTE_MAP.put(normalizedTarget, invoker);
             } else {
-                logger.debug("Registered route: {} -> {}", normalizedTarget, invoker);
+            	/*
+            	if(SystemUtils.deepview()) {
+            		logger.debug("Registered route: {} -> {}", normalizedTarget, invoker);
+            	}*/
             }
         }
     }
@@ -188,14 +197,14 @@ public class Router {
         StringBuilder sb = new StringBuilder("\n========== Route Map ==========\n");
         
         ROUTE_MAP.forEach((target, invoker) -> {
-            sb.append(String.format("%-30s => %s (loggable: %s, authentication: %s)\n",
+            sb.append(String.format("%-30s => %-40s (loggable: %s, authRequired: %s)\n",
                     Abbreviator.format(target, '/', 29),
                     invoker.toString(),
                     invoker.isLoggable(),
                     invoker.isAuthRequired()));
         });
         
-        sb.append("==============================");
+        //sb.append("==============================");
         logger.info(sb.toString());
     }
     
