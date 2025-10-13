@@ -165,7 +165,7 @@ public class INet implements java.io.Serializable{
 		
 		
 		if(this.host == null || this.host.trim().equals("")) {
-			logger.info("");	
+			logger.info("host 정보를 찾을 수 없습니다.");	
 			this.head("message"	, "서버 주소가 없습니다. ");
 			return this.message;
 		}

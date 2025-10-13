@@ -8,9 +8,9 @@ import java.util.Locale;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Description;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.ByteArrayHttpMessageConverter;
@@ -56,7 +56,7 @@ import nz.net.ultraq.thymeleaf.layoutdialect.LayoutDialect;
  * Spring 6.x / Thymeleaf 기반 WebMVC 설정
  */
 @Configuration
-@ComponentScan(basePackages = {"kr.tx24.app"})
+@Import(ScanConfig.class)
 public class SpringConfig implements WebMvcConfigurer {
 	
 	

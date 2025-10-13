@@ -22,7 +22,7 @@
 	<target name="init">
 		<tstamp>
 			<format property="time" pattern="yyyy-MM-dd hh:mm:ss" />
-			<format property="jardate" pattern="yyMMdd" />
+			<format property="jardate" pattern="yyMM" />
 		</tstamp>
 		<mkdir dir="${basedir}\classes"/>
 		<mkdir dir="${basedir}\dist"/>

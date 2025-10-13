@@ -46,7 +46,7 @@ public class Server{
 	
 	public void start()throws Exception {
 		
-		TomcatConfig config = new TomcatConfigLoader().load();
+		TomcatConfig config = TomcatConfigLoader.load();
 		
 		
 		// 기존 JUL 핸들러를 제거하여 JUL의 콘솔/파일 출력 중복을 방지합니다.
@@ -149,7 +149,7 @@ public class Server{
 		
 		StandardContext ctx = (StandardContext) tomcat.addWebapp("", docBase+File.separator+"/webroot");
 		ctx.setReloadable(config.reloadable);		//개발시는 TRUE 하여 사용해도 됨.
-		ctx.setDisplayName("MIK");
+		ctx.setDisplayName(config.serverName);
 		ctx.setWorkDir(docBase+File.separator+"/classes/work");
 		ctx.setSessionCookieName(null);   // JSESSIONID 쿠키 생성 방지
 		ctx.setSessionTimeout(-1);        // 명시적으로 세션 무효화
@@ -242,8 +242,7 @@ public class Server{
 	        System.setProperty("java.net.preferIPv4Stack", "true");
 	        // JVM 모니터링 
 	        System.setProperty("JVM_MONITOR", "true");
-	        
-	        
+	    
 			LoadBalancer.start(10);
 			new Server().start();
 			
