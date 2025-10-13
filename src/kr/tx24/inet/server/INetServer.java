@@ -93,7 +93,7 @@ public class INetServer extends Thread{
                             p.addLast("inetDecoder", new INetDecoder());
                             p.addLast("chunkedWriter", new ChunkedWriteHandler());
                             p.addLast("inetEncoder", new INetEncoder());
-                            //p.addLast("handler", new Handler());
+                            p.addLast("handler", new INetHandler());
                         }
                     });	
 					
