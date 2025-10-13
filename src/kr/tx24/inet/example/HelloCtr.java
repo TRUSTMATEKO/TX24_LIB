@@ -4,11 +4,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.channel.ChannelHandlerContext;
+import kr.tx24.inet.mapper.Autowired;
 import kr.tx24.inet.mapper.Controller;
 import kr.tx24.inet.mapper.Data;
 import kr.tx24.inet.mapper.Head;
-import kr.tx24.inet.mapper.Autowired;
 import kr.tx24.inet.mapper.Route;
+import kr.tx24.inet.util.INetRespUtils;
 import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.mapper.JacksonUtils;
@@ -63,16 +64,19 @@ public class HelloCtr {
 	}
 	
 	
-	@Route(target ="/ctx", loggable =true, authentication=false)
-	public INet ctx(@Data LinkedMap<String,Object> data) {
+	@Route(target ="/ctx", loggable =true, authRequired=false)
+	public void ctx(@Data LinkedMap<String,Object> data) {
 		
 		logger.info("Autowhired INet : \nhead : {},\ndata:{}", new JacksonUtils().toJson(this.inet.head()), new JacksonUtils().toJson(this.inet.data()));
 		
 		logger.info("Autowhired head : \ndata : {}", new JacksonUtils().toJson(data));
 		
-		INet resInet = new INet();
-		resInet.head(data);
-		return resInet;
+		INetRespUtils.success(ctx)
+	        .message("test")
+	        .data("timestamp", System.currentTimeMillis())
+	        .send();
+		
+		return;
 	}
 	
 	

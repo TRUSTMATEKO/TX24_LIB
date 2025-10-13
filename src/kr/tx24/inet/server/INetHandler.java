@@ -11,6 +11,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import kr.tx24.inet.mapper.RouteInvoker;
 import kr.tx24.inet.mapper.Router;
+import kr.tx24.inet.util.INetRespUtils;
 import kr.tx24.inet.util.INetUtils;
 import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.lang.SystemUtils;
@@ -18,9 +19,6 @@ import kr.tx24.lib.mapper.JacksonUtils;
 
 /**
  * INet 프로토콜 핸들러
- * 
- * 중요: @Sharable 어노테이션이 없으므로 각 클라이언트 연결마다 새 인스턴스가 생성됩니다.
- * 따라서 startTime과 같은 인스턴스 변수는 스레드 안전합니다.
  */
 public class INetHandler extends SimpleChannelInboundHandler<INet> {
     
@@ -58,7 +56,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
             
             if (invoker == null) {
                 logger.warn("Route not found: {}", target);
-                sendError(ctx, "Target not found: " + target);
+                sendNotFoundError(ctx, target);
                 return;
             }
 
@@ -66,7 +64,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
             
         } catch (Exception e) {
             logger.error("Unexpected error processing request", e);
-            sendError(ctx, "내부 시스템 오류: " + e.getMessage());
+            sendInternalError(ctx, e);
         } finally {
             MDC.remove("id");
         }
@@ -80,36 +78,32 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
 				.head("message", "successful");
 		
 		try {
-			if (invoker.isLoggable() || SystemUtils.deepview()) {					// 요청 로깅
-				JacksonUtils json = jsonUtils.get();
-				logger.info("Request head:\n{}", json.toJson(inet.head()));
-				logger.info("Request data:\n{}", json.toJson(inet.data()));
-			}
+			logRequest(invoker, inet);
 		
 			Object returnObj = null;
 			
 			try {
 				returnObj = invoker.invoke(ctx, inet);								// RouteInvoker로 메서드 호출
 			} catch (Exception e) {
-				handleInvokeException(e, resInet);
+				handleInvokeException(ctx, e, extTrxId);
 				returnObj = resInet;
 			}
 		
+			// Void 타입이 아닌 경우에만 응답 처리
 			if (!invoker.getMethod().getReturnType().equals(Void.TYPE)) {			// Void 타입이 아닌 경우에만 응답 전송
-				prepareResponse(resInet, returnObj);
-				sendResponse(ctx, resInet, invoker, extTrxId);
+				sendResponse(ctx, returnObj, invoker, extTrxId);
 			}
 		
 		} catch (Exception e) {
 			logger.error("Error processing request", e);
-			sendError(ctx, "내부 시스템 오류: " + e.getMessage());
+			sendInternalError(ctx, e);
 		}
 	}
 
     /**
      * invoke 중 발생한 예외를 처리합니다.
      */
-    private void handleInvokeException(Exception e, INet resInet) {
+    private void handleInvokeException(ChannelHandlerContext ctx,Exception e, String extTrxId) {
         Throwable cause = e.getCause();
         if (cause != null) {
             logger.error("Business logic exception: {}", cause.getMessage(), cause);
@@ -119,9 +113,12 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
                 errorDetail += " at " + cause.getStackTrace()[0].toString();
             }
             
-            resInet.head("result", false)
-                   .head("message", "서버 내부 오류가 발생하였습니다.")
-                   .data("response", errorDetail);
+            INetRespUtils.error(ctx, "서버 내부 오류가 발생하였습니다.")
+            .data("response", errorDetail)
+            .data("extTrxId", extTrxId)
+            .data("exceptionType", cause.getClass().getSimpleName())
+            .delayBeforeClose(100L)
+            .send();
         } else {
             logger.error("Unexpected exception during invoke", e);
             throw new RuntimeException(e);
@@ -132,57 +129,61 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
     /**
      * 반환 객체를 기반으로 응답을 준비합니다.
      */
-    private void prepareResponse(INet resInet, Object returnObj) {
-        if (returnObj == null) {
-            return;
-        }
-
+    private void processReturnObject(INetRespUtils responseUtils, Object returnObj) {
         if (returnObj instanceof String) {
-            resInet.data("response", returnObj);
-        } else if (returnObj instanceof INet inet) {							
-            resInet.head().putAll(inet.head());
-            resInet.data().putAll(inet.data());
-        } else if (returnObj instanceof Map<?, ?> map) {						
+            responseUtils.data("response", returnObj);
+            
+        } else if (returnObj instanceof INet inet) {
+            responseUtils.head(inet.head());
+            responseUtils.data(inet.data());
+            
+        } else if (returnObj instanceof Map<?, ?> map) {
             @SuppressWarnings("unchecked")
             Map<String, Object> castedMap = (Map<String, Object>) map;
-            resInet.data(castedMap);
+            responseUtils.data(castedMap);
+            
         } else {
-            resInet.data("response", jsonUtils.get().pretty().toJson(returnObj));
+            // 일반 객체는 JSON으로 변환
+            responseUtils.dataFromJson("response", returnObj);
         }
     }
 
     /**
      * 응답을 전송합니다.
      */
-    private void sendResponse(ChannelHandlerContext ctx, INet resInet,RouteInvoker invoker, String extTrxId) {
+    private void sendResponse(ChannelHandlerContext ctx, Object returnObj,RouteInvoker invoker, String extTrxId) {
 
-		if (invoker.isLoggable() || SystemUtils.deepview()) {						// 응답 로깅
-			JacksonUtils json = jsonUtils.get().pretty();
-			logger.info("Response head:\n{}", json.toJson(resInet.head()));
-			logger.info("Response data:\n{}", json.toJson(resInet.data()));
+		INetRespUtils responseUtils = INetRespUtils.success(ctx);
+		
+		// 기본 정보 설정
+		responseUtils
+			//.head("result", true)
+			//.head("message", "successful")
+			.data("extTrxId", extTrxId);
+		
+		// 반환 객체에 따른 처리
+		if (returnObj != null) {
+			processReturnObject(responseUtils, returnObj);
 		}
 		
-		logger.info("Response - result: {}, message: {}",resInet.head().getString("result"),resInet.head().getString("message"));
+		// 로깅 설정
+		if (invoker.isLoggable() || SystemUtils.deepview()) {
+			responseUtils.enableLogging();
+		}
 		
-		resInet.data("extTrxId", extTrxId);
-		
-		ctx.writeAndFlush(resInet).addListener((ChannelFutureListener) future -> {	// 응답 전송 및 연결 종료
+		// 응답 전송
+		responseUtils
+			.delayBeforeClose(100L)
+			.send()
+			.addListener(future -> {
 			if (future.isSuccess()) {
-				double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
-				logger.info("Response sent successfully - elapsed: %.3fms", elapsedMs);
+			   double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
+			   logger.info("Response sent successfully - elapsed: {:.3f}ms", elapsedMs);
 			} else {
-				logger.error("Failed to send response", future.cause());
+			   logger.error("Failed to send response", future.cause());
 			}
-		
-			try {																	// 클라이언트에서 먼저 끊는 것 방지
-				Thread.sleep(100);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			}
-		
-			future.channel().close();
 		});
-    }
+	}
     
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
@@ -224,6 +225,45 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
             logger.info("Error response sent - elapsed: %.3fms", elapsedMs);
             future.channel().close();
         });
+    }
+    
+    
+    private void logRequest(RouteInvoker invoker, INet inet) {
+        if (invoker.isLoggable() || SystemUtils.deepview()) {
+            JacksonUtils json = jsonUtils.get();
+            logger.info("Request head:\n{}", json.toJson(inet.head()));
+            logger.info("Request data:\n{}", json.toJson(inet.data()));
+        }
+    }
+    
+    
+    private void sendNotFoundError(ChannelHandlerContext ctx, String target) {
+        INetRespUtils.error(ctx, "Target not found: " + target)
+            .data("target", target)
+            .data("errorType", "ROUTE_NOT_FOUND")
+            .delayBeforeClose(100L)	//100ms
+            .send()
+            .addListener(future -> {
+                double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
+                logger.info("Error response sent (Route Not Found) - elapsed: {:.3f}ms", 
+                           elapsedMs);
+            });
+    }
+    
+    private void sendInternalError(ChannelHandlerContext ctx, Exception e) {
+        String errorMessage = e.getMessage() != null ? 
+                             e.getMessage() : "Unknown error occurred";
+        
+        INetRespUtils.error(ctx, "내부 시스템 오류: " + errorMessage)
+            .data("errorType", e.getClass().getSimpleName())
+            .data("errorMessage", errorMessage)
+            .delayBeforeClose(100L)
+            .send()
+            .addListener(future -> {
+                double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
+                logger.info("Error response sent (Internal Error) - elapsed: {:.3f}ms", 
+                           elapsedMs);
+            });
     }
     
     
