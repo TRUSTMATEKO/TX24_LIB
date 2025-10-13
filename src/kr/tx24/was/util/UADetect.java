@@ -11,6 +11,7 @@ import com.blueconic.browscap.Capabilities;
 import com.blueconic.browscap.UserAgentParser;
 import com.blueconic.browscap.UserAgentService;
 
+import kr.tx24.lib.lang.AsyncExecutor;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 
@@ -86,13 +87,9 @@ public final class UADetect {
 	private static volatile UserAgentParser parser = null; 
 	
 	static {
-        // 서버 시작(main 스레드)을 막지 않도록 백그라운드 스레드에서 실행
-        Thread initializationThread = new Thread(() -> {
-            initialize();
-        }, "UserAgentParser-Initializer");
-        
-        initializationThread.setDaemon(true); // 서버 종료 시 함께 종료되도록 데몬 스레드로 설정
-        initializationThread.start();
+		AsyncExecutor.execute(() -> {
+	        initialize();
+	    });
     }
 	
 	private UADetect() {

@@ -83,6 +83,15 @@ public class Server{
 		    connector = new Connector(Http11Nio2Protocol.class.getName());
 		}*/
 		
+		
+		
+		Http2Protocol http2Protocol = new Http2Protocol();
+		http2Protocol.setMaxConcurrentStreams(128);  // 동시 스트림 수
+		http2Protocol.setMaxConcurrentStreamExecution(20);  // 동시 실행 수
+		http2Protocol.setInitialWindowSize(65535);  // 초기 윈도우 크기
+		connector.addUpgradeProtocol(http2Protocol);
+		
+		
 		connector.setProperty("server", config.host);
 		connector.setPort(config.port);
 		connector.setSecure(false);
@@ -90,7 +99,7 @@ public class Server{
 		connector.setMaxPostSize(config.maxPostSize);
 		connector.setURIEncoding(Was.DEFAULT_CHARSET.name());
 		connector.setXpoweredBy(false);
-		connector.addUpgradeProtocol(new Http2Protocol());
+		connector.addUpgradeProtocol(http2Protocol);
 		connector.setEnableLookups(false);
 		connector.setAllowTrace(false);
 		

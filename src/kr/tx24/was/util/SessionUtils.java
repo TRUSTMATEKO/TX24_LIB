@@ -115,21 +115,23 @@ public class SessionUtils {
 	 * @param sessionId
 	 * @param data
 	 */
-	public static void save(String sessionId,SharedMap<String,Object> data) {
-		if(CommonUtils.isEmpty(sessionId)) {
-			logger.warn("data 에 세션 아이디가 없으므로 세션을 저장할 수 없습니다.");
-			return;
-		}
-		StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
-		
-		RedisAsyncCommands<String, SharedMap<String, Object>> cmd = conn.async();
-		cmd.set(REDIS_SESSION_STORE+sessionId	,data);
-		cmd.expire(REDIS_SESSION_STORE+sessionId,Was.SESSION_EXPIRE);
-		conn.close();
-		
-		if(SystemUtils.deepview()) {
-			logger.info("session save : {}",REDIS_SESSION_STORE+sessionId);
-		}
+	public static void save(String sessionId, SharedMap<String, Object> data) {
+	    if (CommonUtils.isEmpty(sessionId)) {
+	        logger.warn("SessionId is empty, cannot save session");
+	        return;
+	    }
+
+	    try (StatefulRedisConnection<String, SharedMap<String, Object>> conn = Redis.getSharedMap()) {
+	        RedisAsyncCommands<String, SharedMap<String, Object>> cmd = conn.async();
+
+	        cmd.set(REDIS_SESSION_STORE + sessionId, data).thenCompose(v ->
+	            cmd.expire(REDIS_SESSION_STORE + sessionId, Was.SESSION_EXPIRE)
+	        ).toCompletableFuture().join();
+
+	        if (SystemUtils.deepview()) {
+	            logger.info("Session saved: {}", REDIS_SESSION_STORE + sessionId);
+	        }
+	    }
 	}
 	
 	/**
