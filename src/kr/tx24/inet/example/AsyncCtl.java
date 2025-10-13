@@ -14,8 +14,8 @@ import kr.tx24.inet.mapper.Autowired;
 import kr.tx24.inet.mapper.Controller;
 import kr.tx24.inet.mapper.Data;
 import kr.tx24.inet.mapper.Route;
-import kr.tx24.inet.server.INetAsyncExecutor;
 import kr.tx24.inet.util.INetRespUtils;
+import kr.tx24.lib.lang.AsyncExecutor;
 import kr.tx24.lib.map.LinkedMap;
 
 @Controller(target = "/async")
@@ -91,7 +91,7 @@ public class AsyncCtl {
                 logger.error("✗ Background work failed for taskId: {}", taskId, e);
                 saveTaskResult(taskId, "FAILED");
             }
-        }, INetAsyncExecutor.getExecutor());
+        }, AsyncExecutor.getExecutor());
     }
     
     /**
@@ -122,7 +122,7 @@ public class AsyncCtl {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("User fetch interrupted", e);
                 }
-            }, INetAsyncExecutor.getExecutor())
+            }, AsyncExecutor.getExecutor())
         )
         // 3단계: 권한 확인 (비동기)
         .thenComposeAsync(userInfo -> 
@@ -135,14 +135,14 @@ public class AsyncCtl {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("Permission check interrupted", e);
                 }
-            }, INetAsyncExecutor.getExecutor())
+            }, AsyncExecutor.getExecutor())
         )
         // 4단계: 최종 처리
         .thenAcceptAsync(hasPermission -> {
             logger.info("Step 4: Final processing - hasPermission: {}", hasPermission);
             // 최종 결과를 DB나 캐시에 저장
             saveProcessingResult(userId, hasPermission);
-        }, INetAsyncExecutor.getExecutor())
+        }, AsyncExecutor.getExecutor())
         // 에러 처리
         .exceptionally(throwable -> {
             logger.error("✗ Async chain failed for userId: {}", userId, throwable);
@@ -174,19 +174,19 @@ public class AsyncCtl {
                 logger.info("Task 1: Checking inventory");
                 sleep(2000);
                 return "Inventory: OK";
-            }, INetAsyncExecutor.getExecutor());
+            }, AsyncExecutor.getExecutor());
             
             CompletableFuture<String> task2 = CompletableFuture.supplyAsync(() -> {
                 logger.info("Task 2: Processing payment");
                 sleep(3000);
                 return "Payment: SUCCESS";
-            }, INetAsyncExecutor.getExecutor());
+            }, AsyncExecutor.getExecutor());
             
             CompletableFuture<String> task3 = CompletableFuture.supplyAsync(() -> {
                 logger.info("Task 3: Sending notification");
                 sleep(1000);
                 return "Notification: SENT";
-            }, INetAsyncExecutor.getExecutor());
+            }, AsyncExecutor.getExecutor());
             
             // 모든 작업이 완료될 때까지 대기
             CompletableFuture.allOf(task1, task2, task3)
@@ -209,7 +209,7 @@ public class AsyncCtl {
                     saveOrderResult(orderId, "FAILED");
                     return null;
                 });
-        }, INetAsyncExecutor.getExecutor());
+        }, AsyncExecutor.getExecutor());
     }
     
     /**
@@ -234,7 +234,7 @@ public class AsyncCtl {
                 logger.info("Performing work with timeout...");
                 sleep(5000); // 5초 걸리는 작업 (타임아웃보다 김)
                 return "Work completed";
-            }, INetAsyncExecutor.getExecutor());
+            }, AsyncExecutor.getExecutor());
             
             try {
                 // 3초 타임아웃 설정
@@ -250,7 +250,7 @@ public class AsyncCtl {
                 logger.error("✗ Work failed for requestId: {}", requestId, e);
                 saveWorkResult(requestId, "FAILED");
             }
-        }, INetAsyncExecutor.getExecutor());
+        }, AsyncExecutor.getExecutor());
     }
     
     /**
@@ -277,7 +277,7 @@ public class AsyncCtl {
             future.thenRunAsync(() -> {
                 logger.info("Processing priority request immediately");
                 processPriorityRequest(dataId);
-            }, INetAsyncExecutor.getExecutor());
+            }, AsyncExecutor.getExecutor());
             
         } else {
             // 일반 요청: 큐에 추가
@@ -291,7 +291,7 @@ public class AsyncCtl {
             future.thenRunAsync(() -> {
                 logger.info("Adding normal request to queue");
                 addToQueue(dataId);
-            }, INetAsyncExecutor.getExecutor());
+            }, AsyncExecutor.getExecutor());
         }
         
         // 공통 후처리
@@ -323,7 +323,7 @@ public class AsyncCtl {
         // 응답 후 재시도 로직 수행
         responseFuture.thenRunAsync(() -> {
             executeWithRetry(taskId, maxRetries);
-        }, INetAsyncExecutor.getExecutor());
+        }, AsyncExecutor.getExecutor());
     }
     
     /**
@@ -351,11 +351,11 @@ public class AsyncCtl {
             // 하지만 현재 구조에서는 연결이 이미 닫혔을 수 있음
             logger.info("✓ Broadcast progress: 50%");
             
-        }, INetAsyncExecutor.getExecutor())
+        }, AsyncExecutor.getExecutor())
         .thenRunAsync(() -> {
             sleep(2000);
             logger.info("✓ Broadcast completed: 100%");
-        }, INetAsyncExecutor.getExecutor())
+        }, AsyncExecutor.getExecutor())
         .exceptionally(throwable -> {
             logger.error("✗ Broadcast failed", throwable);
             return null;
@@ -387,12 +387,12 @@ public class AsyncCtl {
                 logger.info("Performing long-running job: {}", jobId);
                 sleep(3000);
                 return processJob(jobId);
-            }, INetAsyncExecutor.getExecutor())
+            }, AsyncExecutor.getExecutor())
         )
         .thenAcceptAsync(result -> {
             logger.info("Job completed: {}, sending callback to: {}", jobId, callbackUrl);
             sendCallback(callbackUrl, jobId, result);
-        }, INetAsyncExecutor.getExecutor())
+        }, AsyncExecutor.getExecutor())
         .exceptionally(throwable -> {
             logger.error("✗ Job failed: {}", jobId, throwable);
             sendCallback(callbackUrl, jobId, "FAILED: " + throwable.getMessage());
@@ -489,13 +489,13 @@ public class AsyncCtl {
     
     public static void shutdown() {
         logger.info("Shutting down executor service...");
-        INetAsyncExecutor.getExecutor().shutdown();
+        AsyncExecutor.getExecutor().shutdown();
         try {
-            if (!INetAsyncExecutor.getExecutor().awaitTermination(10, TimeUnit.SECONDS)) {
-            	INetAsyncExecutor.getExecutor().shutdownNow();
+            if (!AsyncExecutor.getExecutor().awaitTermination(10, TimeUnit.SECONDS)) {
+            	AsyncExecutor.getExecutor().shutdownNow();
             }
         } catch (InterruptedException e) {
-        	INetAsyncExecutor.getExecutor().shutdownNow();
+        	AsyncExecutor.getExecutor().shutdownNow();
             Thread.currentThread().interrupt();
         }
     }

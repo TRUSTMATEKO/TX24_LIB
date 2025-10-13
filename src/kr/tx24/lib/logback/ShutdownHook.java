@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.db.DBManager;
+import kr.tx24.lib.lang.AsyncExecutor;
 import kr.tx24.lib.lang.JvmStatusUtils;
 import kr.tx24.lib.redis.Redis;
 
@@ -36,7 +37,8 @@ public class ShutdownHook extends Thread {
 			RedisAppender.shutdown();
 			Redis.shutdown();
 			System.err.println("Redis        : shutting down ..... ");
-			
+			 // AsyncExecutor 종료 추가
+            AsyncExecutor.shutdown();
 		}catch(Exception e){
 			
 		}finally{

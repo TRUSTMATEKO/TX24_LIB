@@ -135,8 +135,7 @@ public class INetServer extends Thread{
             if (workerGroup != null) {
             	workerGroup.shutdownGracefully().sync();
             }
-         // AsyncExecutor 종료 추가
-            INetAsyncExecutor.shutdown();
+           
             
             logger.info("... server stop! ...");
         } catch (InterruptedException  ex) {
