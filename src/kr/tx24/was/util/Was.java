@@ -21,6 +21,7 @@ public class Was {
 
 	public static final List<String> EXCLUDE_PREFIXS = Arrays.asList("/static/","/upload/","/assets/","/axios/","/dashboard/","/otp/");
 	public static final List<String> EXCLUDE_SUFFIXS = Arrays.asList(".js", ".css", ".jpg", ".gif", ".png",".eot",".svg",".ttf",".woff",".woff2",".otf",".ico",".zip",".map");
+	public static final String COMPRESSABLE	= "text/html,text/xml,text/plain,application/javascript,application/json,text/css,text/csv,application/x-javascript,application/vnd.api+json,image/svg+xml";
 	public static final List<String> PRIVATE_NETWORK = Arrays.asList("10","192.168.","172.16.");
 	public static final Charset DEFAULT_CHARSET= StandardCharsets.UTF_8;
 	

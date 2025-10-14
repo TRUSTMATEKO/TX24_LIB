@@ -9,6 +9,7 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.context.annotation.ClassPathBeanDefinitionScanner;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Component;
 
 import kr.tx24.was.conf.TomcatConfig;
@@ -21,9 +22,13 @@ public class ScanConfig implements BeanDefinitionRegistryPostProcessor {
 	
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-        System.err.println("Dynamic scanning start...");
-        ClassPathBeanDefinitionScanner scanner = new ClassPathBeanDefinitionScanner(registry, true);
         
+    	// scanning 코드 실행
+        ClassLoader original = Thread.currentThread().getContextClassLoader();
+        ClassPathBeanDefinitionScanner scanner = new ClassPathBeanDefinitionScanner(registry, true);
+        scanner.setResourceLoader(new PathMatchingResourcePatternResolver(original));
+        
+
         TomcatConfig config = TomcatConfigLoader.load();
         
         String[] packages = config.basePackage.split(",");

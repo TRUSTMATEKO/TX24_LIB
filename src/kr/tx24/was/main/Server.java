@@ -4,6 +4,7 @@ package kr.tx24.was.main;
 import java.io.File;
 import java.net.InetAddress;
 import java.util.Locale;
+import java.util.Set;
 
 import org.apache.catalina.WebResourceRoot;
 import org.apache.catalina.WebResourceSet;
@@ -22,11 +23,13 @@ import org.apache.tomcat.util.scan.StandardJarScanner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
+import org.springframework.web.SpringServletContainerInitializer;
 
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.was.conf.TomcatConfig;
 import kr.tx24.was.conf.TomcatConfigLoader;
+import kr.tx24.was.core.ServletConfiguration;
 import kr.tx24.was.util.Was;
 
 
@@ -40,7 +43,7 @@ public class Server{
 
 	private static Logger logger 				= LoggerFactory.getLogger(Server.class );
 	
-	private static final String COMPRESSABLE	= "text/html,text/xml,text/plain,application/javascript,application/json,text/css,text/csv,application/x-javascript,application/vnd.api+json,image/svg+xml";
+	
 
 
 	
@@ -57,8 +60,9 @@ public class Server{
         // SLF4J (Logback) 설정을 통해 제어됩니다.
         //logger.debug("Java Util Logging (JUL) 비릿징으로 SLF4J 사용");
         
-		
-		
+        
+        
+        
 		String docBase = new File(config.contextPath).getCanonicalPath();
 		if(SystemUtils.deepview()) {
 			logger.info("contextpath : {}",docBase);
@@ -69,7 +73,6 @@ public class Server{
 		tomcat.setBaseDir(docBase);
 		tomcat.setHostname(config.host);
 		tomcat.getService().setName(config.serverName);
-		
 		
 
 		
@@ -89,7 +92,6 @@ public class Server{
 		http2Protocol.setMaxConcurrentStreams(128);  // 동시 스트림 수
 		http2Protocol.setMaxConcurrentStreamExecution(20);  // 동시 실행 수
 		http2Protocol.setInitialWindowSize(65535);  // 초기 윈도우 크기
-		connector.addUpgradeProtocol(http2Protocol);
 		
 		
 		connector.setProperty("server", config.host);
@@ -120,7 +122,7 @@ public class Server{
 		protocol.setDisableUploadTimeout(false);
 		protocol.setMaxHttpHeaderSize(1024*4);
 		protocol.setCompression("on");
-		protocol.setCompressibleMimeType(COMPRESSABLE);
+		protocol.setCompressibleMimeType(Was.COMPRESSABLE);
 		protocol.setCompressionMinSize(2048);
 		protocol.setNoCompressionUserAgents("gozilla, traviata");
 		protocol.setMaxHeaderCount(100);
@@ -155,7 +157,14 @@ public class Server{
 		ctx.setSessionTimeout(-1);        // 명시적으로 세션 무효화
 		ctx.setManager(null);             // 세션 매니저 제거
 		
-	
+		//이 부분이 애매한 부분이다.
+		//classes 는 이상 없으나 was.jar 로 배포를 하다보니 Spring에 대한 기본 ClassLoader 가 동작하지 않는다.
+		//이에 따라서 아래와 같이 Initializer 를 직접 선언한다.
+		//아래와 같이 설정을 했을때 위의 /webroot 에 대한 ctx 가 무시되는 문제가 발생할 수 있다.. 현재 구조로는 이상없다. 타입리프 , 스피링, html 구조 
+		ctx.addServletContainerInitializer(		//Embedded Tomcat에서 SpringServletContainerInitializer를 직접 등록해야만 spring 관련된 것을 읽을 수 있
+		    new SpringServletContainerInitializer(),
+		    Set.of(ServletConfiguration.class)
+		);
 		
 		ctx.setCookieProcessor(new Rfc6265CookieProcessor());
 		ctx.addLifecycleListener(new FixContextListener());
@@ -169,12 +178,12 @@ public class Server{
 		ctx.addLocaleEncodingMappingParameter(Locale.KOREAN.toString(), Was.DEFAULT_CHARSET.displayName());
 		ctx.addLocaleEncodingMappingParameter(Locale.ENGLISH.toString(), Was.DEFAULT_CHARSET.displayName());
 		
-	
+		//jar scanner 는 필요에 따라 구동해야 한다.
 		if (ctx.getJarScanner() instanceof StandardJarScanner) {
 			StandardJarScanner jarScanner = (StandardJarScanner) ctx.getJarScanner();
 			jarScanner.setScanClassPath(false);
 			jarScanner.setScanManifest(false);
-		//ctx.setJarScanner(jarScanner);
+			//ctx.setJarScanner(jarScanner);
 		}
 		 
 		

@@ -38,7 +38,18 @@ public class ServletConfiguration implements WebApplicationInitializer {
 	@Override
 	public void onStartup(ServletContext servletContext) throws ServletException {
 		
+		//아래는 jar/ classes 에 의한 onStartUp 이 두번 이상 실행되는 것을 방지하기 위함입니다.
+		String key = "spring.onstartup.done";
+		if (servletContext.getAttribute(key) != null) {
+	        return;
+	    }
+		servletContext.setAttribute(key, Boolean.TRUE);
+
+		
+		
 		TomcatConfig config = TomcatConfigLoader.load();
+		
+		Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 		
 		// 1. Root Application Context (Service, Repository, etc.)
 		AnnotationConfigWebApplicationContext rootContext = new AnnotationConfigWebApplicationContext();
