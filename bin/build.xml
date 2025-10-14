@@ -60,6 +60,8 @@
                 <attribute name="Jar-Version" value="${jardate}"/>
                 <attribute name="Last-Updated-Date" value="${time}"/>
             </manifest>
+		
+			
         </jar>
 		<jar destfile="${dist.dir}\tx24_inet_${jardate}.jar" basedir="${classes.dir}" includes="kr/tx24/inet/**" excludes="kr/tx24/inet/example/**">
             <manifest>
