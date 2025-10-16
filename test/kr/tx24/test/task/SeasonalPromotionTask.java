@@ -1,4 +1,4 @@
-package kr.tx24.task.example;
+package kr.tx24.test.task;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

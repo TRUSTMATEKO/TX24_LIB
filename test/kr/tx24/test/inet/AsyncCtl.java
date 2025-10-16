@@ -1,4 +1,4 @@
-package kr.tx24.inet.example;
+package kr.tx24.test.inet;
 
 import java.util.HashMap;
 import java.util.Map;

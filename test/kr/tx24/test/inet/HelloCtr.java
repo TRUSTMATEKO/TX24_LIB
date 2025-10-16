@@ -1,4 +1,4 @@
-package kr.tx24.inet.example;
+package kr.tx24.test.inet;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -8,6 +8,7 @@ import java.net.NetworkInterface;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -267,6 +268,19 @@ public class SystemUtils {
     
     public static String getJavaVersion() {
     	return System.getProperty("java.version");
+    }
+    
+    
+    public static String getPackagePrefix(int depth) {
+    	String packageName = SystemUtils.class.getPackageName();
+
+        String[] parts = packageName.split("\\.");
+
+        if (parts.length <= depth) {
+            return packageName;
+        }
+
+        return String.join(".", Arrays.copyOf(parts, depth));
     }
     
     

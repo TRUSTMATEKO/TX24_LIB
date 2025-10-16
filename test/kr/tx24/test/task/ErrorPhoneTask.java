@@ -1,4 +1,4 @@
-package kr.tx24.task.example;
+package kr.tx24.test.task;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,8 +14,8 @@ import kr.tx24.task.annotation.Task;
  desc = "Task that demonstrates error handling / 오류 처리 시연 Task",
  priority = 20
 )
-public class ErrorProneTask implements Runnable {
- private static final Logger logger = LoggerFactory.getLogger(ErrorProneTask.class);
+public class ErrorPhoneTask implements Runnable {
+ private static final Logger logger = LoggerFactory.getLogger(ErrorPhoneTask.class);
  
  @Override
  public void run() {

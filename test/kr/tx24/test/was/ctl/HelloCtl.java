@@ -1,4 +1,4 @@
-package kr.tx24.was.example.ctl;
+package kr.tx24.test.was.ctl;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;

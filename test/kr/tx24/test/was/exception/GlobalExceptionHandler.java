@@ -1,4 +1,4 @@
-package kr.tx24.was.example.exception;
+package kr.tx24.test.was.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

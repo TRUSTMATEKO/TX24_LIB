@@ -1,4 +1,4 @@
-package kr.tx24.was.example.custom;
+package kr.tx24.test.was.custom;
 
 import org.springframework.stereotype.Service;
 

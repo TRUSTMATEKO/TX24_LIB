@@ -183,12 +183,19 @@ public class TaskScanner {
         // period 파싱
         Duration period = parsePeriod(annotation.period());
         
-        // 월 단위 주기인 경우 startDay 필수 검증
+     // 월 단위 주기인 경우 startDay 필수 검증
         if (period.toDays() == -1 && annotation.startDay().isBlank()) {
             throw new IllegalArgumentException(
                 String.format("Task '%s': Monthly period (M) requires startDay / " +
                              "월 단위 주기(M)는 startDay가 필수입니다", annotation.name())
             );
+        }
+        
+        // ✨ 새로운 검증: 월 단위에 요일 지정 시 경고
+        if (period.toDays() == -1 && annotation.daysOfWeek().length > 0) {
+            logger.warn("Task '{}': daysOfWeek is ignored for monthly period (M) / " +
+                       "월 단위 주기(M)에서는 daysOfWeek가 무시됩니다", 
+                annotation.name());
         }
         
         // daysOfWeek 파싱

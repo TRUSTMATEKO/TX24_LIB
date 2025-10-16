@@ -1,4 +1,4 @@
-package kr.tx24.task.example;
+package kr.tx24.test.task;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,3 +21,4 @@ public class DisabledTask implements Runnable {
  public void run() {
      logger.info("This task should not run / 이 Task는 실행되면 안 됨");
  }
+}
