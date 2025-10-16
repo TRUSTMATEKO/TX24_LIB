@@ -74,7 +74,7 @@ public class TaskScheduler {
             // Task 인스턴스 생성
             Runnable task = taskConfig.taskClass().getDeclaredConstructor().newInstance();
             
-            // ✅ 월 단위 Task는 별도 처리
+            //월 단위 Task는 별도 처리
             if (taskConfig.isMonthlyPeriod()) {
                 scheduleMonthlyTask(taskConfig, task);
             } else {
@@ -97,8 +97,9 @@ public class TaskScheduler {
         Runnable wrappedTask = createWrappedTask(taskConfig, task);
         
         // 첫 실행까지의 지연 시간 계산
-        long initialDelay = calculateInitialDelay(taskConfig);
-        long period = taskConfig.period().toMillis();  // ✅ 양수
+        LocalDateTime now = LocalDateTime.now(zoneId);
+        long initialDelay = calculateInitialDelay(taskConfig,now);
+        long period = taskConfig.period().toMillis(); 
         
         // 스케줄링
         ScheduledFuture<?> future = AsyncExecutor.scheduleAtFixedRate(
@@ -114,39 +115,38 @@ public class TaskScheduler {
             .plus(initialDelay, ChronoUnit.MILLIS);
         
         StringBuilder sb = new StringBuilder();
-        sb.append("\nScheduled Task: '").append(taskConfig.name()).append("'\n");
-        sb.append(" - Class : ").append(taskConfig.taskClass().getSimpleName()).append("\n");
-        sb.append(" - First run : ")
-            .append(DateUtils.toString(firstRun,"yyyy-MM-dd HH:mm:ss"))
-            .append("\n");
-        sb.append(" - Schedule : ")
+        sb.append("\nScheduled Task\n - Name : ").append(taskConfig.name());
+        sb.append("\n - Class : ").append(taskConfig.taskClass().getName());
+        sb.append("\n - First run : ")
+            .append(DateUtils.toString(firstRun,"yyyy-MM-dd HH:mm:ss"));
+        sb.append("\n - Schedule : ")
             .append(taskConfig.getScheduledTimeString())
             .append(" every ")
-            .append(taskConfig.getPeriodString())
-            .append("\n");
+            .append(taskConfig.getPeriodString());
 
         if (!taskConfig.daysOfWeek().isEmpty()) {
-            sb.append(" - Days of week : ")
-                .append(taskConfig.getDaysOfWeekString())
-                .append("\n");
+            sb.append("\n - Days of week : ")
+                .append(taskConfig.getDaysOfWeekString());
         }
 
         if (taskConfig.startDate() != null) {
-            sb.append(" - Start day : ")
-                .append(taskConfig.getStartDateString())
-                .append("\n");
+            sb.append("\n - Start day : ")
+                .append(taskConfig.getStartDateString());
         }
 
         if (taskConfig.endDate() != null) {
-        	sb.append(" - End day : ")
-                .append(taskConfig.getEndDateString())
-                .append("\n");
+        	sb.append("\n - End day : ")
+                .append(taskConfig.getEndDateString());
+        }
+        
+        if (taskConfig.scheduledTime() != null) {
+        	sb.append("\n - Time : ")
+                .append(taskConfig.getScheduledTimeString());
         }
 
         if (!taskConfig.description().isBlank()) {
-            sb.append(" - Description : ")
-                .append(taskConfig.description())
-                .append("\n");
+            sb.append("\n - Description : ")
+                .append(taskConfig.description());
         }
 
         logger.info(sb.toString());
@@ -157,7 +157,8 @@ public class TaskScheduler {
      */
     private void scheduleMonthlyTask(TaskConfig taskConfig, Runnable task) {
         // 첫 실행까지의 지연 시간 계산
-        long initialDelay = calculateInitialDelay(taskConfig);
+    	LocalDateTime now = LocalDateTime.now(zoneId);
+        long initialDelay = calculateInitialDelay(taskConfig,now);
         
         // ✅ 일회성 스케줄 + 실행 후 자동 재스케줄링
         Runnable wrappedTask = () -> {
@@ -189,32 +190,27 @@ public class TaskScheduler {
             .plus(initialDelay, ChronoUnit.MILLIS);
         
         StringBuilder sb = new StringBuilder();
-        sb.append("\nScheduled Task: '").append(taskConfig.name()).append("'\n");
-        sb.append(" - Class : ").append(taskConfig.taskClass().getSimpleName()).append("\n");
-        sb.append(" - First run : ")
-            .append(firstRun.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
-            .append("\n");
-        sb.append(" - Schedule : ")
+        sb.append("\nScheduled Task\n - Name : ").append(taskConfig.name());
+        sb.append("\n - Class : ").append(taskConfig.taskClass().getName());
+        sb.append("\n - First run : ")
+        .append(DateUtils.toString(firstRun,"yyyy-MM-dd HH:mm:ss"));
+        sb.append("\n - Schedule : ")
             .append(taskConfig.getScheduledTimeString())
-            .append(" every M (Monthly / 매월)")
-            .append("\n");
+            .append(" every M (Monthly / 매월)");
 
         if (taskConfig.startDate() != null) {
-            sb.append(" - Start day : ")
-                .append(taskConfig.getStartDateString())
-                .append("\n");
+            sb.append("\n - Start day : ")
+                .append(taskConfig.getStartDateString());
         }
 
         if (taskConfig.endDate() != null) {
-            sb.append(" - End day : ")
-                .append(taskConfig.getEndDateString())
-                .append("\n");
+            sb.append("\n - End day : ")
+                .append(taskConfig.getEndDateString());
         }
 
         if (!taskConfig.description().isBlank()) {
-            sb.append(" - Description : ")
-                .append(taskConfig.description())
-                .append("\n");
+            sb.append("\n - Description : ")
+                .append(taskConfig.description());
         }
 
         logger.info(sb.toString());
@@ -321,8 +317,7 @@ public class TaskScheduler {
     /**
      * 첫 실행 시간 계산 (요일 및 시작일 고려)
      */
-    private long calculateInitialDelay(TaskConfig taskConfig) {
-        LocalDateTime now = LocalDateTime.now(zoneId);
+    private long calculateInitialDelay(TaskConfig taskConfig,LocalDateTime now) {
         
         // 월 단위 주기 처리
         if (taskConfig.isMonthlyPeriod()) {

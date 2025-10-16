@@ -176,49 +176,63 @@ public class TaskScanner {
      * @Task Annotation으로부터 TaskConfig 생성
      */
     private static TaskConfig createTaskConfig(Task annotation, Class<? extends Runnable> taskClass) {
-        // time 파싱
-        LocalTime scheduledTime = parseTime(annotation.time());
+        String taskName = annotation.name();
         
-        // period 파싱
-        Duration period = parsePeriod(annotation.period());
+        // 1. time 파싱 및 검증
+        LocalTime scheduledTime;
+        if (annotation.time().isBlank()) {
+            scheduledTime = LocalTime.now().withSecond(0).withNano(0);
+        } else {
+            scheduledTime = parseTimeWithValidation(annotation.time(), taskName);
+        }
         
-        // 월 단위 주기인 경우 startDay 필수 검증
+        // 2. period 파싱 및 검증
+        Duration period = parsePeriodWithValidation(annotation.period(), taskName);
+        
+        // 3. 월 단위 주기인 경우 startDay 필수 검증
         if (period.toDays() == -1 && annotation.startDay().isBlank()) {
             throw new IllegalArgumentException(
                 String.format("Task '%s': Monthly period (M) requires startDay / " +
-                             "월 단위 주기(M)는 startDay가 필수입니다", annotation.name())
+                             "월 단위 주기(M)는 startDay가 필수입니다", taskName)
             );
         }
         
-        // ✨ 새로운 검증: 월 단위에 요일 지정 시 경고
+        // 4. 월 단위에 요일 지정 시 경고
         if (period.toDays() == -1 && annotation.daysOfWeek().length > 0) {
-            logger.warn("Task '{}': daysOfWeek is ignored for monthly period (M) / " +
-                       "월 단위 주기(M)에서는 daysOfWeek가 무시됩니다", 
-                annotation.name());
+            logger.debug("Task '{}': daysOfWeek is ignored for monthly period (M) / " +
+                       "월 단위 주기(M)에서는 daysOfWeek가 무시됩니다", taskName);
         }
         
-        // daysOfWeek 파싱
+        // 5. daysOfWeek 파싱
         Set<DayOfWeek> daysOfWeek = Set.of(annotation.daysOfWeek());
         
-        // startDay 파싱
-        LocalDate startDate = null;
+        // 6. startDay 파싱 및 검증
+        LocalDate startDate;
         if (annotation.startDay().isBlank()) {
             startDate = DateUtils.getDay();
-        }else {
-        	startDate = LocalDate.parse(annotation.startDay(), DATE_FORMATTER);
+        } else {
+            startDate = parseDateWithValidation(annotation.startDay(), "startDay", taskName);
         }
         
-        // endDay지정되지 않으면 20991231로 기본 설정
+        // 7. endDay 파싱 및 검증
         LocalDate endDate;
         if (!annotation.endDay().isBlank()) {
-            endDate = LocalDate.parse(annotation.endDay(), DATE_FORMATTER);
+            endDate = parseDateWithValidation(annotation.endDay(), "endDay", taskName);
+            
+            // endDay가 startDay보다 이전인지 검증
+            if (endDate.isBefore(startDate)) {
+                throw new IllegalArgumentException(
+                    String.format("Task '%s': endDay (%s) must be after startDay (%s) / " +
+                                 "endDay는 startDay 이후여야 합니다",
+                        taskName, annotation.endDay(), annotation.startDay())
+                );
+            }
         } else {
-            endDate = LocalDate.parse("20991231", DATE_FORMATTER);  // 기본값: 2099-12-31
-            //logger.debug("Task '{}': endDay not specified, defaulting to 20991231 ", annotation.name());
+            endDate = LocalDate.parse("20991231", DATE_FORMATTER);
         }
         
         return new TaskConfig(
-            annotation.name(),
+            taskName,
             taskClass,
             scheduledTime,
             period,
@@ -229,6 +243,168 @@ public class TaskScanner {
             annotation.desc(),
             annotation.priority()
         );
+    }
+
+    /**
+     * "HH:mm" 형식의 시간 파싱 및 검증
+     */
+    private static LocalTime parseTimeWithValidation(String timeStr, String taskName) {
+        if (timeStr == null || timeStr.isBlank()) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': time cannot be empty / time은 비어있을 수 없습니다", taskName)
+            );
+        }
+        
+        // 기본 형식 검증 (HH:mm)
+        if (!timeStr.matches("^\\d{2}:\\d{2}$")) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': time must be in 'HH:mm' format (got: '%s') / " +
+                             "time은 'HH:mm' 형식이어야 합니다",
+                    taskName, timeStr)
+            );
+        }
+        
+        try {
+            String[] parts = timeStr.split(":");
+            int hour = Integer.parseInt(parts[0]);
+            int minute = Integer.parseInt(parts[1]);
+            
+            // 범위 검증
+            if (hour < 0 || hour > 23) {
+                throw new IllegalArgumentException(
+                    String.format("Task '%s': hour must be between 0 and 23 (got: %d) / " +
+                                 "시간은 0~23 사이여야 합니다",
+                        taskName, hour)
+                );
+            }
+            
+            if (minute < 0 || minute > 59) {
+                throw new IllegalArgumentException(
+                    String.format("Task '%s': minute must be between 0 and 59 (got: %d) / " +
+                                 "분은 0~59 사이여야 합니다",
+                        taskName, minute)
+                );
+            }
+            
+            return LocalTime.of(hour, minute);
+            
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': time contains invalid numbers (got: '%s') / " +
+                             "time에 잘못된 숫자가 포함되어 있습니다",
+                    taskName, timeStr)
+            );
+        }
+    }
+
+    /**
+     * "M", "2w", "1d", "2h", "30m" 형식의 기간 파싱 및 검증
+     */
+    private static Duration parsePeriodWithValidation(String periodStr, String taskName) {
+        if (periodStr == null || periodStr.isBlank()) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': period cannot be empty / period는 비어있을 수 없습니다", taskName)
+            );
+        }
+        
+        periodStr = periodStr.trim();
+        
+        // "M" 단독인 경우 (월 단위, startDay 기준)
+        if ("M".equals(periodStr)) {
+            return Duration.ofDays(-1); // 특수 플래그 (-1 = 월 단위)
+        }
+        
+        // 형식 검증: 숫자 + 단위(w|d|h|m)
+        if (!periodStr.matches("^\\d+[wdhm]$")) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': period must be in format 'M' or 'number+unit(w|d|h|m)' (got: '%s') / " +
+                             "period는 'M' 또는 '숫자+단위(w|d|h|m)' 형식이어야 합니다 (예: 2w, 1d, 2h, 30m)",
+                    taskName, periodStr)
+            );
+        }
+        
+        try {
+            char unit = periodStr.charAt(periodStr.length() - 1);
+            long value = Long.parseLong(periodStr.substring(0, periodStr.length() - 1));
+            
+            // 값 범위 검증
+            if (value <= 0) {
+                throw new IllegalArgumentException(
+                    String.format("Task '%s': period value must be positive (got: %d) / " +
+                                 "period 값은 양수여야 합니다",
+                        taskName, value)
+                );
+            }
+            
+            // 비현실적인 큰 값 검증
+            if (value > 365 && unit == 'w') {
+                logger.warn("Task '{}': unusually large period value: {}w ({}weeks)", 
+                    taskName, value, value);
+            } else if (value > 3650 && unit == 'd') {
+                logger.warn("Task '{}': unusually large period value: {}d ({}days)", 
+                    taskName, value, value);
+            }
+            
+            return switch (unit) {
+                case 'w' -> Duration.ofDays(value * 7);   // 주
+                case 'd' -> Duration.ofDays(value);       // 일
+                case 'h' -> Duration.ofHours(value);      // 시간
+                case 'm' -> Duration.ofMinutes(value);    // 분
+                default -> throw new IllegalArgumentException(
+                    String.format("Task '%s': unsupported period unit '%c' (allowed: w, d, h, m) / " +
+                                 "지원하지 않는 단위입니다",
+                        taskName, unit)
+                );
+            };
+            
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': period contains invalid number (got: '%s') / " +
+                             "period에 잘못된 숫자가 포함되어 있습니다",
+                    taskName, periodStr)
+            );
+        }
+    }
+
+    /**
+     * "yyyyMMdd" 형식의 날짜 파싱 및 검증
+     */
+    private static LocalDate parseDateWithValidation(String dateStr, String fieldName, String taskName) {
+        if (dateStr == null || dateStr.isBlank()) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': %s cannot be empty / %s는 비어있을 수 없습니다",
+                    taskName, fieldName, fieldName)
+            );
+        }
+        
+        // 기본 형식 검증 (yyyyMMdd - 8자리 숫자)
+        if (!dateStr.matches("^\\d{8}$")) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': %s must be in 'yyyyMMdd' format (got: '%s') / " +
+                             "%s는 'yyyyMMdd' 형식이어야 합니다 (예: 20250101)",
+                    taskName, fieldName, dateStr, fieldName)
+            );
+        }
+        
+        try {
+            LocalDate date = LocalDate.parse(dateStr, DATE_FORMATTER);
+            
+            // 합리적인 날짜 범위 검증 (1900 ~ 2100)
+            if (date.getYear() < 1900 || date.getYear() > 2100) {
+                logger.warn("Task '{}': {} has unusual year: {} (expected: 1900-2100)", 
+                    taskName, fieldName, date.getYear());
+            }
+            
+            return date;
+            
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                String.format("Task '%s': %s is not a valid date (got: '%s') / " +
+                             "%s가 유효하지 않은 날짜입니다 (예: 20250101, 20251231)",
+                    taskName, fieldName, dateStr, fieldName),
+                e
+            );
+        }
     }
     
     /**
