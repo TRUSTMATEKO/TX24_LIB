@@ -208,9 +208,14 @@ public class TaskScanner {
         }
         
         // endDay 파싱
-        LocalDate endDate = null;
+        LocalDate endDate;
         if (!annotation.endDay().isBlank()) {
             endDate = LocalDate.parse(annotation.endDay(), DATE_FORMATTER);
+        } else {
+            endDate = LocalDate.parse("20991231", DATE_FORMATTER);  // 기본값: 2099-12-31
+            logger.debug("Task '{}': endDay not specified, defaulting to 20991231 / " +
+                        "종료일이 지정되지 않아 20991231로 설정됨", 
+                annotation.name());
         }
         
         return new TaskConfig(

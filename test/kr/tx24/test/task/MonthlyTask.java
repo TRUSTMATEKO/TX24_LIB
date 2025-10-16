@@ -11,7 +11,7 @@ import kr.tx24.task.annotation.Task;
  time = "09:00",
  period = "M",
  startDay = "20250101",
- endDay = "20251231",
+ endDay = "20261231",
  enabled = true,
  desc = "Monthly settlement - runs on 1st of every month / 월간 정산 - 매월 1일 실행",
  priority = 60

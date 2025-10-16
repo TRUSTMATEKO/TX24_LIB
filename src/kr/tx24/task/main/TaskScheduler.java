@@ -80,47 +80,12 @@ public class TaskScheduler {
             // Task 인스턴스 생성
             Runnable task = taskConfig.taskClass().getDeclaredConstructor().newInstance();
             
-            // Wrapper로 감싸서 요일/날짜 체크 및 비동기 실행
-            Runnable wrappedTask = createWrappedTask(taskConfig, task);
-            
-            // 첫 실행까지의 지연 시간 계산
-            long initialDelay = calculateInitialDelay(taskConfig);
-            long period = taskConfig.period().toMillis();
-            
-            // 스케줄링 (AsyncExecutor 사용)
-            ScheduledFuture<?> future = AsyncExecutor.scheduleAtFixedRate(
-                wrappedTask,
-                initialDelay,
-                period,
-                TimeUnit.MILLISECONDS
-            );
-            
-            scheduledFutures.add(future);
-            
-            LocalDateTime firstRun = LocalDateTime.now(zoneId)
-                .plus(initialDelay, ChronoUnit.MILLIS);
-            
-            logger.info("✓ Scheduled Task / Task 스케줄 등록: '{}'", taskConfig.name());
-            logger.info("  - Class / 클래스: {}", taskConfig.taskClass().getSimpleName());
-            logger.info("  - First run / 첫 실행: {}", 
-                firstRun.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-            );
-            logger.info("  - Schedule / 스케줄: {} every {} on {}", 
-                taskConfig.getScheduledTimeString(), 
-                taskConfig.getPeriodString(),
-                taskConfig.getDaysOfWeekString()
-            );
-            
-            if (taskConfig.startDate() != null) {
-                logger.info("  - Start date / 시작일: {}", taskConfig.getStartDateString());
+            // ✅ 월 단위 Task는 별도 처리
+            if (taskConfig.isMonthlyPeriod()) {
+                scheduleMonthlyTask(taskConfig, task);
+            } else {
+                scheduleRegularTask(taskConfig, task);
             }
-            if (taskConfig.endDate() != null) {
-                logger.info("  - End date / 종료일: {}", taskConfig.getEndDateString());
-            }
-            if (!taskConfig.description().isBlank()) {
-                logger.info("  - Description / 설명: {}", taskConfig.description());
-            }
-            logger.info("");
             
         } catch (Exception e) {
             logger.error("✗ Failed to schedule task / Task 스케줄 등록 실패: '{}' [{}]", 
@@ -129,6 +94,113 @@ public class TaskScheduler {
                 e
             );
         }
+    }
+    
+    /**
+     * 일반 Task 스케줄링 (고정 주기)
+     */
+    private void scheduleRegularTask(TaskConfig taskConfig, Runnable task) {
+        // Wrapper로 감싸서 요일/날짜 체크 및 비동기 실행
+        Runnable wrappedTask = createWrappedTask(taskConfig, task);
+        
+        // 첫 실행까지의 지연 시간 계산
+        long initialDelay = calculateInitialDelay(taskConfig);
+        long period = taskConfig.period().toMillis();  // ✅ 양수
+        
+        // 스케줄링
+        ScheduledFuture<?> future = AsyncExecutor.scheduleAtFixedRate(
+            wrappedTask,
+            initialDelay,
+            period,
+            TimeUnit.MILLISECONDS
+        );
+        
+        scheduledFutures.add(future);
+        
+        LocalDateTime firstRun = LocalDateTime.now(zoneId)
+            .plus(initialDelay, ChronoUnit.MILLIS);
+        
+        logger.info("✓ Scheduled Task / Task 스케줄 등록: '{}'", taskConfig.name());
+        logger.info("  - Class / 클래스: {}", taskConfig.taskClass().getSimpleName());
+        logger.info("  - First run / 첫 실행: {}", 
+            firstRun.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        );
+        logger.info("  - Schedule / 스케줄: {} every {}", 
+            taskConfig.getScheduledTimeString(), 
+            taskConfig.getPeriodString()
+        );
+        
+        if (!taskConfig.daysOfWeek().isEmpty()) {
+            logger.info("  - Days of week / 실행 요일: {}", taskConfig.getDaysOfWeekString());
+        }
+        
+        if (taskConfig.startDate() != null) {
+            logger.info("  - Start date / 시작일: {}", taskConfig.getStartDateString());
+        }
+        if (taskConfig.endDate() != null) {
+            logger.info("  - End date / 종료일: {}", taskConfig.getEndDateString());
+        }
+        if (!taskConfig.description().isBlank()) {
+            logger.info("  - Description / 설명: {}", taskConfig.description());
+        }
+        logger.info("");
+    }
+
+    /**
+     * 월 단위 Task 스케줄링 (일회성 + 재스케줄링)
+     */
+    private void scheduleMonthlyTask(TaskConfig taskConfig, Runnable task) {
+        // 첫 실행까지의 지연 시간 계산
+        long initialDelay = calculateInitialDelay(taskConfig);
+        
+        // ✅ 일회성 스케줄 + 실행 후 자동 재스케줄링
+        Runnable wrappedTask = () -> {
+            LocalDate executionDate = LocalDate.now(zoneId);
+            
+            // 날짜 범위 확인
+            if (!taskConfig.isValidDate(executionDate)) {
+                logger.debug("⏭ Skipping monthly task / 월간 Task 스킵: '{}' - Outside valid date range", 
+                    taskConfig.name());
+                return;
+            }
+            
+            // 비동기 실행
+            AsyncExecutor.execute(() -> executeTask(taskConfig, task));
+            
+            // ✅ 실행 후 다음 달 같은 시각으로 재스케줄링
+            scheduleMonthlyTask(taskConfig, task);
+        };
+        
+        ScheduledFuture<?> future = AsyncExecutor.schedule(
+            wrappedTask,
+            initialDelay,
+            TimeUnit.MILLISECONDS
+        );
+        
+        scheduledFutures.add(future);
+        
+        LocalDateTime firstRun = LocalDateTime.now(zoneId)
+            .plus(initialDelay, ChronoUnit.MILLIS);
+        
+        logger.info("✓ Scheduled Monthly Task / 월간 Task 스케줄 등록: '{}'", taskConfig.name());
+        logger.info("  - Class / 클래스: {}", taskConfig.taskClass().getSimpleName());
+        logger.info("  - First run / 첫 실행: {}", 
+            firstRun.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        );
+        logger.info("  - Schedule / 스케줄: {} every M (Monthly / 매월)", 
+            taskConfig.getScheduledTimeString()
+        );
+        
+        if (taskConfig.startDate() != null) {
+            logger.info("  - Start date / 시작일: {}", taskConfig.getStartDateString());
+        }
+        if (taskConfig.endDate() != null) {
+            logger.info("  - End date / 종료일: {}", taskConfig.getEndDateString());
+        }
+        if (!taskConfig.description().isBlank()) {
+            logger.info("  - Description / 설명: {}", taskConfig.description());
+        }
+        logger.info("");
     }
     
     /**
