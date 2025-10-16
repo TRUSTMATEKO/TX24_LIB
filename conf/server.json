@@ -3,7 +3,7 @@
   "contextPath" : "./",
   "host" : "0.0.0.0",
   "port" : 8080,
-  "basePackage" : "kr.tx24.was.example",
+  "basePackage" : "kr.tx24.test.was",
   "maxPostSize" : 20971520,
   "acceptCount" : 128,
   "maxThreads" : 512,

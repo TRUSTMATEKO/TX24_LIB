@@ -199,17 +199,43 @@ public class TaskScheduler {
             // 월 단위: 다음 달 같은 일자
             LocalDate nextDate = taskConfig.getNextMonthlyDate(current.toLocalDate());
             return LocalDateTime.of(nextDate, taskConfig.scheduledTime());
-        } else {
-            // 일반 주기: 현재 시간 + period
-            LocalDateTime next = current.with(taskConfig.scheduledTime()).plus(taskConfig.period());
-            
-            // 이미 지난 시간이면 다음 주기로
-            if (next.isBefore(current) || next.isEqual(current)) {
-                next = findNextValidDateTime(taskConfig, next);
+        }
+        
+        Duration period = taskConfig.period();
+        
+        // 시간 단위 주기 (1일 미만): 단순 더하기
+        if (period.toDays() < 1) {
+            return current.plus(period);
+        }
+        
+        // 일 단위 이상: scheduledTime 기준 + 요일 고려
+        LocalDate nextDate = current.toLocalDate().plusDays(1); // 최소 다음 날부터
+        LocalDateTime next = LocalDateTime.of(nextDate, taskConfig.scheduledTime());
+        
+        // 요일 조건 확인
+        if (!taskConfig.daysOfWeek().isEmpty()) {
+            // 유효한 요일 찾기 (최대 7일 검색)
+            int daysSearched = 0;
+            while (!taskConfig.isValidDayOfWeek(next.getDayOfWeek()) && daysSearched < 7) {
+                next = next.plusDays(1);
+                daysSearched++;
             }
             
-            return next;
+            if (daysSearched >= 7) {
+                logger.warn("Could not find valid day of week for task '{}' within 7 days / " +
+                           "7일 내에 유효한 요일을 찾을 수 없습니다: '{}'", 
+                    taskConfig.name(), taskConfig.name());
+            }
         }
+        
+        // 종료일 확인
+        if (taskConfig.endDate() != null && next.toLocalDate().isAfter(taskConfig.endDate())) {
+            logger.info("Task '{}' has reached end date / Task '{}'가 종료일에 도달했습니다", 
+                taskConfig.name(), taskConfig.name());
+            return next.plusYears(10); // 실질적으로 종료
+        }
+        
+        return next;
     }
     
     /**

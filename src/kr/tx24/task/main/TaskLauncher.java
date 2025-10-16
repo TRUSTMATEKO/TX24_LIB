@@ -29,7 +29,7 @@ public class TaskLauncher {
         
         try {
             // 설정 로드
-            String basePackage = System.getProperty("task.base.package", "kr.tx24.task");
+            String basePackage = System.getProperty("task.base.package", "kr.tx24.test");
             String timezone = System.getProperty("task.timezone", "Asia/Seoul");
             
             logger.info("╔════════════════════════════════════════════════════════════════╗");
