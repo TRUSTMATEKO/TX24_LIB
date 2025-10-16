@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.lang.AsyncExecutor;
+import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.task.config.TaskConfig;
 
 /**
@@ -32,19 +33,16 @@ public class TaskScheduler {
         this.taskConfigs = taskConfigs;
         this.zoneId = ZoneId.of(timezone);
         
-        logger.info("TaskScheduler initialized / TaskScheduler 초기화");
-        logger.info("Timezone / 시간대: {}", zoneId);
+        logger.info("TaskScheduler initialized , Timezone : {}",zoneId);
     }
     
     public void start() {
         if (taskConfigs.isEmpty()) {
-            logger.warn("No tasks to schedule / 스케줄할 Task가 없습니다");
+            logger.warn("스케줄할 Task가 없습니다");
             return;
         }
         
-        logger.info("\n╔════════════════════════════════════════════════════════════════╗");
-        logger.info("║        Starting Task Scheduler / Task 스케줄러 시작           ║");
-        logger.info("╚════════════════════════════════════════════════════════════════╝");
+        logger.info("Starting Task Scheduler");
         
         taskConfigs.stream()
             .filter(TaskConfig::enabled)
@@ -54,10 +52,8 @@ public class TaskScheduler {
             .filter(TaskConfig::enabled)
             .count();
         
-        logger.info("\n════════════════════════════════════════════════════════════════");
-        logger.info("Task Scheduler Started / Task 스케줄러 시작 완료");
-        logger.info("Active Tasks / 활성화된 Task 수: {}", activeTaskCount);
-        logger.info("════════════════════════════════════════════════════════════════\n");
+        
+        logger.info("Task Scheduler Started , Active Tasks : {}",activeTaskCount);
     }
     
     private void scheduleTask(TaskConfig taskConfig) {
@@ -66,12 +62,10 @@ public class TaskScheduler {
             LocalDate today = LocalDate.now(zoneId);
             if (!taskConfig.isValidDate(today)) {
                 if (taskConfig.startDate() != null && today.isBefore(taskConfig.startDate())) {
-                    logger.info("⏸ Task '{}' will start from {} / Task '{}'는 {}부터 시작됩니다", 
-                        taskConfig.name(), taskConfig.getStartDateString(),
+                    logger.info("Task '{}'는 {}부터 시작됩니다", 
                         taskConfig.name(), taskConfig.getStartDateString());
                 } else if (taskConfig.endDate() != null && today.isAfter(taskConfig.endDate())) {
-                    logger.info("⏹ Task '{}' has ended on {} / Task '{}'는 {}에 종료되었습니다", 
-                        taskConfig.name(), taskConfig.getEndDateString(),
+                    logger.info("Task '{}'는 {}에 종료되었습니다", 
                         taskConfig.name(), taskConfig.getEndDateString());
                 }
                 return;
@@ -88,8 +82,7 @@ public class TaskScheduler {
             }
             
         } catch (Exception e) {
-            logger.error("✗ Failed to schedule task / Task 스케줄 등록 실패: '{}' [{}]", 
-                taskConfig.name(), 
+            logger.error("Task 스케줄 등록 실패: '{}' [{}]\n,{}",taskConfig.name(), 
                 taskConfig.taskClass().getSimpleName(), 
                 e
             );
@@ -120,30 +113,43 @@ public class TaskScheduler {
         LocalDateTime firstRun = LocalDateTime.now(zoneId)
             .plus(initialDelay, ChronoUnit.MILLIS);
         
-        logger.info("✓ Scheduled Task / Task 스케줄 등록: '{}'", taskConfig.name());
-        logger.info("  - Class / 클래스: {}", taskConfig.taskClass().getSimpleName());
-        logger.info("  - First run / 첫 실행: {}", 
-            firstRun.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-        );
-        logger.info("  - Schedule / 스케줄: {} every {}", 
-            taskConfig.getScheduledTimeString(), 
-            taskConfig.getPeriodString()
-        );
-        
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nScheduled Task: '").append(taskConfig.name()).append("'\n");
+        sb.append(" - Class : ").append(taskConfig.taskClass().getSimpleName()).append("\n");
+        sb.append(" - First run : ")
+            .append(DateUtils.toString(firstRun,"yyyy-MM-dd HH:mm:ss"))
+            .append("\n");
+        sb.append(" - Schedule : ")
+            .append(taskConfig.getScheduledTimeString())
+            .append(" every ")
+            .append(taskConfig.getPeriodString())
+            .append("\n");
+
         if (!taskConfig.daysOfWeek().isEmpty()) {
-            logger.info("  - Days of week / 실행 요일: {}", taskConfig.getDaysOfWeekString());
+            sb.append(" - Days of week : ")
+                .append(taskConfig.getDaysOfWeekString())
+                .append("\n");
         }
-        
+
         if (taskConfig.startDate() != null) {
-            logger.info("  - Start date / 시작일: {}", taskConfig.getStartDateString());
+            sb.append(" - Start day : ")
+                .append(taskConfig.getStartDateString())
+                .append("\n");
         }
+
         if (taskConfig.endDate() != null) {
-            logger.info("  - End date / 종료일: {}", taskConfig.getEndDateString());
+        	sb.append(" - End day : ")
+                .append(taskConfig.getEndDateString())
+                .append("\n");
         }
+
         if (!taskConfig.description().isBlank()) {
-            logger.info("  - Description / 설명: {}", taskConfig.description());
+            sb.append(" - Description : ")
+                .append(taskConfig.description())
+                .append("\n");
         }
-        logger.info("");
+
+        logger.info(sb.toString());
     }
 
     /**
@@ -159,7 +165,7 @@ public class TaskScheduler {
             
             // 날짜 범위 확인
             if (!taskConfig.isValidDate(executionDate)) {
-                logger.debug("⏭ Skipping monthly task / 월간 Task 스킵: '{}' - Outside valid date range", 
+                logger.debug("Skipping monthly task '{}' - Outside valid date range", 
                     taskConfig.name());
                 return;
             }
@@ -182,25 +188,36 @@ public class TaskScheduler {
         LocalDateTime firstRun = LocalDateTime.now(zoneId)
             .plus(initialDelay, ChronoUnit.MILLIS);
         
-        logger.info("✓ Scheduled Monthly Task / 월간 Task 스케줄 등록: '{}'", taskConfig.name());
-        logger.info("  - Class / 클래스: {}", taskConfig.taskClass().getSimpleName());
-        logger.info("  - First run / 첫 실행: {}", 
-            firstRun.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-        );
-        logger.info("  - Schedule / 스케줄: {} every M (Monthly / 매월)", 
-            taskConfig.getScheduledTimeString()
-        );
-        
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nScheduled Task: '").append(taskConfig.name()).append("'\n");
+        sb.append(" - Class : ").append(taskConfig.taskClass().getSimpleName()).append("\n");
+        sb.append(" - First run : ")
+            .append(firstRun.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
+            .append("\n");
+        sb.append(" - Schedule : ")
+            .append(taskConfig.getScheduledTimeString())
+            .append(" every M (Monthly / 매월)")
+            .append("\n");
+
         if (taskConfig.startDate() != null) {
-            logger.info("  - Start date / 시작일: {}", taskConfig.getStartDateString());
+            sb.append(" - Start day : ")
+                .append(taskConfig.getStartDateString())
+                .append("\n");
         }
+
         if (taskConfig.endDate() != null) {
-            logger.info("  - End date / 종료일: {}", taskConfig.getEndDateString());
+            sb.append(" - End day : ")
+                .append(taskConfig.getEndDateString())
+                .append("\n");
         }
+
         if (!taskConfig.description().isBlank()) {
-            logger.info("  - Description / 설명: {}", taskConfig.description());
+            sb.append(" - Description : ")
+                .append(taskConfig.description())
+                .append("\n");
         }
-        logger.info("");
+
+        logger.info(sb.toString());
     }
     
     /**
@@ -213,15 +230,13 @@ public class TaskScheduler {
             
             // 날짜 범위 확인
             if (!taskConfig.isValidDate(executionDate)) {
-                logger.debug("⏭ Skipping task / Task 스킵: '{}' - Outside valid date range / 유효 날짜 범위 밖", 
-                    taskConfig.name());
+                logger.debug("Skipping task : '{}' - Outside valid date range", taskConfig.name());
                 return;
             }
             
             // 요일 확인
             if (!taskConfig.isValidDayOfWeek(executionDay)) {
-                logger.debug("⏭ Skipping task / Task 스킵: '{}' - Not scheduled for {} / {}에 스케줄되지 않음", 
-                    taskConfig.name(), executionDay, executionDay);
+                logger.debug("Skipping task : '{}' - Not scheduled for {} ", taskConfig.name(), executionDay);
                 return;
             }
             
@@ -237,30 +252,26 @@ public class TaskScheduler {
         String taskName = taskConfig.name();
         LocalDateTime startTime = LocalDateTime.now(zoneId);
         
+        StringBuilder sb = new StringBuilder();
+        
         try {
-            logger.info("▶ Executing task / Task 실행 중: '{}' at / 시각: {}", 
-                taskName, 
-                startTime.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-            );
+        	
+        	sb.append(String.format("%n#Task %s %n", taskConfig.name()));
+        	
+            // 다음 실행 예정 시각 계산 및 로깅
+            LocalDateTime nextRun = calculateNextRunTime(taskConfig, startTime);
             
             task.run();
-            
-            LocalDateTime endTime = LocalDateTime.now(zoneId);
-            long duration = ChronoUnit.MILLIS.between(startTime, endTime);
-            
-            // 다음 실행 예정 시각 계산 및 로깅
-            LocalDateTime nextRun = calculateNextRunTime(taskConfig, endTime);
-            
-            logger.info("✓ Task completed / Task 완료: '{}' (Duration / 소요시간: {}ms)", 
-                taskName, duration);
-            logger.info("  Next scheduled / 다음 실행 예정: {}", 
-                nextRun.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-            
+           
+            sb.append(String.format(" - complete , Duration :%dms%n", ChronoUnit.MILLIS.between(startTime, LocalDateTime.now(zoneId))));
+            sb.append(String.format(" - next scheduled : %s%n", DateUtils.toString(nextRun, "yyyy-MM-dd HH:mm:ss")));
+           
+            logger.info(sb.toString());
         } catch (Exception e) {
-            logger.warn("✗ Task execution failed / Task 실행 실패: '{}'", taskName);
-            logger.warn("  Error / 오류: {} - {}", e.getClass().getSimpleName(), e.getMessage());
-            logger.warn("  Stack trace / 스택 트레이스:", e);
+            logger.warn("Task execution failed : '{}' , \nError :{}\n {}", taskName,e.getClass().getSimpleName(), e.getMessage(),e);
         }
+        
+        
     }
     
     /**
@@ -294,16 +305,13 @@ public class TaskScheduler {
             }
             
             if (daysSearched >= 7) {
-                logger.warn("Could not find valid day of week for task '{}' within 7 days / " +
-                           "7일 내에 유효한 요일을 찾을 수 없습니다: '{}'", 
-                    taskConfig.name(), taskConfig.name());
+                logger.warn("7일 내에 유효한 요일을 찾을 수 없습니다: '{}'",taskConfig.name());
             }
         }
         
         // 종료일 확인
         if (taskConfig.endDate() != null && next.toLocalDate().isAfter(taskConfig.endDate())) {
-            logger.info("Task '{}' has reached end date / Task '{}'가 종료일에 도달했습니다", 
-                taskConfig.name(), taskConfig.name());
+            logger.info("Task '{}'가 종료일에 도달했습니다",taskConfig.name());
             return next.plusYears(10); // 실질적으로 종료
         }
         
@@ -377,13 +385,14 @@ public class TaskScheduler {
         
         long delay = ChronoUnit.MILLIS.between(now, scheduledDateTime);
         
+        /*
         logger.debug("Monthly task '{}': Current={}, Next execution={}, Delay={}ms", 
-            taskConfig.name(),
-            now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-            scheduledDateTime.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+            taskConfig.name(), 
+            DateUtils.toString(now, "yyyy-MM-dd HH:mm:ss") , 
+            DateUtils.toString(scheduledDateTime, "yyyy-MM-dd HH:mm:ss"),
             delay
         );
-        
+        */
         return delay;
     }
     
@@ -417,9 +426,7 @@ public class TaskScheduler {
             }
         }
         
-        logger.warn("Could not find valid execution date for task '{}' within 365 days / " +
-                   "365일 내에 Task '{}'의 유효한 실행 날짜를 찾을 수 없습니다", 
-            taskConfig.name(), taskConfig.name());
+        logger.warn("365일 내에 Task '{}'의 유효한 실행 날짜를 찾을 수 없습니다",taskConfig.name());
         return candidate;
     }
     
@@ -427,13 +434,13 @@ public class TaskScheduler {
      * 모든 스케줄된 Task 취소
      */
     public void cancelAll() {
-        logger.info("Cancelling all scheduled tasks / 모든 스케줄된 Task 취소 중...");
+        logger.info("Cancelling all scheduled tasks ");
         
         for (ScheduledFuture<?> future : scheduledFutures) {
             future.cancel(false);
         }
         
         scheduledFutures.clear();
-        logger.info("All scheduled tasks cancelled / 모든 스케줄된 Task 취소 완료");
+        logger.info("All scheduled tasks cancelled");
     }
 }

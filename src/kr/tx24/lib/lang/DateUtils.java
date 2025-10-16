@@ -23,10 +23,12 @@ public class DateUtils {
     private static final String MONTH_PATTERN = "yyyyMM";
     private static final String TIME_PATTERN = "HHmmss";
     private static final String DATE_PATTERN = "yyyyMMddHHmmss";
+    private static final String DATE_PATTERN2 = "yyyy-MM-dd HH:mm:ss";
 
     private static final DateTimeFormatter DTF_DAY = DateTimeFormatter.ofPattern(DAY_PATTERN);
     private static final DateTimeFormatter DTF_TIME = DateTimeFormatter.ofPattern(TIME_PATTERN);
     private static final DateTimeFormatter DTF_DATE = DateTimeFormatter.ofPattern(DATE_PATTERN);
+    private static final DateTimeFormatter DTF_DATE2 = DateTimeFormatter.ofPattern(DATE_PATTERN2);
 
     // ---------------- Current Day / Time / Date ----------------
     
@@ -135,6 +137,13 @@ public class DateUtils {
         if (cal == null) return "";
         return toString(cal.getTime());
     }
+    
+    public static String toString(LocalDateTime ldt) {
+        if (ldt == null) return "";
+        return DTF_DATE.format(ldt);
+    }
+    
+    
     
     
     public static String toString(Temporal temporal, String... pattern) {

@@ -24,12 +24,13 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 import org.springframework.web.SpringServletContainerInitializer;
 
+import kr.tx24.lib.lang.AsyncExecutor;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.was.conf.TomcatConfig;
 import kr.tx24.was.conf.TomcatConfigLoader;
-import kr.tx24.was.core.EmbeddedReloadWatcher;
 import kr.tx24.was.core.ServletConfiguration;
+import kr.tx24.was.util.UADetect;
 import kr.tx24.was.util.Was;
 
 /**
@@ -252,6 +253,12 @@ public class Server{
 		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
 		    scheduler.shutdown();
 		}));*/
+		
+		
+		
+		AsyncExecutor.execute(() -> {
+	        UADetect.initialize();
+	    });
 		
 	}
 	

@@ -33,10 +33,18 @@ public class Redis {
         if (client != null) return;
         try {
             SystemUtils.init();
-            client = RedisClient.create(SystemUtils.getRedisSystemUri());
-            logger.info("Redis initialized: {}", SystemUtils.getRedisSystemUri());
+            if(SystemUtils.getRedisSystemUri().equals(SystemUtils.REDIS_INITIAL)) {
+            	throw new Exception("NOT_SET");
+            }else {
+	            client = RedisClient.create(SystemUtils.getRedisSystemUri());
+	            logger.info("Redis initialized: {}", SystemUtils.getRedisSystemUri());
+            }
         } catch (Exception e) {
-            logger.error("Redis client initialization failed: {}", SystemUtils.getRedisSystemUri(), e);
+        	if(e.getMessage().startsWith("NOT_SET")) {
+        		logger.warn("Redis 에 주소가 등록되지 않았습니다 .-DREDIS -DREDIS_KEY ");	
+        	}else {
+        		logger.warn("Redis client initialization failed: {}", SystemUtils.getRedisSystemUri(), e);
+        	}
         }
     }
 

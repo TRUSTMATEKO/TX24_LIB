@@ -36,7 +36,7 @@ public record TaskConfig(
 	    
 	    public String getPeriodString() {
 	        if (isMonthlyPeriod()) {
-	            return "M (Monthly / 매월)";
+	            return "M (Monthly)";
 	        }
 	        
 	        long weeks = period.toDays() / 7;
@@ -45,19 +45,19 @@ public record TaskConfig(
 	        long minutes = period.toMinutes();
 	        
 	        if (weeks > 0 && period.toDays() % 7 == 0) {
-	            return weeks + "w (Week / 주)";
+	            return weeks + "w (Week)";
 	        } else if (days > 0) {
-	            return days + "d (Day / 일)";
+	            return days + "d (Day)";
 	        } else if (hours > 0) {
-	            return hours + "h (Hour / 시간)";
+	            return hours + "h (Hour)";
 	        } else {
-	            return minutes + "m (Minute / 분)";
+	            return minutes + "m (Minute)";
 	        }
 	    }
 	    
 	    public String getDaysOfWeekString() {
 	        if (daysOfWeek.isEmpty()) {
-	            return "Every day / 매일";
+	            return "Every day";
 	        }
 	        return daysOfWeek.stream()
 	            .sorted()
@@ -67,7 +67,7 @@ public record TaskConfig(
 	                return eng + "/" + kor;
 	            })
 	            .reduce((a, b) -> a + ", " + b)
-	            .orElse("Every day / 매일");
+	            .orElse("Every day");
 	    }
 	    
 	    private String getKoreanDayOfWeek(DayOfWeek day) {

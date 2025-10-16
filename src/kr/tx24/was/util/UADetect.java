@@ -86,11 +86,6 @@ public final class UADetect {
 	// Thread-Safe Lazy Initialization을 위한 volatile 변수 사용
 	private static volatile UserAgentParser parser = null; 
 	
-	static {
-		AsyncExecutor.execute(() -> {
-	        initialize();
-	    });
-    }
 	
 	private UADetect() {
         throw new UnsupportedOperationException("This is a utility class and cannot be instantiated");

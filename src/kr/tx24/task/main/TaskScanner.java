@@ -18,6 +18,8 @@ import java.util.jar.JarFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import kr.tx24.lib.lang.DateUtils;
+import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.task.annotation.Task;
 import kr.tx24.task.config.TaskConfig;
 
@@ -35,10 +37,6 @@ public class TaskScanner {
      * @return 발견된 Task 설정 목록
      */
     public static List<TaskConfig> scanTasks(String basePackage) {
-        logger.info("════════════════════════════════════════════════════════════════");
-        logger.info("Starting Task Scanning / Task 스캔 시작");
-        logger.info("Target Package / 대상 패키지: {}", basePackage);
-        logger.info("════════════════════════════════════════════════════════════════");
         
         List<TaskConfig> taskConfigs = new ArrayList<>();
         
@@ -51,7 +49,9 @@ public class TaskScanner {
             while (resources.hasMoreElements()) {
                 URL resource = resources.nextElement();
                 resourceCount++;
-                logger.debug("Scanning resource #{}: {}", resourceCount, resource);
+                if(SystemUtils.deepview()) {
+                	logger.debug("Scanning resource #{}: {}", resourceCount, resource);
+                }
                 
                 if (resource.getProtocol().equals("file")) {
                     // 파일 시스템의 클래스 스캔 (개발 환경)
@@ -69,10 +69,10 @@ public class TaskScanner {
         // 우선순위 순으로 정렬 (높은 priority가 먼저)
         taskConfigs.sort(TaskConfig::compareTo);
         
-        logger.info("════════════════════════════════════════════════════════════════");
-        logger.info("Task Scanning Completed / Task 스캔 완료");
-        logger.info("Total Tasks Found / 발견된 총 Task 수: {}", taskConfigs.size());
-        logger.info("════════════════════════════════════════════════════════════════\n");
+        if(SystemUtils.deepview()) {
+        	logger.debug("Total Tasks Found : {}", taskConfigs.size());
+        }
+        
         
         // 발견된 Task 상세 정보 출력
         if (!taskConfigs.isEmpty()) {
@@ -147,9 +147,7 @@ public class TaskScanner {
                 
                 // Runnable 구현 여부 확인
                 if (!Runnable.class.isAssignableFrom(clazz)) {
-                    logger.error("✗ Task class '{}' has @Task but does not implement Runnable", 
-                        className);
-                    logger.error("  클래스 '{}'는 @Task가 있지만 Runnable을 구현하지 않았습니다", 
+                    logger.error("Task class '{}' has @Task but does not implement Runnable", 
                         className);
                     return;
                 }
@@ -160,16 +158,17 @@ public class TaskScanner {
                 // TaskConfig 생성
                 TaskConfig taskConfig = createTaskConfig(annotation, taskClass);
                 taskConfigs.add(taskConfig);
-                
-                logger.info("✓ Found Task / Task 발견: {}", className);
+                if(SystemUtils.deepview()) {
+                	logger.debug("Found Task : {}", className);
+                }
             }
             
         } catch (ClassNotFoundException e) {
-            logger.debug("Could not load class / 클래스 로드 불가: {}", className);
+            logger.debug("Could not load class : {}", className);
         } catch (NoClassDefFoundError e) {
-            logger.debug("Skipping class due to dependency / 의존성 문제로 스킵: {}", className);
+            logger.debug("Skipping class due to dependency : {}", className);
         } catch (Exception e) {
-            logger.warn("Error processing class / 클래스 처리 중 오류: {}", className, e);
+            logger.warn("Error processing class : {}", className, e);
         }
     }
     
@@ -183,7 +182,7 @@ public class TaskScanner {
         // period 파싱
         Duration period = parsePeriod(annotation.period());
         
-     // 월 단위 주기인 경우 startDay 필수 검증
+        // 월 단위 주기인 경우 startDay 필수 검증
         if (period.toDays() == -1 && annotation.startDay().isBlank()) {
             throw new IllegalArgumentException(
                 String.format("Task '%s': Monthly period (M) requires startDay / " +
@@ -203,19 +202,19 @@ public class TaskScanner {
         
         // startDay 파싱
         LocalDate startDate = null;
-        if (!annotation.startDay().isBlank()) {
-            startDate = LocalDate.parse(annotation.startDay(), DATE_FORMATTER);
+        if (annotation.startDay().isBlank()) {
+            startDate = DateUtils.getDay();
+        }else {
+        	startDate = LocalDate.parse(annotation.startDay(), DATE_FORMATTER);
         }
         
-        // endDay 파싱
+        // endDay지정되지 않으면 20991231로 기본 설정
         LocalDate endDate;
         if (!annotation.endDay().isBlank()) {
             endDate = LocalDate.parse(annotation.endDay(), DATE_FORMATTER);
         } else {
             endDate = LocalDate.parse("20991231", DATE_FORMATTER);  // 기본값: 2099-12-31
-            logger.debug("Task '{}': endDay not specified, defaulting to 20991231 / " +
-                        "종료일이 지정되지 않아 20991231로 설정됨", 
-                annotation.name());
+            //logger.debug("Task '{}': endDay not specified, defaulting to 20991231 ", annotation.name());
         }
         
         return new TaskConfig(
@@ -263,8 +262,7 @@ public class TaskScanner {
             case 'h' -> Duration.ofHours(value);      // 시간
             case 'm' -> Duration.ofMinutes(value);    // 분
             default -> {
-                logger.warn("Unknown period unit '{}', defaulting to 1 day / " +
-                           "알 수 없는 주기 단위 '{}', 기본값 1일 적용", unit, unit);
+                logger.warn("알 수 없는 주기 단위 '{}', 기본값 1일 적용", unit);
                 yield Duration.ofDays(1);
             }
         };
@@ -274,16 +272,13 @@ public class TaskScanner {
      * 발견된 Task 상세 정보 출력
      */
     private static void printTaskDetails(List<TaskConfig> taskConfigs) {
-        logger.info("╔════════════════════════════════════════════════════════════════╗");
-        logger.info("║           Discovered Tasks / 발견된 Task 목록                  ║");
-        logger.info("╚════════════════════════════════════════════════════════════════╝\n");
-        
+    	StringBuilder sb = new StringBuilder();
         for (int i = 0; i < taskConfigs.size(); i++) {
             TaskConfig config = taskConfigs.get(i);
             
-            StringBuilder sb = new StringBuilder();
             
-            sb.append(String.format("Task #%d / %d %n", i + 1, taskConfigs.size()));
+            
+            sb.append(String.format("%n#Task %d / %d %n", i + 1, taskConfigs.size()));
             sb.append(String.format("Name         : %s%n", config.name()));
             sb.append(String.format("Class        : %s%n", config.taskClass().getName()));
             sb.append(String.format("Priority     : %s%n", config.priority()));
@@ -305,8 +300,8 @@ public class TaskScanner {
                 sb.append(String.format("Description  : %s%n", config.description()));
             }
             
-            // 한 번에 로그 출력
-            logger.info("\n{}", sb);
+            
         }
+        logger.debug("\n{}", sb);
     }
 }
