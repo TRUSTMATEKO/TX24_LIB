@@ -13,6 +13,7 @@
   "tcpNoDelay" : true,
   "reloadable" : true,
   "isRESTful" : false,
+  "templateCacheable" : false,
   "uploadDirectory" : "",
   "parameter" : { }
 }

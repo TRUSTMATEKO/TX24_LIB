@@ -24,6 +24,7 @@ public class TomcatConfig {
 	public boolean tcpNoDelay	= false;
 	public boolean reloadable	= false;
 	public boolean isRESTful	= false;
+	public boolean templateCacheable = true;
 	public String uploadDirectory= "";
 	
 	public HashMap<String,String> parameter = new HashMap<String,String>();

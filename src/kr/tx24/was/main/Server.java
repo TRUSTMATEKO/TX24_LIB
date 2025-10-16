@@ -1,6 +1,5 @@
 package kr.tx24.was.main;
 
-
 import java.io.File;
 import java.net.InetAddress;
 import java.util.Locale;
@@ -29,11 +28,9 @@ import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.was.conf.TomcatConfig;
 import kr.tx24.was.conf.TomcatConfigLoader;
+import kr.tx24.was.core.EmbeddedReloadWatcher;
 import kr.tx24.was.core.ServletConfiguration;
 import kr.tx24.was.util.Was;
-
-
-
 
 /**
  * @author juseop
@@ -44,7 +41,7 @@ public class Server{
 	private static Logger logger 				= LoggerFactory.getLogger(Server.class );
 	
 	
-
+ 
 
 	
 	public void start()throws Exception {
@@ -150,7 +147,7 @@ public class Server{
 		tomcat.getHost().setAutoDeploy(true);
 		
 		StandardContext ctx = (StandardContext) tomcat.addWebapp("", docBase+File.separator+"/webroot");
-		ctx.setReloadable(config.reloadable);		//개발시는 TRUE 하여 사용해도 됨.
+		ctx.setReloadable(config.reloadable);		// tomcat 10.x 부터는 위 부분을 지원하지 않음. 그리고 EmbeddedReloadWatcht 가 필요함.
 		ctx.setDisplayName(config.serverName);
 		ctx.setWorkDir(docBase+File.separator+"/classes/work");
 		ctx.setSessionCookieName(null);   // JSESSIONID 쿠키 생성 방지
@@ -165,6 +162,10 @@ public class Server{
 		    new SpringServletContainerInitializer(),
 		    Set.of(ServletConfiguration.class)
 		);
+		
+		
+		
+		
 		
 		ctx.setCookieProcessor(new Rfc6265CookieProcessor());
 		ctx.addLifecycleListener(new FixContextListener());
@@ -190,14 +191,31 @@ public class Server{
 		
 		File additionWebInfClassesFolder = new File(docBase+File.separator+"/classes");
 		WebResourceRoot resources = new StandardRoot(ctx);
+		
+		// 내부 캐시 비활성화 (Tomcat이 정적 리소스를 메모리에 캐싱하지 않음)
+		if(!config.templateCacheable) {
+			logger.info("resoruce caching diabled");
+			resources.setCachingAllowed(false);
+			resources.setCacheTtl(0);
+		}
+		
+		
 		WebResourceSet resourceSet;
 		if (additionWebInfClassesFolder.exists()) {
 			resourceSet = new DirResourceSet(resources, "/WEB-INF/classes", additionWebInfClassesFolder.getAbsolutePath(), "/");
+			resources.addPreResources(resourceSet);
+			/* 아래는 정상적으로 동작하지 않는다.
+			if(config.reloadable) {
+				EmbeddedReloadWatcher watcher = new EmbeddedReloadWatcher(ctx, additionWebInfClassesFolder);
+			    watcher.start();
+			}*/
 		}else{
 			resourceSet = new EmptyResourceSet(resources);
 		}
-		resources.addPreResources(resourceSet);
+		
 		ctx.setResources(resources);
+		
+		
 		
 		// 에러 페이지 경로 설정
 		ErrorPage errorPage = new ErrorPage();

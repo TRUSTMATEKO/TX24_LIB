@@ -42,6 +42,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import kr.tx24.was.conf.TomcatConfigLoader;
 import kr.tx24.was.interceptor.SessionInterceptor;
 import kr.tx24.was.resolver.HeaderResolver;
 import kr.tx24.was.resolver.ParamResolver;
@@ -194,7 +195,7 @@ public class SpringConfig implements WebMvcConfigurer {
         resolver.setPrefix("/"); // 웹 루트를 기준으로 템플릿 탐색 시작
         resolver.setSuffix(".html");
         resolver.setCacheTTLMs(60 * 1000L); // 1분 TTL
-        resolver.setCacheable(true); // 개발 모드에서는 false 처리 
+        resolver.setCacheable(TomcatConfigLoader.load().templateCacheable); // 개발 모드에서는 false 처리 
         resolver.setCharacterEncoding(Was.DEFAULT_CHARSET.name());
         resolver.setTemplateMode(TemplateMode.HTML);
         return resolver;

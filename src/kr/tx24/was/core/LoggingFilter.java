@@ -77,7 +77,9 @@ public class LoggingFilter implements Filter {
 					
 					
 					if(SystemUtils.deepview() && !httpServletRequest.getRequestURI().startsWith("/axios")) {
-						logger.info("request :{}",userDidMap.getString("payload"));
+						if(!userDidMap.isEmpty()) {
+							logger.info("request :{}",userDidMap.getString("payload"));
+						}
 						String contentType = CommonUtils.nToB((httpServletResponse.getContentType())).toLowerCase();
 						if(contentType.startsWith("application/json")) {
 							logger.info("response:{},{}",httpServletResponse.getStatus(),getResponseBody(httpServletResponse));
