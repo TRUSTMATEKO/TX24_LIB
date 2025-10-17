@@ -147,6 +147,9 @@ public class DateUtils {
     
     
     public static String toString(Temporal temporal, String... pattern) {
+    	if(temporal == null) { return "";}
+    	
+    	
         DateTimeFormatter formatter = pattern.length == 0
                 ? null
                 : DateTimeFormatter.ofPattern(pattern[0]);

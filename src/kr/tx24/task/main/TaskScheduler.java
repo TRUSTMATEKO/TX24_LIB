@@ -9,6 +9,8 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -17,6 +19,7 @@ import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.lang.AsyncExecutor;
 import kr.tx24.lib.lang.DateUtils;
+import kr.tx24.lib.lang.MsgUtils;
 import kr.tx24.task.config.TaskConfig;
 
 /**
@@ -25,17 +28,36 @@ import kr.tx24.task.config.TaskConfig;
 public class TaskScheduler {
     private static final Logger logger = LoggerFactory.getLogger(TaskScheduler.class);
     
+    private static final String LOG_FORMAT = "Scheduled Task\n"
+			+ " - Name        : {}\n"
+			+ " - Class       : {}\n"
+			+ " - Schedule    : {}\n"
+			+ " - Days of week: {}\n"
+			+ " - Start day   : {}\n"
+			+ " - End day     : {}\n"
+			+ " - Time        : {}\n"
+			+ " - First run   : {}\n"
+			+ " - Next run    : {}\n"
+			+ " - Description : {}\n"
+			+ " - Status      : {}";
+    
+    
     private final List<TaskConfig> taskConfigs;
     private final ZoneId zoneId;
     private final List<ScheduledFuture<?>> scheduledFutures = new ArrayList<>();
+    private final ScheduledExecutorService metaScheduler = Executors.newSingleThreadScheduledExecutor();
     
     public TaskScheduler(List<TaskConfig> taskConfigs, String timezone) {
         this.taskConfigs = taskConfigs;
         this.zoneId = ZoneId.of(timezone);
-        
-        logger.info("TaskScheduler initialized , Timezone : {}",zoneId);
+        logger.info("TaskScheduler initialized , Timezone : {}", zoneId);
     }
     
+    
+    
+    /**
+     * 스케줄러 시작
+     */
     public void start() {
         if (taskConfigs.isEmpty()) {
             logger.warn("스케줄할 Task가 없습니다");
@@ -44,37 +66,96 @@ public class TaskScheduler {
         
         logger.info("Starting Task Scheduler");
         
+        // 활성화된 Task만 스케줄링
         taskConfigs.stream()
             .filter(TaskConfig::enabled)
-            .forEach(this::scheduleTask);
+            .forEach(this::scheduleOrPlanTask);
         
-        long activeTaskCount = taskConfigs.stream()
-            .filter(TaskConfig::enabled)
-            .count();
-        
-        
-        logger.info("Task Scheduler Started , Active Tasks : {}",activeTaskCount);
+        // 통계 출력
+        logTaskStatistics();
     }
     
-    private void scheduleTask(TaskConfig taskConfig) {
-        try {
-            // 날짜 범위 확인
-            LocalDate today = LocalDate.now(zoneId);
-            if (!taskConfig.isValidDate(today)) {
-                if (taskConfig.startDate() != null && today.isBefore(taskConfig.startDate())) {
-                    logger.info("Task '{}'는 {}부터 시작됩니다", 
-                        taskConfig.name(), taskConfig.getStartDateString());
-                } else if (taskConfig.endDate() != null && today.isAfter(taskConfig.endDate())) {
-                    logger.info("Task '{}'는 {}에 종료되었습니다", 
-                        taskConfig.name(), taskConfig.getEndDateString());
-                }
+    /**
+     * Task를 즉시 스케줄링하거나 미래에 스케줄링하도록 계획
+     */
+    private void scheduleOrPlanTask(TaskConfig taskConfig) {
+        LocalDate today = LocalDate.now(zoneId);
+        LocalDateTime now = LocalDateTime.now(zoneId);
+        
+        // 1. 종료일 확인
+        if (taskConfig.endDate() != null && today.isAfter(taskConfig.endDate())) {
+            logger.info("Task '{}'는 {}에 종료되었습니다", 
+                taskConfig.name(), taskConfig.getEndDateString());
+            logTaskDetails(taskConfig, "EXPIRED", null, null, false);
+            return;
+        }
+        
+        // 2. 시작일이 미래인 경우
+        if (taskConfig.startDate() != null && today.isBefore(taskConfig.startDate())) {
+            scheduleFutureTask(taskConfig, today);
+            return;
+        }
+        
+        // 3. 시작일 당일이면서 스케줄 시간 전인 경우
+        if (taskConfig.startDate() != null && today.isEqual(taskConfig.startDate())) {
+            LocalDateTime scheduledDateTime = LocalDateTime.of(today, taskConfig.scheduledTime());
+            
+            if (now.isBefore(scheduledDateTime)) {
+                long delayMinutes = ChronoUnit.MINUTES.between(now, scheduledDateTime);
+                logger.info("Task '{}'는 오늘 {}에 시작됩니다 ({}분 후)", 
+                    taskConfig.name(), taskConfig.getScheduledTimeString(), delayMinutes);
+                scheduleTaskNow(taskConfig);
                 return;
             }
             
-            // Task 인스턴스 생성
+            logger.info("Task '{}' 시작일 당일이지만 스케줄 시간({})이 지났습니다. 다음 실행 시간으로 스케줄링합니다.",
+                taskConfig.name(), taskConfig.getScheduledTimeString());
+        }
+        
+        // 4. 즉시 스케줄링 (현재 유효한 Task 또는 시작일 지난 경우)
+        scheduleTaskNow(taskConfig);
+    }
+    
+    /**
+     * 미래 Task 예약 스케줄링
+     */
+    private void scheduleFutureTask(TaskConfig taskConfig, LocalDate today) {
+        long daysUntilStart = ChronoUnit.DAYS.between(today, taskConfig.startDate());
+        logger.info("Task '{}'는 {}일 후({})에 자동으로 시작됩니다", 
+            taskConfig.name(), daysUntilStart, taskConfig.getStartDateString());
+        
+        LocalDateTime futureFirstRun = LocalDateTime.of(
+            taskConfig.startDate(), 
+            taskConfig.scheduledTime()
+        );
+        // 미래 Task는 First run만 표시 (Next run 없음)
+        logTaskDetails(taskConfig, "SCHEDULED", futureFirstRun, null, taskConfig.isMonthlyPeriod());
+        
+        // 시작일시에 자동 스케줄링
+        LocalDateTime now = LocalDateTime.now(zoneId);
+        long delayMillis = ChronoUnit.MILLIS.between(now, futureFirstRun);
+        
+        if (delayMillis < 0) {
+            logger.warn("Task '{}': 시작일시가 과거입니다. 즉시 스케줄링합니다.", taskConfig.name());
+            scheduleTaskNow(taskConfig);
+            return;
+        }
+        
+        logger.debug("Task '{}' 예약 스케줄링: {}ms 후 실행 ({})", 
+            taskConfig.name(), delayMillis, DateUtils.toString(futureFirstRun, "yyyy-MM-dd HH:mm:ss"));
+        
+        metaScheduler.schedule(() -> activateFutureTask(taskConfig), delayMillis, TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * 미래 Task 활성화
+     */
+    private void activateFutureTask(TaskConfig taskConfig) {
+        try {
+            logger.info("Task '{}' 시작일 도래 - 스케줄링 시작", taskConfig.name());
+            
             Runnable task = taskConfig.taskClass().getDeclaredConstructor().newInstance();
             
-            //월 단위 Task는 별도 처리
             if (taskConfig.isMonthlyPeriod()) {
                 scheduleMonthlyTask(taskConfig, task);
             } else {
@@ -82,10 +163,27 @@ public class TaskScheduler {
             }
             
         } catch (Exception e) {
-            logger.error("Task 스케줄 등록 실패: '{}' [{}]\n,{}",taskConfig.name(), 
-                taskConfig.taskClass().getSimpleName(), 
-                e
-            );
+            logger.error("미래 Task 스케줄 등록 실패: '{}' [{}]", 
+                taskConfig.name(), taskConfig.taskClass().getSimpleName(), e);
+        }
+    }
+    
+    /**
+     * 현재 유효한 Task 즉시 스케줄링
+     */
+    private void scheduleTaskNow(TaskConfig taskConfig) {
+        try {
+            Runnable task = taskConfig.taskClass().getDeclaredConstructor().newInstance();
+            
+            if (taskConfig.isMonthlyPeriod()) {
+                scheduleMonthlyTask(taskConfig, task);
+            } else {
+                scheduleRegularTask(taskConfig, task);
+            }
+            
+        } catch (Exception e) {
+            logger.error("Task 스케줄 등록 실패: '{}' [{}]", 
+                taskConfig.name(), taskConfig.taskClass().getSimpleName(), e);
         }
     }
     
@@ -93,15 +191,12 @@ public class TaskScheduler {
      * 일반 Task 스케줄링 (고정 주기)
      */
     private void scheduleRegularTask(TaskConfig taskConfig, Runnable task) {
-        // Wrapper로 감싸서 요일/날짜 체크 및 비동기 실행
         Runnable wrappedTask = createWrappedTask(taskConfig, task);
         
-        // 첫 실행까지의 지연 시간 계산
         LocalDateTime now = LocalDateTime.now(zoneId);
-        long initialDelay = calculateInitialDelay(taskConfig,now);
-        long period = taskConfig.period().toMillis(); 
+        long initialDelay = calculateInitialDelay(taskConfig, now);
+        long period = taskConfig.period().toMillis();
         
-        // 스케줄링
         ScheduledFuture<?> future = AsyncExecutor.scheduleAtFixedRate(
             wrappedTask,
             initialDelay,
@@ -111,132 +206,76 @@ public class TaskScheduler {
         
         scheduledFutures.add(future);
         
-        LocalDateTime firstRun = LocalDateTime.now(zoneId)
-            .plus(initialDelay, ChronoUnit.MILLIS);
+        // ✅ First run과 Next run 구분
+        LocalDateTime nextRun = calculateFirstRunTime(taskConfig, now);
+        LocalDateTime firstRun = getInitialScheduledTime(taskConfig, now);
         
-        StringBuilder sb = new StringBuilder();
-        sb.append("\nScheduled Task\n - Name : ").append(taskConfig.name());
-        sb.append("\n - Class : ").append(taskConfig.taskClass().getName());
-        sb.append("\n - First run : ")
-            .append(DateUtils.toString(firstRun,"yyyy-MM-dd HH:mm:ss"));
-        sb.append("\n - Schedule : ")
-            .append(taskConfig.getScheduledTimeString())
-            .append(" every ")
-            .append(taskConfig.getPeriodString());
-
-        if (!taskConfig.daysOfWeek().isEmpty()) {
-            sb.append("\n - Days of week : ")
-                .append(taskConfig.getDaysOfWeekString());
-        }
-
-        if (taskConfig.startDate() != null) {
-            sb.append("\n - Start day : ")
-                .append(taskConfig.getStartDateString());
-        }
-
-        if (taskConfig.endDate() != null) {
-        	sb.append("\n - End day : ")
-                .append(taskConfig.getEndDateString());
-        }
-        
-        if (taskConfig.scheduledTime() != null) {
-        	sb.append("\n - Time : ")
-                .append(taskConfig.getScheduledTimeString());
-        }
-
-        if (!taskConfig.description().isBlank()) {
-            sb.append("\n - Description : ")
-                .append(taskConfig.description());
-        }
-
-        logger.info(sb.toString());
+        logTaskDetails(taskConfig, "ACTIVE", firstRun, nextRun, false);
     }
 
     /**
      * 월 단위 Task 스케줄링 (일회성 + 재스케줄링)
      */
     private void scheduleMonthlyTask(TaskConfig taskConfig, Runnable task) {
-        // 첫 실행까지의 지연 시간 계산
-    	LocalDateTime now = LocalDateTime.now(zoneId);
-        long initialDelay = calculateInitialDelay(taskConfig,now);
+        LocalDateTime now = LocalDateTime.now(zoneId);
+        long initialDelay = calculateMonthlyInitialDelay(taskConfig, now);
         
-        // ✅ 일회성 스케줄 + 실행 후 자동 재스케줄링
         Runnable wrappedTask = () -> {
-            LocalDate executionDate = LocalDate.now(zoneId);
-            
-            // 날짜 범위 확인
-            if (!taskConfig.isValidDate(executionDate)) {
-                logger.debug("Skipping monthly task '{}' - Outside valid date range", 
-                    taskConfig.name());
-                return;
+            if (taskConfig.isValidDate(LocalDate.now(zoneId))) {
+                AsyncExecutor.execute(() -> executeTask(taskConfig, task));
+                scheduleMonthlyTask(taskConfig, task); // 재스케줄링
+            } else {
+                logger.debug("Skipping monthly task '{}' - Outside valid date range", taskConfig.name());
             }
-            
-            // 비동기 실행
-            AsyncExecutor.execute(() -> executeTask(taskConfig, task));
-            
-            // ✅ 실행 후 다음 달 같은 시각으로 재스케줄링
-            scheduleMonthlyTask(taskConfig, task);
         };
         
-        ScheduledFuture<?> future = AsyncExecutor.schedule(
-            wrappedTask,
-            initialDelay,
-            TimeUnit.MILLISECONDS
-        );
-        
+        ScheduledFuture<?> future = AsyncExecutor.schedule(wrappedTask, initialDelay, TimeUnit.MILLISECONDS);
         scheduledFutures.add(future);
         
-        LocalDateTime firstRun = LocalDateTime.now(zoneId)
-            .plus(initialDelay, ChronoUnit.MILLIS);
+        // ✅ First run과 Next run 구분
+        LocalDateTime nextRun = calculateFirstRunTimeMonthly(taskConfig, now);
+        LocalDateTime firstRun = getInitialScheduledTimeMonthly(taskConfig);
         
-        StringBuilder sb = new StringBuilder();
-        sb.append("\nScheduled Task\n - Name : ").append(taskConfig.name());
-        sb.append("\n - Class : ").append(taskConfig.taskClass().getName());
-        sb.append("\n - First run : ")
-        .append(DateUtils.toString(firstRun,"yyyy-MM-dd HH:mm:ss"));
-        sb.append("\n - Schedule : ")
-            .append(taskConfig.getScheduledTimeString())
-            .append(" every M (Monthly / 매월)");
-
-        if (taskConfig.startDate() != null) {
-            sb.append("\n - Start day : ")
-                .append(taskConfig.getStartDateString());
-        }
-
-        if (taskConfig.endDate() != null) {
-            sb.append("\n - End day : ")
-                .append(taskConfig.getEndDateString());
-        }
-
-        if (!taskConfig.description().isBlank()) {
-            sb.append("\n - Description : ")
-                .append(taskConfig.description());
-        }
-
-        logger.info(sb.toString());
+        logTaskDetails(taskConfig, "ACTIVE", firstRun, nextRun, true);
     }
     
     /**
-     * Task를 Wrapper로 감싸서 날짜/요일 체크 및 비동기 실행 추가
+     * ✅ 초기 스케줄 시간 계산 (일반 주기)
+     * - 설정된 원래 시간을 반환 (시작일 + 스케줄 시간)
+     */
+    private LocalDateTime getInitialScheduledTime(TaskConfig taskConfig, LocalDateTime now) {
+        LocalDate startDate = taskConfig.startDate();
+        if (startDate == null) {
+            startDate = now.toLocalDate();
+        }
+        return LocalDateTime.of(startDate, taskConfig.scheduledTime());
+    }
+    
+    /**
+     * ✅ 초기 스케줄 시간 계산 (월 단위)
+     */
+    private LocalDateTime getInitialScheduledTimeMonthly(TaskConfig taskConfig) {
+        return LocalDateTime.of(taskConfig.startDate(), taskConfig.scheduledTime());
+    }
+    
+    /**
+     * Task Wrapper 생성 (날짜/요일 체크 및 비동기 실행)
      */
     private Runnable createWrappedTask(TaskConfig taskConfig, Runnable task) {
         return () -> {
             LocalDate executionDate = LocalDate.now(zoneId);
             DayOfWeek executionDay = executionDate.getDayOfWeek();
             
-            // 날짜 범위 확인
             if (!taskConfig.isValidDate(executionDate)) {
                 logger.debug("Skipping task : '{}' - Outside valid date range", taskConfig.name());
                 return;
             }
             
-            // 요일 확인
             if (!taskConfig.isValidDayOfWeek(executionDay)) {
-                logger.debug("Skipping task : '{}' - Not scheduled for {} ", taskConfig.name(), executionDay);
+                logger.debug("Skipping task : '{}' - Not scheduled for {}", taskConfig.name(), executionDay);
                 return;
             }
             
-            // 비동기 실행 (AsyncExecutor 사용)
             AsyncExecutor.execute(() -> executeTask(taskConfig, task));
         };
     }
@@ -245,104 +284,155 @@ public class TaskScheduler {
      * Task 실행 및 로깅
      */
     private void executeTask(TaskConfig taskConfig, Runnable task) {
-        String taskName = taskConfig.name();
         LocalDateTime startTime = LocalDateTime.now(zoneId);
         
-        StringBuilder sb = new StringBuilder();
-        
         try {
-        	
-        	sb.append(String.format("%n#Task %s %n", taskConfig.name()));
-        	
-            // 다음 실행 예정 시각 계산 및 로깅
             LocalDateTime nextRun = calculateNextRunTime(taskConfig, startTime);
             
             task.run();
-           
-            sb.append(String.format(" - complete , Duration :%dms%n", ChronoUnit.MILLIS.between(startTime, LocalDateTime.now(zoneId))));
-            sb.append(String.format(" - next scheduled : %s%n", DateUtils.toString(nextRun, "yyyy-MM-dd HH:mm:ss")));
-           
-            logger.info(sb.toString());
+            
+            long duration = ChronoUnit.MILLIS.between(startTime, LocalDateTime.now(zoneId));
+            
+            logger.info("\n#Task {}\n - complete , Duration :{}ms\n - next scheduled : {}", 
+                taskConfig.name(),
+                duration,
+                DateUtils.toString(nextRun, "yyyy-MM-dd HH:mm:ss"));
+                
         } catch (Exception e) {
-            logger.warn("Task execution failed : '{}' , \nError :{}\n {}", taskName,e.getClass().getSimpleName(), e.getMessage(),e);
+            logger.warn("Task execution failed : '{}' , Error : {}", 
+                taskConfig.name(), e.getMessage(), e);
         }
-        
-        
     }
     
     /**
-     * 다음 실행 시각 계산
+     * 첫 실행 시간 계산 (밀리초 단위)
+     * ⚠️ 주의: startDate보다 이전인지 반드시 확인 필요
      */
-    private LocalDateTime calculateNextRunTime(TaskConfig taskConfig, LocalDateTime current) {
-        if (taskConfig.isMonthlyPeriod()) {
-            // 월 단위: 다음 달 같은 일자
-            LocalDate nextDate = taskConfig.getNextMonthlyDate(current.toLocalDate());
-            return LocalDateTime.of(nextDate, taskConfig.scheduledTime());
-        }
-        
+    private long calculateInitialDelay(TaskConfig taskConfig, LocalDateTime now) {
         Duration period = taskConfig.period();
         
-        // 시간 단위 주기 (1일 미만): 단순 더하기
+        // ✅ 분/시간 단위 주기인 경우 특별 처리
         if (period.toDays() < 1) {
-            return current.plus(period);
+            return calculateShortPeriodInitialDelay(taskConfig, now, period);
         }
         
-        // 일 단위 이상: scheduledTime 기준 + 요일 고려
-        LocalDate nextDate = current.toLocalDate().plusDays(1); // 최소 다음 날부터
-        LocalDateTime next = LocalDateTime.of(nextDate, taskConfig.scheduledTime());
+        // 일 단위 이상 주기 처리
+        LocalDateTime scheduledDateTime = now.with(taskConfig.scheduledTime());
         
-        // 요일 조건 확인
-        if (!taskConfig.daysOfWeek().isEmpty()) {
-            // 유효한 요일 찾기 (최대 7일 검색)
-            int daysSearched = 0;
-            while (!taskConfig.isValidDayOfWeek(next.getDayOfWeek()) && daysSearched < 7) {
-                next = next.plusDays(1);
-                daysSearched++;
+        // ✅ 시작일이 지정되어 있고 아직 도래하지 않았다면 시작일 기준으로 계산
+        if (taskConfig.startDate() != null) {
+            LocalDate startDate = taskConfig.startDate();
+            LocalDate today = now.toLocalDate();
+            
+            // 시작일이 미래라면 시작일의 scheduledTime
+            if (today.isBefore(startDate)) {
+                scheduledDateTime = LocalDateTime.of(startDate, taskConfig.scheduledTime());
+                return ChronoUnit.MILLIS.between(now, scheduledDateTime);
             }
             
-            if (daysSearched >= 7) {
-                logger.warn("7일 내에 유효한 요일을 찾을 수 없습니다: '{}'",taskConfig.name());
+            // 시작일이 오늘이고 스케줄 시간이 지나지 않았다면 오늘의 scheduledTime
+            if (today.isEqual(startDate)) {
+                LocalDateTime startDateTime = LocalDateTime.of(startDate, taskConfig.scheduledTime());
+                if (now.isBefore(startDateTime)) {
+                    return ChronoUnit.MILLIS.between(now, startDateTime);
+                }
             }
         }
         
-        // 종료일 확인
-        if (taskConfig.endDate() != null && next.toLocalDate().isAfter(taskConfig.endDate())) {
-            logger.info("Task '{}'가 종료일에 도달했습니다",taskConfig.name());
-            return next.plusYears(10); // 실질적으로 종료
+        // ✅ 오늘 실행 시간이 지났거나 요일이 안 맞으면 다음 유효 시간 찾기
+        if (scheduledDateTime.isBefore(now) || scheduledDateTime.isEqual(now) ||
+            !taskConfig.isValidDayOfWeek(scheduledDateTime.getDayOfWeek())) {
+            scheduledDateTime = findNextValidDateTime(taskConfig, scheduledDateTime);
         }
         
-        return next;
+        return ChronoUnit.MILLIS.between(now, scheduledDateTime);
     }
     
     /**
-     * 첫 실행 시간 계산 (요일 및 시작일 고려)
+     * ✅ 짧은 주기 (분/시간) 초기 지연 시간 계산
+     * - 현재 시간과 동일하면 주기만큼 더함
      */
-    private long calculateInitialDelay(TaskConfig taskConfig,LocalDateTime now) {
-        
-        // 월 단위 주기 처리
-        if (taskConfig.isMonthlyPeriod()) {
-            return calculateMonthlyInitialDelay(taskConfig, now);
-        }
-        
-        // 일반 주기 처리
+    private long calculateShortPeriodInitialDelay(TaskConfig taskConfig, LocalDateTime now, Duration period) {
         LocalDateTime scheduledDateTime = now.with(taskConfig.scheduledTime());
         
-        // 시작일이 지정되어 있고 아직 도래하지 않았다면
+        // 시작일이 지정되어 있는 경우
         if (taskConfig.startDate() != null) {
             LocalDate startDate = taskConfig.startDate();
-            if (now.toLocalDate().isBefore(startDate)) {
+            LocalDate today = now.toLocalDate();
+            
+            // 시작일이 미래라면 시작일의 scheduledTime
+            if (today.isBefore(startDate)) {
                 scheduledDateTime = LocalDateTime.of(startDate, taskConfig.scheduledTime());
+                return ChronoUnit.MILLIS.between(now, scheduledDateTime);
+            }
+            
+            // 시작일이 오늘이고 스케줄 시간이 지나지 않았다면 오늘의 scheduledTime
+            if (today.isEqual(startDate)) {
+                LocalDateTime startDateTime = LocalDateTime.of(startDate, taskConfig.scheduledTime());
+                if (now.isBefore(startDateTime)) {
+                    return ChronoUnit.MILLIS.between(now, startDateTime);
+                }
+                // 시작일 당일인데 시간이 지났으면 주기만큼 더함
+                scheduledDateTime = startDateTime.plus(period);
                 return ChronoUnit.MILLIS.between(now, scheduledDateTime);
             }
         }
         
-        // 오늘 실행 시간이 지났으면 다음 실행 시간 찾기
+        // 현재 시간과 스케줄 시간이 같거나 지났으면 주기만큼 더함
         if (scheduledDateTime.isBefore(now) || scheduledDateTime.isEqual(now)) {
-            scheduledDateTime = findNextValidDateTime(taskConfig, scheduledDateTime);
-        } else {
-            // 오늘 실행 시간이 안 지났어도 요일이 맞지 않으면 다음 유효 날짜 찾기
-            if (!taskConfig.isValidDayOfWeek(scheduledDateTime.getDayOfWeek())) {
-                scheduledDateTime = findNextValidDateTime(taskConfig, scheduledDateTime);
+            // 현재 시간 기준으로 다음 주기 계산
+            long millisSinceScheduled = ChronoUnit.MILLIS.between(scheduledDateTime, now);
+            long periodMillis = period.toMillis();
+            
+            // 다음 실행 시간 = 현재 + (주기 - (경과 시간 % 주기))
+            long remainingMillis = periodMillis - (millisSinceScheduled % periodMillis);
+            
+            // 만약 remainingMillis가 0이면 (정확히 주기 시간), 한 주기 더함
+            if (remainingMillis == 0) {
+                remainingMillis = periodMillis;
+            }
+            
+            return remainingMillis;
+        }
+        
+        // 아직 스케줄 시간이 안 됐으면 그 시간까지
+        return ChronoUnit.MILLIS.between(now, scheduledDateTime);
+    }
+    
+    /**
+     * 월 단위 첫 실행 시간 계산
+     */
+    private long calculateMonthlyInitialDelay(TaskConfig taskConfig, LocalDateTime now) {
+        LocalDate startDate = taskConfig.startDate();
+        LocalTime scheduledTime = taskConfig.scheduledTime();
+        int targetDay = startDate.getDayOfMonth();
+        LocalDate today = now.toLocalDate();
+        
+        LocalDateTime scheduledDateTime;
+        
+        // ✅ 시작일이 미래면 시작일
+        if (today.isBefore(startDate)) {
+            scheduledDateTime = LocalDateTime.of(startDate, scheduledTime);
+        } 
+        // ✅ 시작일이 오늘이면 오늘의 스케줄 시간 확인
+        else if (today.isEqual(startDate)) {
+            scheduledDateTime = LocalDateTime.of(startDate, scheduledTime);
+            // 오늘의 스케줄 시간이 지났으면 다음 달
+            if (scheduledDateTime.isBefore(now) || scheduledDateTime.isEqual(now)) {
+                LocalDate nextMonthTarget = taskConfig.getNextMonthlyDate(today);
+                scheduledDateTime = LocalDateTime.of(nextMonthTarget, scheduledTime);
+            }
+        }
+        // 시작일이 과거면 이번 달 또는 다음 달
+        else {
+            int lastDayOfMonth = today.lengthOfMonth();
+            int actualDay = Math.min(targetDay, lastDayOfMonth);
+            LocalDate thisMonthTarget = today.withDayOfMonth(actualDay);
+            scheduledDateTime = LocalDateTime.of(thisMonthTarget, scheduledTime);
+            
+            if (scheduledDateTime.isBefore(now) || scheduledDateTime.isEqual(now)) {
+                LocalDate nextMonthTarget = taskConfig.getNextMonthlyDate(today);
+                scheduledDateTime = LocalDateTime.of(nextMonthTarget, scheduledTime);
             }
         }
         
@@ -350,65 +440,25 @@ public class TaskScheduler {
     }
     
     /**
-     * 월 단위 주기의 첫 실행 시간 계산
-     */
-    private long calculateMonthlyInitialDelay(TaskConfig taskConfig, LocalDateTime now) {
-        LocalDate startDate = taskConfig.startDate();
-        LocalTime scheduledTime = taskConfig.scheduledTime();
-        int targetDay = startDate.getDayOfMonth();
-        
-        LocalDate today = now.toLocalDate();
-        LocalDateTime scheduledDateTime;
-        
-        // 시작일이 아직 안 됐으면 시작일로
-        if (today.isBefore(startDate)) {
-            scheduledDateTime = LocalDateTime.of(startDate, scheduledTime);
-        } else {
-            // 이번 달 목표 일자 계산
-            int lastDayOfMonth = today.lengthOfMonth();
-            int actualDay = Math.min(targetDay, lastDayOfMonth);
-            LocalDate thisMonthTarget = today.withDayOfMonth(actualDay);
-            
-            scheduledDateTime = LocalDateTime.of(thisMonthTarget, scheduledTime);
-            
-            // 이번 달 실행 시간이 지났으면 다음 달로
-            if (scheduledDateTime.isBefore(now) || scheduledDateTime.isEqual(now)) {
-                LocalDate nextMonthTarget = taskConfig.getNextMonthlyDate(today);
-                scheduledDateTime = LocalDateTime.of(nextMonthTarget, scheduledTime);
-            }
-        }
-        
-        long delay = ChronoUnit.MILLIS.between(now, scheduledDateTime);
-        
-        /*
-        logger.debug("Monthly task '{}': Current={}, Next execution={}, Delay={}ms", 
-            taskConfig.name(), 
-            DateUtils.toString(now, "yyyy-MM-dd HH:mm:ss") , 
-            DateUtils.toString(scheduledDateTime, "yyyy-MM-dd HH:mm:ss"),
-            delay
-        );
-        */
-        return delay;
-    }
-    
-    /**
      * 다음 유효한 실행 날짜/시간 찾기
+     * ⚠️ startDate 이후만 반환되도록 보장
      */
     private LocalDateTime findNextValidDateTime(TaskConfig taskConfig, LocalDateTime current) {
         LocalDateTime candidate = current;
         Duration period = taskConfig.period();
+        LocalDate startDate = taskConfig.startDate();
         
-        // 최대 365일까지만 검색
         for (int i = 0; i < 365; i++) {
-            if (period.toDays() >= 1) {
-                candidate = candidate.plusDays(1);
-            } else {
-                candidate = candidate.plus(period);
-            }
+            candidate = period.toDays() >= 1 ? candidate.plusDays(1) : candidate.plus(period);
             
             LocalDate candidateDate = candidate.toLocalDate();
-            DayOfWeek candidateDay = candidateDate.getDayOfWeek();
             
+            // ✅ startDate 체크: 시작일 이전이면 continue
+            if (startDate != null && candidateDate.isBefore(startDate)) {
+                continue;
+            }
+            
+            // endDate 체크
             if (!taskConfig.isValidDate(candidateDate)) {
                 if (taskConfig.endDate() != null && candidateDate.isAfter(taskConfig.endDate())) {
                     return candidate.plusYears(1);
@@ -416,26 +466,238 @@ public class TaskScheduler {
                 continue;
             }
             
-            if (taskConfig.isValidDayOfWeek(candidateDay)) {
+            // 요일 체크
+            if (taskConfig.isValidDayOfWeek(candidate.getDayOfWeek())) {
                 return candidate;
             }
         }
         
-        logger.warn("365일 내에 Task '{}'의 유효한 실행 날짜를 찾을 수 없습니다",taskConfig.name());
+        logger.warn("365일 내에 Task '{}'의 유효한 실행 날짜를 찾을 수 없습니다", taskConfig.name());
         return candidate;
     }
     
     /**
-     * 모든 스케줄된 Task 취소
+     * 첫 실행 시간 정확하게 계산 (일반 주기, 로그용)
      */
-    public void cancelAll() {
-        logger.info("Cancelling all scheduled tasks ");
+    private LocalDateTime calculateFirstRunTime(TaskConfig taskConfig, LocalDateTime now) {
+        Duration period = taskConfig.period();
         
-        for (ScheduledFuture<?> future : scheduledFutures) {
-            future.cancel(false);
+        // ✅ 분/시간 단위는 특별 계산
+        if (period.toDays() < 1) {
+            LocalDateTime scheduledDateTime = now.with(taskConfig.scheduledTime());
+            
+            // 시작일이 미래인 경우
+            if (taskConfig.startDate() != null && now.toLocalDate().isBefore(taskConfig.startDate())) {
+                return LocalDateTime.of(taskConfig.startDate(), taskConfig.scheduledTime());
+            }
+            
+            // 시작일이 오늘이고 스케줄 시간이 안 지났으면 오늘
+            if (taskConfig.startDate() != null && 
+                now.toLocalDate().isEqual(taskConfig.startDate())) {
+                LocalDateTime startDateTime = LocalDateTime.of(taskConfig.startDate(), taskConfig.scheduledTime());
+                if (now.isBefore(startDateTime)) {
+                    return startDateTime;
+                }
+                // 시간이 지났으면 주기만큼 더함
+                return startDateTime.plus(period);
+            }
+            
+            // 현재 시간과 같거나 지났으면 다음 주기
+            if (scheduledDateTime.isBefore(now) || scheduledDateTime.isEqual(now)) {
+                long millisSinceScheduled = ChronoUnit.MILLIS.between(scheduledDateTime, now);
+                long periodMillis = period.toMillis();
+                long remainingMillis = periodMillis - (millisSinceScheduled % periodMillis);
+                
+                if (remainingMillis == 0) {
+                    remainingMillis = periodMillis;
+                }
+                
+                return now.plus(remainingMillis, ChronoUnit.MILLIS);
+            }
+            
+            return scheduledDateTime;
         }
         
+        // 일 단위 이상 계산 (기존 로직)
+        if (taskConfig.startDate() != null && now.toLocalDate().isBefore(taskConfig.startDate())) {
+            return LocalDateTime.of(taskConfig.startDate(), taskConfig.scheduledTime());
+        }
+        
+        LocalDateTime todayScheduled = now.toLocalDate().atTime(taskConfig.scheduledTime());
+        
+        if (taskConfig.startDate() != null && 
+            now.toLocalDate().isEqual(taskConfig.startDate()) &&
+            now.isBefore(todayScheduled)) {
+            return todayScheduled;
+        }
+        
+        if (now.isBefore(todayScheduled) && taskConfig.isValidDayOfWeek(now.getDayOfWeek())) {
+            return todayScheduled;
+        }
+        
+        LocalDateTime candidate = todayScheduled;
+        if (now.isAfter(todayScheduled) || !taskConfig.isValidDayOfWeek(now.getDayOfWeek())) {
+            candidate = candidate.plusDays(1);
+        }
+        
+        LocalDate startDate = taskConfig.startDate();
+        if (startDate != null && candidate.toLocalDate().isBefore(startDate)) {
+            return LocalDateTime.of(startDate, taskConfig.scheduledTime());
+        }
+        
+        int daysSearched = 0;
+        while (!taskConfig.isValidDayOfWeek(candidate.getDayOfWeek()) && daysSearched < 7) {
+            candidate = candidate.plusDays(1);
+            daysSearched++;
+        }
+        
+        return candidate;
+    }
+
+    /**
+     * 첫 실행 시간 정확하게 계산 (월 단위, 로그용)
+     */
+    private LocalDateTime calculateFirstRunTimeMonthly(TaskConfig taskConfig, LocalDateTime now) {
+        LocalDate startDate = taskConfig.startDate();
+        LocalTime scheduledTime = taskConfig.scheduledTime();
+        int targetDay = startDate.getDayOfMonth();
+        LocalDate today = now.toLocalDate();
+        
+        // ✅ 시작일이 미래면 시작일
+        if (today.isBefore(startDate)) {
+            return LocalDateTime.of(startDate, scheduledTime);
+        }
+        
+        // ✅ 시작일이 오늘이면 오늘의 스케줄 시간 확인
+        if (today.isEqual(startDate)) {
+            LocalDateTime startDateTime = LocalDateTime.of(startDate, scheduledTime);
+            if (now.isBefore(startDateTime)) {
+                return startDateTime;
+            }
+            // 시간이 지났으면 다음 달
+            LocalDate nextMonthTarget = taskConfig.getNextMonthlyDate(today);
+            return LocalDateTime.of(nextMonthTarget, scheduledTime);
+        }
+        
+        // 시작일이 과거면 이번 달 또는 다음 달
+        int lastDayOfMonth = today.lengthOfMonth();
+        int actualDay = Math.min(targetDay, lastDayOfMonth);
+        LocalDate thisMonthTarget = today.withDayOfMonth(actualDay);
+        LocalDateTime thisMonthScheduled = LocalDateTime.of(thisMonthTarget, scheduledTime);
+        
+        if (now.isBefore(thisMonthScheduled)) {
+            return thisMonthScheduled;
+        }
+        
+        LocalDate nextMonthTarget = taskConfig.getNextMonthlyDate(today);
+        return LocalDateTime.of(nextMonthTarget, scheduledTime);
+    }
+    
+    /**
+     * 다음 실행 시각 계산 (실행 후 로깅용)
+     */
+    private LocalDateTime calculateNextRunTime(TaskConfig taskConfig, LocalDateTime current) {
+        if (taskConfig.isMonthlyPeriod()) {
+            LocalDate nextDate = taskConfig.getNextMonthlyDate(current.toLocalDate());
+            return LocalDateTime.of(nextDate, taskConfig.scheduledTime());
+        }
+        
+        Duration period = taskConfig.period();
+        
+        if (period.toDays() < 1) {
+            return current.plus(period);
+        }
+        
+        LocalDate nextDate = current.toLocalDate().plusDays(1);
+        LocalDateTime next = LocalDateTime.of(nextDate, taskConfig.scheduledTime());
+        
+        if (!taskConfig.daysOfWeek().isEmpty()) {
+            int daysSearched = 0;
+            while (!taskConfig.isValidDayOfWeek(next.getDayOfWeek()) && daysSearched < 7) {
+                next = next.plusDays(1);
+                daysSearched++;
+            }
+            
+            if (daysSearched >= 7) {
+                logger.warn("7일 내에 유효한 요일을 찾을 수 없습니다: '{}'", taskConfig.name());
+            }
+        }
+        
+        if (taskConfig.endDate() != null && next.toLocalDate().isAfter(taskConfig.endDate())) {
+            logger.info("Task '{}'가 종료일에 도달했습니다", taskConfig.name());
+            return next.plusYears(10);
+        }
+        
+        return next;
+    }
+    
+    /**
+     * 모든 스케줄된 Task 취소 및 리소스 정리
+     */
+    public void cancelAll() {
+        logger.info("Cancelling all scheduled tasks");
+        
+        scheduledFutures.forEach(future -> future.cancel(false));
         scheduledFutures.clear();
+        
+        metaScheduler.shutdown();
+        try {
+            if (!metaScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                metaScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            metaScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        
         logger.info("All scheduled tasks cancelled");
+    }
+    
+    /**
+     * Task 통계 로깅
+     */
+    private void logTaskStatistics() {
+        LocalDate today = LocalDate.now(zoneId);
+        
+        long activeCount = taskConfigs.stream()
+            .filter(TaskConfig::enabled)
+            .filter(config -> config.isValidDate(today))
+            .count();
+        
+        long pendingCount = taskConfigs.stream()
+            .filter(TaskConfig::enabled)
+            .filter(config -> config.startDate() != null && today.isBefore(config.startDate()))
+            .count();
+        
+        logger.info("Task Scheduler Started , Active Tasks : {} , Pending Tasks : {}", 
+            activeCount, pendingCount);
+    }
+    
+    /**
+     * ✅ Task 상세 정보 로그 출력 (통합 버전)
+     * @param taskConfig Task 설정
+     * @param status 상태 (ACTIVE, SCHEDULED, EXPIRED)
+     * @param firstRun 최초 스케줄된 시간 (설정 기준)
+     * @param nextRun 다음 실행 시간 (실제 실행될 시간)
+     * @param isMonthly 월 단위 여부
+     */
+    private void logTaskDetails(TaskConfig taskConfig, String status, LocalDateTime firstRun, 
+                                 LocalDateTime nextRun, boolean isMonthly) {
+        
+        logger.info(
+            MsgUtils.format(LOG_FORMAT, 
+                taskConfig.name(),
+                taskConfig.taskClass().getName(),
+                taskConfig.getScheduledTimeString() + " every " + (isMonthly ? "M (Monthly / 매월)" : taskConfig.getPeriodString()),
+                taskConfig.getDaysOfWeekString(), 
+                taskConfig.getStartDateString(),
+                taskConfig.getEndDateString(), 
+                taskConfig.getScheduledTimeString(), 
+                firstRun != null ? DateUtils.toString(firstRun, "yyyy-MM-dd HH:mm:ss") : "",
+                nextRun != null ? DateUtils.toString(nextRun, "yyyy-MM-dd HH:mm:ss") : DateUtils.toString(firstRun, "yyyy-MM-dd HH:mm:ss"),
+                taskConfig.description(), 
+                status + ("SCHEDULED".equals(status) ? " (시작 대기 중)" : "") + ("EXPIRED".equals(status) ? " (종료됨)" : "")
+            )
+        );
     }
 }

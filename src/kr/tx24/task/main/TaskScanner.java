@@ -149,6 +149,7 @@ public class TaskScanner {
                 if (!Runnable.class.isAssignableFrom(clazz)) {
                     logger.error("Task class '{}' has @Task but does not implement Runnable", 
                         className);
+                    System.exit(1);
                     return;
                 }
                 

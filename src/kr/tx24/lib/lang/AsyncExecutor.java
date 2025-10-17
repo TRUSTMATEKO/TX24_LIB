@@ -393,7 +393,6 @@ public class AsyncExecutor {
             return;
         }
         
-        logger.info("========== AsyncExecutor Shutdown Started ==========");
         
         // Main executor shutdown (초기화되었을 경우만)
         if (executor != null) {
@@ -405,7 +404,7 @@ public class AsyncExecutor {
             shutdownScheduler(scheduler);
         }
         
-        logger.info("========== AsyncExecutor Shutdown Completed ==========");
+      
     }
     
     private static void shutdownExecutor(ExecutorService executor, String name) {
