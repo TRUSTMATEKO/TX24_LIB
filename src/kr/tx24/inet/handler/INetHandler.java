@@ -1,4 +1,4 @@
-package kr.tx24.inet.server;
+package kr.tx24.inet.handler;
 
 import java.util.Map;
 

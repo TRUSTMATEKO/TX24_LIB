@@ -20,7 +20,6 @@ public class ShutdownHook extends Thread {
 	private static long PROCESS_ID					= System.currentTimeMillis();
 	
 	public ShutdownHook(){
-		System.err.println("ShutdownHook enabled");
 		logger.info("{}{}",PROCESS_STARTED,PROCESS_ID);
 		
 	}
@@ -49,3 +48,4 @@ public class ShutdownHook extends Thread {
 	
 
 }
+

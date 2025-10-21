@@ -20,25 +20,49 @@ public class INetConfigLoader {
 	private static Path CONFIG_PATH		= Paths.get(SystemUtils.getConfigDirectory(),"inet.json");
 	private static volatile SharedMap<String,Object> configMap = null;
 	
+	private static final Object LOCK = new Object();
+	
+	private INetConfigLoader() {
+		
+	}
+	
+	
+	private static SharedMap<String, Object> getConfigMap() {
+		if (configMap == null) {
+			synchronized (LOCK) {
+				if (configMap == null) {
+					start();
+				}
+			}
+		}
+		
+		if (configMap == null) {
+			throw new IllegalStateException("Configuration failed to load");
+		}
+		
+		return configMap;
+	}
+	
+	
 	
 	public static String getHost() {
-		return configMap.getString("host", "0.0.0.0");
+		return getConfigMap().getString("host", "0.0.0.0");
 	}
 	
 	
 	public static int getPort() {
-		return configMap.getInt("port", 10000);
+		return getConfigMap().getInt("port", 10000);
 	}
 	
 	public static String getBasePackage() {
-		return configMap.getString("basePackage", "kr.tx24");
+		return getConfigMap().getString("basePackage", "kr.tx24");
 	}
 	
 	
 	
 	public static boolean enableLoggingHandler() {
-		if(configMap.containsKey("logging")) {
-			return configMap.getBoolean("logging");
+		if(getConfigMap().containsKey("logging")) {
+			return getConfigMap().getBoolean("logging");
 		}else {
 			return false;
 		}
@@ -47,61 +71,76 @@ public class INetConfigLoader {
 	
 	
 	public static LinkedHashMap<String,Object> getMap(String key){
-		return configMap.getLinkedHashMap(key);
+		return getConfigMap().getLinkedHashMap(key);
 	}
 	
 
 	public static <T> T get(String key, Class<T> type) {
-		if(!configMap.containsKey(key)) {
+		if (key == null || type == null) {
+			return null;
+			
+		}
+		
+		SharedMap<String, Object> config = getConfigMap();
+		if(!config.containsKey(key)) {
 			return null;
 		}
 		T instance = null;
 		try {
-			LinkedHashMap<String,Object> map = configMap.getLinkedHashMap(key);
-			instance = new JacksonUtils().mapToObject(map, type);
+			LinkedHashMap<String,Object> map = config.getLinkedHashMap(key);
+			if(map == null) {
+				return null;
+			}
+			return new JacksonUtils().mapToObject(map, type);
 		}catch(Exception e) {
+			return null;
 		}
-		return instance;
 	}
 	
 	public static void start() {
 		
+		synchronized (LOCK) {
 		
-		if(!Files.exists(CONFIG_PATH)) {
-			System.out.println("{} is not found : "+ CONFIG_PATH.toAbsolutePath());
-			logger.info("{} is not found : {}",CONFIG_PATH.toAbsolutePath());
-			System.exit(1);			
-		}else {
+			if (configMap != null) {
+				return;
+			}
 			
-			try {
+			if(!Files.exists(CONFIG_PATH)) {
+				System.out.println("{} is not found : "+ CONFIG_PATH.toAbsolutePath());
+				logger.info("{} is not found : {}",CONFIG_PATH.toAbsolutePath());
+				System.exit(1);			
+			}else {
 				
-				if(configMap == null) {
-					configMap = new JacksonUtils().fromJsonSharedMapObject(CommonUtils.toString(Files.readAllBytes(CONFIG_PATH),StandardCharsets.UTF_8));
+				try {
+					
+					if(configMap == null) {
+						configMap = new JacksonUtils().fromJsonSharedMapObject(CommonUtils.toString(Files.readAllBytes(CONFIG_PATH),StandardCharsets.UTF_8));
+					}
+				
+					if(CommonUtils.isEmpty(configMap)) {
+	                    throw new IllegalStateException("Loaded config is empty.");
+	                }
+					
+					if(configMap.get("property") != null) {
+						LinkedHashMap<String,Object> propertiesMap = configMap.getLinkedHashMap("property");
+						propertiesMap.forEach((key, value) -> {
+					        if (key != null && value != null) {
+					        	String v = CommonUtils.toString(value);
+					            System.setProperty(key, v);
+					            if(SystemUtils.deepview()) {
+					            	logger.info("set system property : {}={}", key, v);
+					            }
+					        }
+					    });
+					}
+					
+					logger.info("Config reloaded: {}", CONFIG_PATH.toAbsolutePath());
+					
+				}catch(Exception e) {
+					logger.warn("Failed to load config {} : {}",CONFIG_PATH.toAbsolutePath(),e.getMessage());
+					System.out.println("config is not loaded -> system.exit");
+					System.exit(1);
 				}
-			
-				if(CommonUtils.isEmpty(configMap)) {
-                    throw new IllegalStateException("Loaded config is empty.");
-                }
-				
-				if(configMap.get("property") != null) {
-					LinkedHashMap<String,Object> propertiesMap = configMap.getLinkedHashMap("property");
-					propertiesMap.forEach((key, value) -> {
-				        if (key != null && value != null) {
-				        	String v = CommonUtils.toString(value);
-				            System.setProperty(key, v);
-				            if(SystemUtils.deepview()) {
-				            	logger.info("System property set: {}={}", key, v);
-				            }
-				        }
-				    });
-				}
-				
-				logger.info("Config reloaded: {}", CONFIG_PATH.toAbsolutePath());
-				
-			}catch(Exception e) {
-				logger.warn("Failed to load config {} : {}",CONFIG_PATH.toAbsolutePath(),e.getMessage());
-				System.out.println("config is not loaded -> system.exit");
-				System.exit(1);
 			}
 		}
 		

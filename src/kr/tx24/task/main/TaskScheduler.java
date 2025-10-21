@@ -378,21 +378,28 @@ public class TaskScheduler {
             }
         }
         
-        // 현재 시간과 스케줄 시간이 같거나 지났으면 주기만큼 더함
+        // 현재 시간과 스케줄 시간이 같거나 지났으면 다음 주기로 설정
         if (scheduledDateTime.isBefore(now) || scheduledDateTime.isEqual(now)) {
-            // 현재 시간 기준으로 다음 주기 계산
-            long millisSinceScheduled = ChronoUnit.MILLIS.between(scheduledDateTime, now);
-            long periodMillis = period.toMillis();
+            // 주기만큼 더한 시간을 다음 실행 시간으로 설정
+            scheduledDateTime = scheduledDateTime.plus(period);
             
-            // 다음 실행 시간 = 현재 + (주기 - (경과 시간 % 주기))
-            long remainingMillis = periodMillis - (millisSinceScheduled % periodMillis);
+            // ✅ period 성격에 따라 동일한 분/시간 체크하여 즉시 실행 방지
+            String periodString = taskConfig.getPeriodString();
             
-            // 만약 remainingMillis가 0이면 (정확히 주기 시간), 한 주기 더함
-            if (remainingMillis == 0) {
-                remainingMillis = periodMillis;
+            if (periodString.endsWith("m (Minute)")) {
+                // 분 단위 주기: 동일한 분이면 +1분 추가 지연
+                if (now.getMinute() == scheduledDateTime.getMinute()) {
+                    scheduledDateTime = scheduledDateTime.plusMinutes(1);
+                    logger.debug("Task '{}': 동일한 분 감지 ({}) - 1분 추가 지연", taskConfig.name(), periodString);
+                }
+            } else if (periodString.endsWith("h (Hour)")) {
+                // 시간 단위 주기: 동일한 시간이면 +1시간 추가 지연
+                if (now.getHour() == scheduledDateTime.getHour()) {
+                    scheduledDateTime = scheduledDateTime.plusHours(1);
+                    logger.debug("Task '{}': 동일한 시간 감지 ({}) - 1시간 추가 지연", taskConfig.name(), periodString);
+                }
             }
-            
-            return remainingMillis;
+            return ChronoUnit.MILLIS.between(now, scheduledDateTime);
         }
         
         // 아직 스케줄 시간이 안 됐으면 그 시간까지

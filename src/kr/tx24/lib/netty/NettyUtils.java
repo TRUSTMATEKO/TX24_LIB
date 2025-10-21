@@ -16,6 +16,7 @@ import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.util.AttributeKey;
+import kr.tx24.api.util.ApiConstants;
 
 /**
  * Netty Utility 클래스
@@ -100,17 +101,35 @@ public class NettyUtils {
         return headers.entries().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
+    
+    
+    public static String getClientIp(ChannelHandlerContext ctx, FullHttpRequest request) {
+    	return getClientIp(ctx.channel(),request);
+    }
 
     /**
      * X-Forwarded-For 또는 Remote Address를 통해 클라이언트 실제 IP를 가져온다.
      */
-    public static String getClientIp(FullHttpRequest request, Channel channel) {
-        if (request != null) {
-            String ip = getHeaderString(request, "X-Forwarded-For");
-            if (ip != null && !ip.isEmpty()) {
-                return ip.split(",")[0].trim(); // 여러 IP 중 첫 번째
-            }
+    public static String getClientIp(Channel channel,FullHttpRequest request) {
+    	
+    	 
+        
+        // X-Forwarded-For 헤더 체크
+        String forwardedFor = request.headers().get(ApiConstants.X_FORWARDED_FOR);
+        if (forwardedFor != null && !forwardedFor.isEmpty()) {
+            // 첫 번째 IP 추출 (원본 클라이언트 IP)
+            return forwardedFor.split(",")[0].trim();
         }
+        
+        // X-Real-IP 헤더 우선 (프록시/로드밸런서 뒤에 있을 경우)
+        String xRealIp = request.headers().get(ApiConstants.X_REAL_IP);
+        if (xRealIp != null && !xRealIp.isEmpty()) {
+            return xRealIp.trim();
+        }
+        
         return getRemoteAddress(channel);
     }
+
+    
 }
+

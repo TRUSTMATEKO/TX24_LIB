@@ -25,6 +25,7 @@ import io.netty.handler.timeout.IdleStateHandler;
 import kr.tx24.inet.codec.INetDecoder;
 import kr.tx24.inet.codec.INetEncoder;
 import kr.tx24.inet.conf.INetConfigLoader;
+import kr.tx24.inet.handler.INetHandler;
 import kr.tx24.inet.route.Router;
 
 public class INetServer extends Thread{

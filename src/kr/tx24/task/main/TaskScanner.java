@@ -75,7 +75,7 @@ public class TaskScanner {
         
         
         // 발견된 Task 상세 정보 출력
-        if (!taskConfigs.isEmpty()) {
+        if (!taskConfigs.isEmpty() && SystemUtils.deepview()) {
             printTaskDetails(taskConfigs);
         }
         
