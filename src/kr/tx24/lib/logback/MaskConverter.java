@@ -10,12 +10,10 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import kr.tx24.lib.lang.CommonUtils;
 
 /**
- * 
- */
+ * */
 public class MaskConverter extends ClassicConverter {
 	
-	
-	private static final String asterisk		= "****************************************************************************************************"; 
+	 
 	private static final String[] keyword 		= new String[]{"rrn","phone","email","name","cvv","cvc","passwd","password","card","number","account","telno","brn","mchtBRN","pw","ownerRrn"};
 	private static final Pattern JSON_PATTERN 	= Pattern.compile("(?:\\\"|\\')([^\"]*)(?:\\\"|\\')(?:\\s*)(?=:)(?:\\:\\s*)(?:\\\")?(true|false|[-0-9]+[\\.]*[\\d]*(?=,)|[0-9a-zA-Z가-힣\\(\\)\\@\\:\\,\\/\\!\\+\\-\\.\\$\\ \\\\\\']*)(?:\\\")?");
 	private static final String LAST6_REGEX 	= "(.{6}$)";
@@ -36,7 +34,7 @@ public class MaskConverter extends ClassicConverter {
 	
 	private static String filter(String message){
 		Matcher match = JSON_PATTERN.matcher(message);
-		StringBuffer sb = new StringBuffer(message.length());
+		StringBuilder sb = new StringBuilder(message.length()); 
 		try{
 			while (match.find()) {
 				if(match.groupCount() == 2){
@@ -47,7 +45,8 @@ public class MaskConverter extends ClassicConverter {
 							if(match.group(0).endsWith("\"")) {
 								endStr = "\"";
 							}
-							match.appendReplacement(sb, "\""+match.group(1)+"\": \""+t+endStr);
+							String replacement = "\""+match.group(1)+"\": \""+t+endStr;
+							match.appendReplacement(sb, Matcher.quoteReplacement(replacement)); 
 						}
 					}
 				}
@@ -65,8 +64,8 @@ public class MaskConverter extends ClassicConverter {
 		value = CommonUtils.isNull(value,"").trim();
 		String lower = CommonUtils.isNull(name,"").toLowerCase().trim();
 		
-		if(lower.indexOf(keyword[0]) > -1 || lower.indexOf(keyword[10]) > -1 || lower.indexOf(keyword[15]) > -1){			//rrn, account
-			return value.replaceAll(LAST6_REGEX, "******");
+		if(lower.indexOf(keyword[0]) > -1 || lower.indexOf(keyword[10]) > -1 || lower.indexOf(keyword[15]) > -1){			//rrn, account, ownerRrn
+			return value.replaceAll(LAST6_REGEX, "*".repeat(6)); // String.repeat() 적용
 		}else if(lower.indexOf(keyword[1]) > -1 || lower.indexOf(keyword[11]) > -1){	//phone , telno
 			if( value.length() > 6 ){	return value.substring(0,3)+"****"+value.substring(7);
 			}else{	return value;}
@@ -101,7 +100,7 @@ public class MaskConverter extends ClassicConverter {
 			}
 			
 			int len = t[0].length();
-			StringBuilder sb = new StringBuilder();
+			StringBuilder sb = new StringBuilder(email.length()); // StringBuilder 및 capacity 최적화
 		
 			int mask = 0;
 			if(len <= 2){
@@ -112,12 +111,10 @@ public class MaskConverter extends ClassicConverter {
 			}else if(len > 2 && len <= 5){
 				mask = 2;
 				sb.append(t[0].substring(0,len - mask));
-				for(int i=0; i< mask ; i++){
-					sb.append("*");
-				}
+				sb.append("*".repeat(mask)); 
 			}else {
 				sb.append(t[0].substring(0,len -4 -1))
-				  .append("****")
+				  .append("*".repeat(4))
 				  .append(t[0].substring(len - 1));
 			}
 			
@@ -131,20 +128,23 @@ public class MaskConverter extends ClassicConverter {
 	}
 	
 	
-	
 	private static String fill(String value , int init , int len){
-		StringBuilder sb = new StringBuilder();
-		if(value.length() <= init){
-			return value;
-		}else{	
-			sb.append(value.substring(0,init));
-			if(len - init > asterisk.length()){
-				sb.append(asterisk).append("#");
-			}else{
-				sb.append(asterisk.substring(0,len-init));
-			}
-		}
-		return sb.toString();
+	    if (value.length() <= init) {
+	        return value;
+	    }
+	    
+	    int maskLen = len - init;
+	    
+	    if (maskLen <= 0) {
+	        return value.substring(0, init);
+	    }
+	    
+	    String mask = "*".repeat(maskLen);
+	    
+	    return new StringBuilder(value.length()) 
+	        .append(value.substring(0, init))
+	        .append(mask)
+	        .toString();
 	}
 	
 	
@@ -159,7 +159,7 @@ public class MaskConverter extends ClassicConverter {
 			return name.substring(0,1)+"*"+name.substring(2,len);
 		}else{
 			int quot = len / DEVIDE_LEN;
-			StringBuilder sb =new StringBuilder();
+			StringBuilder sb =new StringBuilder(len); 
 			for(int i=0 ; i < quot; i++){
 				if(quot -1 == i){
 					if(i ==0){
@@ -174,16 +174,6 @@ public class MaskConverter extends ClassicConverter {
 			return sb.toString();
 		}
 	}
-	
-	public static String getMask(int limit){
-		String str = "";
-		for(int j=0 ; j < limit ; j++){
-			str +="*";
-		}
-		return str;
-	}
-	
-	
 	
 	
 

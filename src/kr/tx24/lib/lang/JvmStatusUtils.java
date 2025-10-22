@@ -172,7 +172,7 @@ public class JvmStatusUtils {
     
     public static void start(long period) {
         if (IS_RUNNING.getAndSet(true)) {
-            logger.warn("JvmStatusLogger is already running.");
+            logger.info("JvmStatusLogger is already running.");
             return;
         }
         
@@ -192,7 +192,7 @@ public class JvmStatusUtils {
         
         logger.info("JvmStatusLogger started: monitoring every {} seconds.", PERIOD_SECONDS);
         
-        Runtime.getRuntime().addShutdownHook(new Thread(JvmStatusUtils::shutdown, "JvmStatus-Shutdown-Hook"));
+        Runtime.getRuntime().addShutdownHook(new Thread(JvmStatusUtils::shutdown, "ShutdownHook-JvmStatusUtils"));
     }
     
     /**

@@ -85,6 +85,20 @@ public class DBManager {
 				ds = new HikariDataSource(config);
 				System.out.print("Jdbc        : Pool initialized");
 				
+				
+				
+				
+				Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+				    try {
+				        DBManager.shutdown(); 
+				        System.err.println("Jdbc         : connection shutdown ");
+				    } catch (SQLException e) {
+				    	System.err.println("ShutdownHook-DBManager failed to close datasource: "+CommonUtils.getExceptionMessage(e));
+				    }
+				}, "ShutdownHook-DBManager"));
+				
+								
+				
 			}catch(Exception e) {
 				System.out.print("Jdbc        : initalize exception "+e.getMessage());
 				logger.warn("Failed to initialize HikariCP pool : {}",CommonUtils.getExceptionMessage(e));

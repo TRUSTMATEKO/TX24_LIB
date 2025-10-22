@@ -11,7 +11,7 @@ import com.blueconic.browscap.Capabilities;
 import com.blueconic.browscap.UserAgentParser;
 import com.blueconic.browscap.UserAgentService;
 
-import kr.tx24.lib.lang.AsyncExecutor;
+import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 

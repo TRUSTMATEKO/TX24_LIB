@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import kr.tx24.lib.lang.AsyncExecutor;
+import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.lib.lang.MsgUtils;
 import kr.tx24.task.config.TaskConfig;

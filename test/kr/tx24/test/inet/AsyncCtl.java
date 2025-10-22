@@ -15,7 +15,7 @@ import kr.tx24.inet.mapper.Controller;
 import kr.tx24.inet.mapper.Data;
 import kr.tx24.inet.mapper.Route;
 import kr.tx24.inet.util.INetRespUtils;
-import kr.tx24.lib.lang.AsyncExecutor;
+import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.map.LinkedMap;
 
 @Controller(target = "/async")

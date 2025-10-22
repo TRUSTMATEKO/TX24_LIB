@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 import org.springframework.web.SpringServletContainerInitializer;
 
-import kr.tx24.lib.lang.AsyncExecutor;
+import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.was.conf.TomcatConfig;
