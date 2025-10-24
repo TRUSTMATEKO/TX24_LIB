@@ -3,6 +3,7 @@ package kr.tx24.lib.lang;
 import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Array;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -1504,5 +1505,164 @@ public class CommonUtils {
         return a.toString().equalsIgnoreCase(b.toString());
     }
     
+    
+    /**
+     * 주어진 리스트를 targetSize만큼 확장하고,
+     * 부족한 부분은 사용자가 지정한 defaultValue로 채웁니다.
+     * 
+     * <p>특징:
+     * - list가 null인 경우 자동으로 새 리스트를 생성합니다.
+     * - list.size() >= targetSize이면 원본 리스트를 복사하여 그대로 반환합니다.
+     *
+     * @param <T>          리스트 요소 타입
+     * @param list         원본 리스트 (null 가능)
+     * @param targetSize   목표 리스트 크기
+     * @param defaultValue 부족한 요소를 채울 기본값
+     * @return targetSize 크기의 리스트
+     */
+    public static <T> List<T> padList(List<T> list, int targetSize, T defaultValue) {
+        // null 리스트는 새 ArrayList로 초기화
+        List<T> result = (list == null) ? new ArrayList<>() : new ArrayList<>(list);
+
+        // 부족한 부분만 defaultValue로 채움
+        while (result.size() < targetSize) {
+            result.add(defaultValue);
+        }
+
+        return result;
+    }
+    
+    /**
+     * 주어진 리스트를 targetSize만큼 확장하고, 타입 기반으로 기본값을 자동으로 채웁니다.
+     *
+     * <p>기본값 결정 로직:
+     * - String 타입 → 빈 문자열 ""
+     * - Number 타입 → 0
+     * - Boolean 타입 → false
+     * - 기타 클래스 → 기본 생성자 호출(new T()), 생성 불가 시 null
+     *
+     * <p>특징:
+     * - list가 null이면 새 리스트를 생성합니다.
+     * - list.size() >= targetSize이면 리스트를 그대로 반환합니다.
+     * - type이 null이지만 list가 비어 있지 않다면 첫 요소를 기반으로 타입을 추론합니다.
+     *
+     * @param <T>        리스트 요소 타입
+     * @param list       원본 리스트 (null 가능)
+     * @param targetSize 목표 리스트 크기
+     * @param type       리스트 요소 클래스 (런타임 타입 지정, null 가능)
+     * @return targetSize 크기의 리스트, 부족한 부분은 타입 기반 기본값으로 채움
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> List<T> padList(List<T> list, int targetSize, Class<T> type) {
+        // 타입이 명시되지 않은 경우, 리스트가 비어있지 않으면 첫 요소로 추론
+        if (type == null) {
+            if (list != null && !list.isEmpty() && list.get(0) != null) {
+                type = (Class<T>) list.get(0).getClass();
+            }
+        }
+
+        T defaultValue = null;
+
+        if (type != null) {
+            if (String.class.isAssignableFrom(type)) {
+                defaultValue = (T) "";
+            } else if (Number.class.isAssignableFrom(type)) {
+                defaultValue = (T) (Number) 0;
+            } else if (Boolean.class.isAssignableFrom(type)) {
+                defaultValue = (T) Boolean.FALSE;
+            } else {
+                try {
+                    // 기본 생성자를 이용하여 객체 생성
+                    Constructor<T> ctor = type.getDeclaredConstructor();
+                    ctor.setAccessible(true);
+                    defaultValue = ctor.newInstance();
+                } catch (Exception e) {
+                    // 생성 불가 시 null로 처리
+                    defaultValue = null;
+                }
+            }
+        }
+
+        // 실제 리스트 확장은 padList를 호출하여 수행
+        return padList(list, targetSize, defaultValue);
+    }
+    
+    
+    
+    /**
+     * 주어진 리스트를 targetSize 크기로 강제 조정합니다.
+     * - 리스트가 null이면 새 리스트를 생성
+     * - 리스트가 targetSize보다 작으면 defaultValue로 채움
+     * - 리스트가 targetSize보다 크면 초과 요소를 잘라냄
+     *
+     * @param <T>          리스트 요소 타입
+     * @param list         원본 리스트 (null 가능)
+     * @param targetSize   목표 리스트 크기
+     * @param defaultValue 부족한 요소를 채울 기본값
+     * @return targetSize 크기의 리스트
+     */
+    public static <T> List<T> padListForce(List<T> list, int targetSize, T defaultValue) {
+        List<T> result = (list == null) ? new ArrayList<>() : new ArrayList<>(list);
+
+        // 부족하면 defaultValue로 채움
+        while (result.size() < targetSize) {
+            result.add(defaultValue);
+        }
+
+        // 초과하면 잘라냄
+        if (result.size() > targetSize) {
+            result = result.subList(0, targetSize);
+        }
+
+        return result;
+    }
+
+    /**
+     * 주어진 리스트를 targetSize 크기로 강제 조정하고, 타입 기반으로 기본값을 채웁니다.
+     * - 리스트가 null이면 새 리스트를 생성
+     * - 리스트가 targetSize보다 작으면 타입 기반 기본값으로 부족한 요소를 채움
+     * - 리스트가 targetSize보다 크면 초과 요소를 잘라냄
+     * - 타입 기반 기본값:
+     *   - String → ""
+     *   - Number → 0
+     *   - Boolean → false
+     *   - 기타 클래스 → 기본 생성자(new T()), 생성 불가 시 null
+     *
+     * @param <T>        리스트 요소 타입
+     * @param list       원본 리스트 (null 가능)
+     * @param targetSize 목표 리스트 크기
+     * @param type       리스트 요소 클래스 (런타임 타입 지정, null 가능)
+     * @return targetSize 크기의 리스트, 부족한 부분은 타입 기반 기본값으로 채움
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> List<T> padListForce(List<T> list, int targetSize, Class<T> type) {
+        if (type == null) {
+            if (list != null && !list.isEmpty() && list.get(0) != null) {
+                type = (Class<T>) list.get(0).getClass();
+            }
+        }
+
+        T defaultValue = null;
+
+        if (type != null) {
+            if (String.class.isAssignableFrom(type)) {
+                defaultValue = (T) "";
+            } else if (Number.class.isAssignableFrom(type)) {
+                defaultValue = (T) (Number) 0;
+            } else if (Boolean.class.isAssignableFrom(type)) {
+                defaultValue = (T) Boolean.FALSE;
+            } else {
+                try {
+                    Constructor<T> ctor = type.getDeclaredConstructor();
+                    ctor.setAccessible(true);
+                    defaultValue = ctor.newInstance();
+                } catch (Exception e) {
+                    defaultValue = null;
+                }
+            }
+        }
+
+        return padListForce(list, targetSize, defaultValue);
+    }
 
 }
