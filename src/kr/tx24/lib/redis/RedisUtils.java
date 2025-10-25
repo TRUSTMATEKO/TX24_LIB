@@ -7,7 +7,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -21,10 +20,7 @@ import io.lettuce.core.Range;
 import io.lettuce.core.RedisFuture;
 import io.lettuce.core.ScanArgs;
 import io.lettuce.core.ScoredValue;
-import io.lettuce.core.StreamMessage;
 import io.lettuce.core.TransactionResult;
-import io.lettuce.core.XAddArgs;
-import io.lettuce.core.XReadArgs;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import kr.tx24.lib.db.Retrieve;
@@ -59,7 +55,20 @@ public final class RedisUtils {
     private static final long DEFAULT_LOCK_TTL = 30L;
     
     
-    public abstract class TypeReference<T> {
+    /**
+     * ⭐ TypeReference - 복잡한 제네릭 타입 정보 보존
+     * 
+     * 사용 예:
+     * <pre>
+     * // 빈 리스트도 올바르게 처리
+     * List<SharedMap<String, Object>> emptyList = new ArrayList<>();
+     * var conn = determineConnection(emptyList, new TypeReference<List<SharedMap<String, Object>>>() {});
+     * 
+     * // 복잡한 제네릭 타입
+     * var conn = determineConnection(value, new TypeReference<Map<String, List<SharedMap>>>() {});
+     * </pre>
+     */
+    public abstract static class TypeReference<T> {
         private final Type type;
         
         protected TypeReference() {
@@ -76,9 +85,7 @@ public final class RedisUtils {
         }
     }
     
-    /**
-     * 유틸리티 클래스이므로 인스턴스화 방지
-     */
+
     private RedisUtils() {
         throw new UnsupportedOperationException("Utility class");
     }
@@ -112,62 +119,57 @@ public final class RedisUtils {
         return action.execute(conn);
     }
 
-    /**
-     * 비동기 Redis 작업 실행 (rpush 전용)
-     * 
-     * @param <K> Redis 키 타입
-     * @param <V> Redis 값 타입
-     * @param conn Redis 연결 객체
-     * @param key Redis 키
-     * @param val 저장할 값
-     */
-    @SuppressWarnings("unchecked")
-    private static <K, V> void withRedisAsync(StatefulRedisConnection<K, V> conn, K key, V val) {
-        RedisFuture<Long> future = conn.async().rpush(key, val);
-        future.thenAccept(v -> logger.debug("rpush async completed for key: {} with length: {}", key, v))
-              .exceptionally(throwable -> {
-                  logger.error("rpush async failed for key: {}", key, throwable);
-                  return null;
-              });
-    }
+
 
     // ------------------- Connection 결정 (타입 기반) -------------------
 
     /**
-     * 값의 타입에 따라 적절한 Redis Connection을 반환 (기존 메서드 - 하위 호환성 유지)
+     * 값의 타입에 따라 적절한 Redis Connection 반환 (기존 - JSON Codec)
      * 
      * @param <T> 값 타입
      * @param val 값 객체
      * @return 타입에 맞는 Redis 연결 객체
      */
-    @SuppressWarnings("unchecked")
     private static <T> StatefulRedisConnection<String, T> determineConnection(T val) {
+        return determineConnection(val, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ 값의 타입에 따라 적절한 Redis Connection 반환 (Codec 선택)
+     * 
+     * @param <T> 값 타입
+     * @param val 값 객체
+     * @param codecType Codec 타입
+     * @return 타입에 맞는 Redis 연결 객체
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> StatefulRedisConnection<String, T> determineConnection(T val, CodecType codecType) {
         if (val == null) {
-            return (StatefulRedisConnection<String, T>) Redis.getObject();
+            return (StatefulRedisConnection<String, T>) Redis.getObject(codecType);
         }
         
         // JDK 17 instanceof pattern matching 사용
         if (val instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getString();
+            return (StatefulRedisConnection<String, T>) Redis.getString(codecType);
         } else if (val instanceof SharedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getSharedMap();
+            return (StatefulRedisConnection<String, T>) Redis.getSharedMap(codecType);
         } else if (val instanceof LinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getLinkedMap();
+            return (StatefulRedisConnection<String, T>) Redis.getLinkedMap(codecType);
         } else if (val instanceof ThreadSafeLinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMap();
+            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMap(codecType);
         } else if (val instanceof List<?> list) {
-            return determineListConnection(list);
+            return determineListConnection(list, codecType);
         } else if (val instanceof Set<?> set) {
-            return determineSetConnection(set);
+            return determineSetConnection(set, codecType);
         } else if (val instanceof Map<?, ?> map) {
-            return determineMapConnection(map);
+            return determineMapConnection(map, codecType);
         }
         
-        return (StatefulRedisConnection<String, T>) Redis.getObject();
+        return (StatefulRedisConnection<String, T>) Redis.getObject(codecType);
     }
 
     /**
-     * 타입 정보를 명시적으로 받는 Connection 결정 메서드 (100% 커버)
+     * ⭐ 타입 정보를 명시적으로 받는 Connection 결정 메서드 (기존 - JSON Codec)
      * 
      * 사용 예:
      * <pre>
@@ -184,24 +186,58 @@ public final class RedisUtils {
      * @param typeRef 타입 참조
      * @return 타입에 맞는 Redis 연결 객체
      */
-    @SuppressWarnings("unchecked")
     private static <T> StatefulRedisConnection<String, T> determineConnection(T val, TypeReference<T> typeRef) {
+        return determineConnection(val, typeRef, CodecType.JSON);
+    }
+
+    /**
+     * ⭐⭐ 타입 정보를 명시적으로 받는 Connection 결정 메서드 (Codec 선택) - 핵심!
+     * 
+     * 복잡한 제네릭 타입을 100% 정확하게 처리
+     * 
+     * 사용 예:
+     * <pre>
+     * // 빈 리스트 + FST
+     * List<SharedMap<String, Object>> emptyList = new ArrayList<>();
+     * var conn = determineConnection(emptyList, 
+     *     new TypeReference<List<SharedMap<String, Object>>>() {}, 
+     *     CodecType.FST);
+     * 
+     * // 복잡한 중첩 타입 + FST
+     * Map<String, List<SharedMap<String, Object>>> complex = new HashMap<>();
+     * var conn = determineConnection(complex,
+     *     new TypeReference<Map<String, List<SharedMap<String, Object>>>>() {},
+     *     CodecType.FST);
+     * </pre>
+     * 
+     * @param <T> 값 타입
+     * @param val 값 객체
+     * @param typeRef 타입 참조
+     * @param codecType Codec 타입
+     * @return 타입에 맞는 Redis 연결 객체
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> StatefulRedisConnection<String, T> determineConnection(
+            T val, TypeReference<T> typeRef, CodecType codecType) {
+        
         Type type = typeRef.getType();
         
         // ParameterizedType이 아니면 기존 로직 사용
         if (!(type instanceof ParameterizedType paramType)) {
-            return determineConnection(val);
+            return determineConnection(val, codecType);
         }
         
         Type rawType = paramType.getRawType();
         Type[] typeArgs = paramType.getActualTypeArguments();
         
+        // ============================================
         // List<T> 처리
+        // ============================================
         if (rawType == List.class && typeArgs.length > 0) {
             Type elementType = typeArgs[0];
             
             if (elementType == String.class) {
-                return (StatefulRedisConnection<String, T>) Redis.getStringList();
+                return (StatefulRedisConnection<String, T>) Redis.getStringList(codecType);
             } else if (isTypeOf(elementType, SharedMap.class)) {
                 return (StatefulRedisConnection<String, T>) Redis.getSharedMapList();
             } else if (isTypeOf(elementType, LinkedMap.class)) {
@@ -209,10 +245,12 @@ public final class RedisUtils {
             } else if (isTypeOf(elementType, ThreadSafeLinkedMap.class)) {
                 return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapList();
             }
-            return (StatefulRedisConnection<String, T>) Redis.getObjectList();
+            return (StatefulRedisConnection<String, T>) Redis.getObjectList(codecType);
         }
         
+        // ============================================
         // Set<T> 처리
+        // ============================================
         if (rawType == Set.class && typeArgs.length > 0) {
             Type elementType = typeArgs[0];
             
@@ -228,7 +266,9 @@ public final class RedisUtils {
             return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
         }
         
+        // ============================================
         // Map<K, V> 처리
+        // ============================================
         if (rawType == Map.class && typeArgs.length == 2) {
             Type keyType = typeArgs[0];
             Type valueType = typeArgs[1];
@@ -244,163 +284,11 @@ public final class RedisUtils {
         }
         
         // 기타 복잡한 제네릭 타입
-        return (StatefulRedisConnection<String, T>) Redis.getObject();
+        return (StatefulRedisConnection<String, T>) Redis.getObject(codecType);
     }
 
     /**
-     * 간편 사용을 위한 Class 기반 오버로드
-     * 
-     * 사용 예:
-     * <pre>
-     * var conn = determineConnectionByClass(String.class);
-     * var conn = determineConnectionByClass(SharedMap.class);
-     * </pre>
-     * 
-     * @param <T> 값 타입
-     * @param clazz 클래스 타입
-     * @return 타입에 맞는 Redis 연결 객체
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineConnectionByClass(Class<?> clazz) {
-        if (clazz == null) {
-            return (StatefulRedisConnection<String, T>) Redis.getObject();
-        }
-        
-        if (String.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getString();
-        } else if (SharedMap.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getSharedMap();
-        } else if (LinkedMap.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getLinkedMap();
-        } else if (ThreadSafeLinkedMap.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMap();
-        } else if (List.class.isAssignableFrom(clazz)) {
-            // List는 제네릭 정보 없이는 Object로 처리
-            return (StatefulRedisConnection<String, T>) Redis.getObjectList();
-        } else if (Set.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
-        } else if (Map.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectMap();
-        }
-        
-        return (StatefulRedisConnection<String, T>) Redis.getObject();
-    }
-
-    // ================= Private Helper Methods =================
-
-    /**
-     * List의 요소 타입에 따라 적절한 Connection 반환
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineListConnection(List<?> list) {
-        if (list.isEmpty()) {
-            // 빈 리스트는 Object로 처리 (타입 정보 없음)
-            return (StatefulRedisConnection<String, T>) Redis.getObjectList();
-        }
-        
-        Object firstElement = list.get(0);
-        
-        // 모든 요소가 동일한 타입인지 확인
-        Class<?> elementType = firstElement.getClass();
-        boolean homogeneous = list.stream()
-            .allMatch(e -> e != null && elementType.isInstance(e));
-        
-        if (!homogeneous) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectList();
-        }
-        
-        // 요소 타입별 Connection 반환
-        if (firstElement instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringList();
-        } else if (firstElement instanceof SharedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getSharedMapList();
-        } else if (firstElement instanceof LinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getLinkedMapList();
-        } else if (firstElement instanceof ThreadSafeLinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapList();
-        }
-        
-        return (StatefulRedisConnection<String, T>) Redis.getObjectList();
-    }
-
-    /**
-     * Set의 요소 타입에 따라 적절한 Connection 반환
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineSetConnection(Set<?> set) {
-        if (set.isEmpty()) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
-        }
-        
-        Object firstElement = set.iterator().next();
-        
-        // 모든 요소가 동일한 타입인지 확인
-        Class<?> elementType = firstElement.getClass();
-        boolean homogeneous = set.stream()
-            .allMatch(e -> e != null && elementType.isInstance(e));
-        
-        if (!homogeneous) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
-        }
-        
-        // 요소 타입별 Connection 반환
-        if (firstElement instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringSet();
-        } else if (firstElement instanceof SharedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getSharedMapSet();
-        } else if (firstElement instanceof LinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getLinkedMapSet();
-        } else if (firstElement instanceof ThreadSafeLinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapSet();
-        }
-        
-        return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
-    }
-
-    /**
-     * Map의 키/값 타입에 따라 적절한 Connection 반환
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineMapConnection(Map<?, ?> map) {
-        if (map.isEmpty()) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectMap();
-        }
-        
-        Map.Entry<?, ?> firstEntry = map.entrySet().iterator().next();
-        Object firstKey = firstEntry.getKey();
-        Object firstValue = firstEntry.getValue();
-        
-        // 모든 키/값이 동일한 타입인지 확인
-        Class<?> keyType = firstKey.getClass();
-        Class<?> valueType = firstValue.getClass();
-        
-        boolean homogeneousKeys = map.keySet().stream()
-            .allMatch(k -> k != null && keyType.isInstance(k));
-        boolean homogeneousValues = map.values().stream()
-            .allMatch(v -> v != null && valueType.isInstance(v));
-        
-        if (!homogeneousKeys || !homogeneousValues) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectMap();
-        }
-        
-        // 키-값 타입별 Connection 반환
-        if (firstKey instanceof String && firstValue instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringMap();
-        } else if (firstKey instanceof String && firstValue instanceof SharedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringSharedMapMap();
-        } else if (firstKey instanceof String && firstValue instanceof LinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringLinkedMapMap();
-        } else if (firstKey instanceof String && firstValue instanceof ThreadSafeLinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringThreadSafeLinkedMapMap();
-        } else if (firstKey instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringObjectMap();
-        }
-        
-        return (StatefulRedisConnection<String, T>) Redis.getObjectMap();
-    }
-
-    /**
-     * Type이 특정 클래스와 매칭되는지 확인
+     * Type이 특정 클래스인지 확인하는 헬퍼 메서드
      */
     private static boolean isTypeOf(Type type, Class<?> clazz) {
         if (type instanceof Class<?>) {
@@ -413,6 +301,139 @@ public final class RedisUtils {
         }
         return false;
     }
+
+    /**
+     * Class 기반 Connection 결정 (기존 - JSON Codec)
+     */
+    private static <T> StatefulRedisConnection<String, T> determineConnectionByClass(Class<T> clazz) {
+        return determineConnectionByClass(clazz, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ Class 기반 Connection 결정 (Codec 선택)
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> StatefulRedisConnection<String, T> determineConnectionByClass(
+            Class<T> clazz, CodecType codecType) {
+        
+        if (clazz == String.class) {
+            return (StatefulRedisConnection<String, T>) Redis.getString(codecType);
+        } else if (SharedMap.class.isAssignableFrom(clazz)) {
+            return (StatefulRedisConnection<String, T>) Redis.getSharedMap(codecType);
+        } else if (LinkedMap.class.isAssignableFrom(clazz)) {
+            return (StatefulRedisConnection<String, T>) Redis.getLinkedMap(codecType);
+        } else if (ThreadSafeLinkedMap.class.isAssignableFrom(clazz)) {
+            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMap(codecType);
+        } else if (List.class.isAssignableFrom(clazz)) {
+            return (StatefulRedisConnection<String, T>) Redis.getObjectList(codecType);
+        } else if (Set.class.isAssignableFrom(clazz)) {
+            return (StatefulRedisConnection<String, T>) Redis.getObjectSet(codecType);
+        } else if (Map.class.isAssignableFrom(clazz)) {
+            return (StatefulRedisConnection<String, T>) Redis.getStringObjectMap();
+        }
+        
+        return Redis.get(clazz, codecType);
+    }
+
+    /**
+     * List Connection 결정 (기존)
+     */
+    private static <T> StatefulRedisConnection<String, T> determineListConnection(List<?> list) {
+        return determineListConnection(list, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ List Connection 결정 (Codec 선택)
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> StatefulRedisConnection<String, T> determineListConnection(
+            List<?> list, CodecType codecType) {
+        
+        if (list.isEmpty()) {
+            return (StatefulRedisConnection<String, T>) Redis.getObjectList(codecType);
+        }
+        
+        Object first = list.get(0);
+        if (first instanceof String) {
+            return (StatefulRedisConnection<String, T>) Redis.getStringList(codecType);
+        } else if (first instanceof SharedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getSharedMapList();
+        } else if (first instanceof LinkedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getLinkedMapList();
+        } else if (first instanceof ThreadSafeLinkedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapList();
+        }
+        
+        return (StatefulRedisConnection<String, T>) Redis.getObjectList(codecType);
+    }
+
+    /**
+     * Set Connection 결정 (기존)
+     */
+    private static <T> StatefulRedisConnection<String, T> determineSetConnection(Set<?> set) {
+        return determineSetConnection(set, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ Set Connection 결정 (Codec 선택)
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> StatefulRedisConnection<String, T> determineSetConnection(
+            Set<?> set, CodecType codecType) {
+        
+        if (set.isEmpty()) {
+            return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
+        }
+        
+        Object first = set.iterator().next();
+        if (first instanceof String) {
+            return (StatefulRedisConnection<String, T>) Redis.getStringSet();
+        } else if (first instanceof SharedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getSharedMapSet();
+        } else if (first instanceof LinkedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getLinkedMapSet();
+        } else if (first instanceof ThreadSafeLinkedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapSet();
+        }
+        
+        return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
+    }
+
+    /**
+     * Map Connection 결정 (기존)
+     */
+    private static <T> StatefulRedisConnection<String, T> determineMapConnection(Map<?, ?> map) {
+        return determineMapConnection(map, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ Map Connection 결정 (Codec 선택)
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> StatefulRedisConnection<String, T> determineMapConnection(
+            Map<?, ?> map, CodecType codecType) {
+        
+        if (map.isEmpty()) {
+            return (StatefulRedisConnection<String, T>) Redis.getStringObjectMap();
+        }
+        
+        Map.Entry<?, ?> first = map.entrySet().iterator().next();
+        Object key = first.getKey();
+        Object value = first.getValue();
+        
+        if (key instanceof String && value instanceof String) {
+            return (StatefulRedisConnection<String, T>) Redis.getStringMap();
+        } else if (key instanceof String && value instanceof SharedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getStringSharedMapMap();
+        } else if (key instanceof String && value instanceof LinkedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getStringLinkedMapMap();
+        } else if (key instanceof String && value instanceof ThreadSafeLinkedMap) {
+            return (StatefulRedisConnection<String, T>) Redis.getStringThreadSafeLinkedMapMap();
+        }
+        
+        return (StatefulRedisConnection<String, T>) Redis.getStringObjectMap();
+    }
+
 
     // ------------------- 기본 Key/Value Operations -------------------
 
@@ -814,102 +835,189 @@ public final class RedisUtils {
     // ------------------- List Operations -------------------
 
     /**
-     * List의 오른쪽(끝)에 값 추가 (동기)
-     * 
-     * @param key Redis 키
-     * @param val 추가할 값
-     * @return 추가 후 List의 길이
+     * List 오른쪽에 추가 (기존 - JSON)
      */
-    public static long rpush(String key, Object val) {
-        StatefulRedisConnection<String, Object> conn = determineConnection(val);
-        return withRedis(conn, c -> c.sync().rpush(key, val));
+    public static <T> Long rpush(String key, T val) {
+        return rpush(key, val, CodecType.JSON);
+    }
+    
+    
+    /**
+     * ⭐ List 오른쪽에 추가 (Codec 선택)
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> Long rpush(String key, T val, CodecType codecType) {
+        if (key == null || key.trim().isEmpty() || val == null) {
+            return 0L;
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
+            return conn.sync().rpush(key, val);
+        } catch (Exception e) {
+            logger.warn("Redis RPUSH failed: key={}, codec={}, error={}", 
+                key, codecType, e.getMessage());
+            return 0L;
+        }
     }
 
     /**
-     * List의 오른쪽(끝)에 값 추가 (비동기)
-     * 
-     * @param key Redis 키
-     * @param val 추가할 값
+     * List 오른쪽에 추가 (기존 - JSON)
      */
-    public static void rpushAsync(String key, Object val) {
-        StatefulRedisConnection<String, Object> conn = determineConnection(val);
-        withRedisAsync(conn, key, val);
+    public static <T> void rpushAsync(String key, T val) {
+        rpushAsync(key, val, CodecType.JSON);
+    }
+    
+    
+    /**
+     * ⭐ List 오른쪽에 추가 (Codec 선택)
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> void rpushAsync(String key, T val, CodecType codecType) {
+        if (key == null || key.trim().isEmpty() || val == null) {
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
+            RedisFuture<Long> future = conn.async().rpush(key, val);
+            future.thenAccept(v -> logger.debug("rpush async completed for key: {} with length: {}", key, v))
+                  .exceptionally(throwable -> {
+                      logger.debug("rpush async failed for key: {}", key, throwable);
+                      return null;
+                  });
+        } catch (Exception e) {
+            logger.debug("Redis RPUSH failed: key={}, codec={}, error={}", 
+                key, codecType, e.getMessage());
+        }
+    }
+    
+    
+
+    /**
+     * List 왼쪽에 추가 (기존 - JSON)
+     */
+    public static <T> Long lpush(String key, T val) {
+        return lpush(key, val, CodecType.JSON);
+    }
+    
+    
+    /**
+     * ⭐ List 왼쪽에 추가 (Codec 선택)
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> Long lpush(String key, T val, CodecType codecType) {
+        if (key == null || key.trim().isEmpty() || val == null) {
+            return 0L;
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
+            return conn.sync().lpush(key, val);
+        } catch (Exception e) {
+            logger.warn("Redis RPUSH failed: key={}, codec={}, error={}", 
+                key, codecType, e.getMessage());
+            return 0L;
+        }
     }
 
     /**
-     * List의 왼쪽(앞)에 값 추가 (동기)
-     * 
-     * @param key Redis 키
-     * @param val 추가할 값
-     * @return 추가 후 List의 길이
+     * List 왼쪽에 추가 (기존 - JSON)
      */
-    public static long lpush(String key, Object val) {
-        StatefulRedisConnection<String, Object> conn = determineConnection(val);
-        return withRedis(conn, c -> c.sync().lpush(key, val));
+    public static <T> void lpushAsync(String key, T val) {
+        lpushAsync(key, val, CodecType.JSON);
     }
+    
+    
+    /**
+     * ⭐ List 왼쪽에 추가 (Codec 선택)
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> void lpushAsync(String key, T val, CodecType codecType) {
+        if (key == null || key.trim().isEmpty() || val == null) {
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
+            RedisFuture<Long> future = conn.async().lpush(key, val);
+            future.thenAccept(v -> logger.debug("lpush async completed for key: {} with length: {}", key, v))
+                  .exceptionally(throwable -> {
+                      logger.debug("lpush async failed for key: {}", key, throwable);
+                      return null;
+                  });
+        } catch (Exception e) {
+            logger.debug("Redis LPUSH failed: key={}, codec={}, error={}", 
+                key, codecType, e.getMessage());
+        }
+    }
+    
+    
+    
+    
+    
 
     /**
-     * List의 왼쪽(앞)에 값 추가 (비동기)
-     * 
-     * @param key Redis 키
-     * @param val 추가할 값
-     */
-    public static void lpushAsync(String key, Object val) {
-        StatefulRedisConnection<String, Object> conn = determineConnection(val);
-        withRedisAsync(conn, key, val);
-    }
-
-    /**
-     * List의 오른쪽(끝)에서 값을 꺼내서 반환
-     * 
-     * @param <T> 반환 타입
-     * @param key Redis 키
-     * @param clazz 반환 클래스 타입
-     * @return 꺼낸 값
+     * List의 오른쪽(끝)에서 값을 꺼내서 반환 (기존 - JSON)
      */
     public static <T> T rpop(String key, Class<T> clazz) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz);
-        return withRedis(conn, c -> clazz.cast(c.sync().rpop(key)));
-    }
-    
-    
-    /**
-     * List의 오른쪽(끝)에서 값을 지정한 갯수 만큼 꺼내서 반환
-     * 
-     * @param <T> 반환 타입
-     * @param key Redis 키
-     * @param clazz 반환 클래스 타입
-     * @return 꺼낸 값
-     */
-    public static <T> T rpops(String key, Number size, Class<T> clazz) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz);
-        return withRedis(conn, c -> clazz.cast(c.sync().rpop(key,CommonUtils.parseLong(size))));
+        return rpop(key, clazz, CodecType.JSON);
     }
 
     /**
-     * List의 왼쪽(앞)에서 값을 꺼내서 반환
-     * 
-     * @param <T> 반환 타입
-     * @param key Redis 키
-     * @param clazz 반환 클래스 타입
-     * @return 꺼낸 값
+     * ⭐ List의 오른쪽(끝)에서 값을 꺼내서 반환 (Codec 선택)
+     */
+    public static <T> T rpop(String key, Class<T> clazz, CodecType codecType) {
+        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
+        return withRedis(conn, c -> clazz.cast(c.sync().rpop(key)));
+    }
+
+
+
+    /**
+     * List의 오른쪽(끝)에서 값을 지정한 갯수만큼 꺼내서 반환 (기존 - JSON)
+     */
+    public static <T> T rpops(String key, Number size, Class<T> clazz) {
+        return rpops(key, size, clazz, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ List의 오른쪽(끝)에서 값을 지정한 갯수만큼 꺼내서 반환 (Codec 선택)
+     */
+    public static <T> T rpops(String key, Number size, Class<T> clazz, CodecType codecType) {
+        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
+        return withRedis(conn, c -> clazz.cast(c.sync().rpop(key, CommonUtils.parseLong(size))));
+    }
+
+ 
+
+    /**
+     * List의 왼쪽(앞)에서 값을 꺼내서 반환 (기존 - JSON)
      */
     public static <T> T lpop(String key, Class<T> clazz) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz);
+        return lpop(key, clazz, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ List의 왼쪽(앞)에서 값을 꺼내서 반환 (Codec 선택)
+     */
+    public static <T> T lpop(String key, Class<T> clazz, CodecType codecType) {
+        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
         return withRedis(conn, c -> clazz.cast(c.sync().lpop(key)));
     }
+
     
     /**
-     * List의 왼쪽(앞)에서 값을 꺼내서 반환
-     * 
-     * @param <T> 반환 타입
-     * @param key Redis 키
-     * @param clazz 반환 클래스 타입
-     * @return 꺼낸 값
+     * List의 왼쪽(앞)에서 값을 지정한 갯수만큼 꺼내서 반환 (기존 - JSON)
      */
     public static <T> T lpops(String key, Number size, Class<T> clazz) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz);
-        return withRedis(conn, c -> clazz.cast(c.sync().lpop(key,CommonUtils.parseLong(size))));
+        return lpops(key, size, clazz, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ List의 왼쪽(앞)에서 값을 지정한 갯수만큼 꺼내서 반환 (Codec 선택)
+     */
+    public static <T> T lpops(String key, Number size, Class<T> clazz, CodecType codecType) {
+        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
+        return withRedis(conn, c -> clazz.cast(c.sync().lpop(key, CommonUtils.parseLong(size))));
     }
 
     /**
@@ -1007,15 +1115,70 @@ public final class RedisUtils {
 
     // ---------------- String Operations ----------------
     
-    /**
-     * String 값 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 값
-     */
-    public static String get(String key) {
-        return get(key, 0);
+    
+    public static Object get(String key) {
+        return get(key, Object.class, CodecType.JSON);
     }
+    
+    public static Object get(String key, CodecType codecType) {
+        return get(key, Object.class, codecType);
+    }
+    
+    
+    public static <T> T get(String key, Class<T> clazz) {
+        return get(key, clazz, CodecType.JSON);
+    }
+    
+    
+    public static <T> T get(String key, Class<T> clazz, CodecType codecType) {
+        if (key == null || key.trim().isEmpty()) {
+            logger.warn("Redis GET ignored: key is null or empty");
+            return null;
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
+            return conn.sync().get(key);
+        } catch (Exception e) {
+            logger.error("Redis GET failed: key={}, class={}, codec={}, error={}", 
+                key, clazz.getSimpleName(), codecType, e.getMessage());
+            return null;
+        }
+    }
+    
+    
+    public static <T> T get(String key, TypeReference<T> typeRef) {
+        return get(key, typeRef, CodecType.JSON);
+    }
+    
+    
+    /**
+     * ⭐⭐ TypeReference로 값 조회 (Codec 선택) - 복잡한 제네릭용
+     * 
+     * 사용 예:
+     * <pre>
+     * List<SharedMap<String, Object>> list = RedisUtils.get("key",
+     *     new TypeReference<List<SharedMap<String, Object>>>() {},
+     *     CodecType.FST);
+     * </pre>
+     */
+    public static <T> T get(String key, TypeReference<T> typeRef, CodecType codecType) {
+        if (key == null || key.trim().isEmpty()) {
+            logger.warn("Redis GET ignored: key is null or empty");
+            return null;
+        }
+        
+        try {
+            // TypeReference를 사용하여 정확한 Connection 획득
+            StatefulRedisConnection<String, T> conn = determineConnection(null, typeRef, codecType);
+            return conn.sync().get(key);
+        } catch (Exception e) {
+            logger.error("Redis GET failed: key={}, codec={}, error={}", 
+                key, codecType, e.getMessage());
+            return null;
+        }
+    }
+
 
     /**
      * String 값 조회 및 TTL 갱신
@@ -1029,15 +1192,97 @@ public final class RedisUtils {
     }
 
     /**
-     * String 값 저장
-     * 
-     * @param key Redis 키
-     * @param val 저장할 값
-     * @return "OK" (성공 시)
+     * 값 저장 (기존 - JSON Codec)
      */
-    public static String set(String key, String val) {
-        return set(key, val, 0);
+    public static <T> boolean set(String key, T val) {
+        return set(key, val, CodecType.JSON);
     }
+
+    /**
+     * ⭐ 값 저장 (Codec 선택)
+     */
+    public static <T> boolean set(String key, T val, CodecType codecType) {
+        if (key == null || key.trim().isEmpty()) {
+            logger.warn("Redis SET ignored: key is null or empty");
+            return false;
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
+            String result = conn.sync().set(key, val);
+            return "OK".equals(result);
+        } catch (Exception e) {
+            logger.error("Redis SET failed: key={}, codec={}, error={}", key, codecType, e.getMessage());
+            return false;
+        }
+    }
+    
+    
+    public static <T> boolean set(String key, T val, TypeReference<T> typeRef) {
+        return set(key, val, typeRef, CodecType.JSON);
+    }
+    
+    public static <T> boolean set(String key, T val, TypeReference<T> typeRef, CodecType codecType) {
+        if (key == null || key.trim().isEmpty()) {
+            logger.warn("Redis SET ignored: key is null or empty");
+            return false;
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnection(val, typeRef, codecType);
+            String result = conn.sync().set(key, val);
+            return "OK".equals(result);
+        } catch (Exception e) {
+            logger.error("Redis SET failed: key={}, codec={}, error={}", key, codecType, e.getMessage());
+            return false;
+        }
+    }
+    
+    
+    public static <T> boolean setex(String key, long seconds, T val) {
+        return setex(key, seconds, val, CodecType.JSON);
+    }
+    
+    
+    public static <T> boolean setex(String key, long seconds, T val, CodecType codecType) {
+        if (key == null || key.trim().isEmpty()) {
+            logger.warn("Redis SETEX ignored: key is null or empty");
+            return false;
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
+            String result = conn.sync().setex(key, seconds, val);
+            return "OK".equals(result);
+        } catch (Exception e) {
+            logger.error("Redis SETEX failed: key={}, ttl={}, codec={}, error={}", 
+                key, seconds, codecType, e.getMessage());
+            return false;
+        }
+    }
+    
+    public static <T> boolean setex(String key, long seconds, T val, TypeReference<T> typeRef) {
+        return setex(key, seconds, val, typeRef, CodecType.JSON);
+    }
+
+    public static <T> boolean setex(String key, long seconds, T val, 
+            TypeReference<T> typeRef, CodecType codecType) {
+        if (key == null || key.trim().isEmpty()) {
+            logger.warn("Redis SETEX ignored: key is null or empty");
+            return false;
+        }
+        
+        try {
+            StatefulRedisConnection<String, T> conn = determineConnection(val, typeRef, codecType);
+            String result = conn.sync().setex(key, seconds, val);
+            return "OK".equals(result);
+        } catch (Exception e) {
+            logger.error("Redis SETEX failed: key={}, ttl={}, codec={}, error={}", 
+                key, seconds, codecType, e.getMessage());
+            return false;
+        }
+    }
+
 
     /**
      * String 값 저장 및 TTL 설정
@@ -2508,69 +2753,7 @@ public final class RedisUtils {
             conn.sync().geopos(key, members));
     }
 
-    // ================= STREAM 연산 =================
-
-    /**
-     * 스트림에 메시지 추가
-     * 
-     * @param key 스트림 키
-     * @param body 메시지 내용
-     * @return 메시지 ID
-     */
-    public static String xadd(String key, Map<String, String> body) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().xadd(key, body));
-    }
-
-    /**
-     * 스트림에 메시지 추가 (최대 길이 제한)
-     * 
-     * @param key 스트림 키
-     * @param maxlen 최대 길이
-     * @param body 메시지 내용
-     * @return 메시지 ID
-     */
-    public static String xaddMaxlen(String key, long maxlen, Map<String, String> body) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().xadd(key, XAddArgs.Builder.maxlen(maxlen), body));
-    }
-
-    /**
-     * 스트림 메시지 읽기
-     * 
-     * @param key 스트림 키
-     * @param messageId 시작 메시지 ID ("0": 처음부터, "$": 새 메시지만)
-     * @return 메시지 리스트
-     */
-    public static List<StreamMessage<String, String>> xread(String key, String messageId) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().xread(XReadArgs.StreamOffset.from(key, messageId)));
-    }
-
-    /**
-     * 스트림 범위 조회
-     * 
-     * @param key 스트림 키
-     * @param start 시작 ID
-     * @param end 종료 ID
-     * @return 메시지 리스트
-     */
-    public static List<StreamMessage<String, String>> xrange(String key, String start, String end) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().xrange(key, Range.create(start, end)));
-    }
-
-    /**
-     * 스트림 길이 조회
-     * 
-     * @param key 스트림 키
-     * @return 스트림 길이
-     */
-    public static long xlen(String key) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().xlen(key));
-    }
-
+ 
     // ================= UTILITY 헬퍼 =================
 
     /**

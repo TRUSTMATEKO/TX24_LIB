@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.codec.RedisCodec;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import io.lettuce.core.resource.ClientResources;
 import io.lettuce.core.resource.DefaultClientResources;
@@ -26,7 +27,7 @@ import kr.tx24.lib.map.ThreadSafeLinkedMap;
  * - Connection을 재사용하여 성능 최적화
  * - Application 종료 시에만 연결 종료
  * - Lettuce 6.2.x 최적화 적용
- * 
+ * - JSON/FST Codec 선택 지원 
  * @author TX24
  * @version 2.0
  */
@@ -91,7 +92,12 @@ public final class Redis {
     }
     
     public static boolean isConnectionOpen(Class<?> valueType) {
-        var conn = connectionCache.get(valueType.getName());
+        return isConnectionOpen(valueType, CodecType.JSON);
+    }
+    
+    public static boolean isConnectionOpen(Class<?> valueType, CodecType codecType) {
+        String cacheKey = buildCacheKey(valueType, codecType);
+        var conn = connectionCache.get(cacheKey);
         return conn != null && conn.isOpen();
     }
 
@@ -107,7 +113,7 @@ public final class Redis {
     
     public static synchronized void shutdown() {
         
-    	
+    	/*
     	for (StatefulRedisConnection <String, ?>  conn : connectionCache.values()) { 
             try {
                 if (conn != null && conn.isOpen()) {
@@ -116,7 +122,7 @@ public final class Redis {
             } catch (Exception e) {
                 logger.warn("Error closing connection", e);
             }
-        }
+        }*/
     	
         // 모든 연결 종료
         connectionCache.values().parallelStream().forEach(conn -> {
@@ -151,31 +157,88 @@ public final class Redis {
             }
         }
     }
-
-    @SuppressWarnings("unchecked")
+    
+    
+    /**
+     * 타입별 Connection 가져오기 (기본 - JSON Codec)
+     * 
+     * @param <V> 값 타입
+     * @param valueType 값 클래스
+     * @return Redis Connection
+     */
     public static <V> StatefulRedisConnection<String, V> get(Class<V> valueType) {
+        return get(valueType, CodecType.JSON);
+    }
+    
+
+    /**
+     * ⭐ 타입별 Connection 가져오기 (Codec 선택)
+     * 
+     * 사용 예:
+     * Redis.get(User.class, CodecType.JSON)
+     * Redis.get(Order.class, CodecType.FST)
+     * 
+     * @param <V> 값 타입
+     * @param valueType 값 클래스
+     * @param codecType Codec 타입 (JSON 또는 FST)
+     * @return Redis Connection
+     */
+    @SuppressWarnings("unchecked")
+    public static <V> StatefulRedisConnection<String, V> get(Class<V> valueType, CodecType codecType) {
         if (client == null) {
             throw new IllegalStateException("Redis client not initialized");
         }
         
-        String cacheKey = valueType.getName();
+        String cacheKey = buildCacheKey(valueType, codecType);
         
         return (StatefulRedisConnection<String, V>) connectionCache.computeIfAbsent(
             cacheKey, 
             k -> {
-                RedisObjectCodec<?> codec = new RedisObjectCodec<>(valueType);
-                StatefulRedisConnection<String, ?> conn = client.connect(codec);
-                logger.debug("Created new Redis connection for type: {}", valueType.getName());
+                RedisCodec<String, V> codec = createCodec(valueType, codecType);
+                StatefulRedisConnection<String, V> conn = client.connect(codec);
+                logger.debug("Created new Redis connection: {} [{}]", valueType.getName(), codecType);
                 return conn;
             }
         );
     }
 
+    /**
+     * PubSub Connection (기본 - JSON Codec)
+     */
     public static <V> StatefulRedisPubSubConnection<String, V> getPubSub(Class<V> valueType) {
+        return getPubSub(valueType, CodecType.JSON);
+    }
+
+    /**
+     * ⭐ PubSub Connection (Codec 선택)
+     */
+    public static <V> StatefulRedisPubSubConnection<String, V> getPubSub(Class<V> valueType, CodecType codecType) {
         if (client == null) {
             throw new IllegalStateException("Redis client not initialized");
         }
-        return client.connectPubSub(new RedisObjectCodec<>(valueType));
+        RedisCodec<String, V> codec = createCodec(valueType, codecType);
+        return client.connectPubSub(codec);
+    }
+    
+    
+    /**
+     * Codec 생성
+     */
+    private static <V> RedisCodec<String, V> createCodec(Class<V> valueType, CodecType codecType) {
+        switch (codecType) {
+            case FST:
+                return new RedisFstCodec<>(valueType);
+            case JSON:
+            default:
+                return new RedisJsonCodec<>(valueType);
+        }
+    }
+    
+    
+    
+    
+    private static String buildCacheKey(Class<?> valueType, CodecType codecType) {
+        return valueType.getName() + ":" + codecType.name();
     }
 
     // ================= 기본 Convenience Methods (기존) =================
@@ -191,12 +254,34 @@ public final class Redis {
     public static StatefulRedisConnection<String, Object> getObject() {
         return get(Object.class);
     }
+    
+    /**
+     * String Connection (Codec 선택)
+     */
+    public static StatefulRedisConnection<String, String> getString(CodecType codecType) {
+        return get(String.class, codecType);
+    }
+
+    /**
+     * Object Connection (Codec 선택)
+     */
+    public static StatefulRedisConnection<String, Object> getObject(CodecType codecType) {
+        return get(Object.class, codecType);
+    }
+
+    
+    
 
     // ================= SharedMap 관련 (기존) =================
 
     @SuppressWarnings("unchecked")
     public static StatefulRedisConnection<String, SharedMap<String, Object>> getSharedMap() {
         return get((Class<SharedMap<String, Object>>)(Class<?>)SharedMap.class);
+    }
+    
+    @SuppressWarnings("unchecked")
+    public static StatefulRedisConnection<String, SharedMap<String, Object>> getSharedMap(CodecType codecType) {
+        return get((Class<SharedMap<String, Object>>)(Class<?>)SharedMap.class, codecType);
     }
 
     @SuppressWarnings("unchecked")
@@ -222,6 +307,12 @@ public final class Redis {
     public static StatefulRedisConnection<String, LinkedMap<String, Object>> getLinkedMap() {
         return get((Class<LinkedMap<String, Object>>) (Class<?>) LinkedMap.class);
     }
+    
+    @SuppressWarnings("unchecked")
+    public static StatefulRedisConnection<String, LinkedMap<String, Object>> getLinkedMap(CodecType codecType) {
+        return get((Class<LinkedMap<String, Object>>) (Class<?>) LinkedMap.class, codecType);
+    }
+    
 
     @SuppressWarnings("unchecked")
     public static StatefulRedisConnection<String, LinkedMap<String, String>> getLinkedMapString() {
@@ -245,6 +336,11 @@ public final class Redis {
     @SuppressWarnings("unchecked")
     public static StatefulRedisConnection<String, ThreadSafeLinkedMap<String, Object>> getThreadSafeLinkedMap() {
         return get((Class<ThreadSafeLinkedMap<String, Object>>) (Class<?>) ThreadSafeLinkedMap.class);
+    }
+    
+    @SuppressWarnings("unchecked")
+    public static StatefulRedisConnection<String, ThreadSafeLinkedMap<String, Object>> getThreadSafeLinkedMap(CodecType codecType) {
+        return get((Class<ThreadSafeLinkedMap<String, Object>>) (Class<?>) ThreadSafeLinkedMap.class, codecType);
     }
 
     @SuppressWarnings("unchecked")
@@ -275,6 +371,12 @@ public final class Redis {
     public static StatefulRedisConnection<String, List<String>> getStringList() {
         return get((Class<List<String>>) (Class<?>) List.class);
     }
+    
+    
+    @SuppressWarnings("unchecked")
+    public static StatefulRedisConnection<String, List<String>> getStringList(CodecType codecType) {
+        return get((Class<List<String>>) (Class<?>) List.class, codecType);
+    }
 
     /**
      * List<Object> 전용 Connection
@@ -285,58 +387,46 @@ public final class Redis {
     public static StatefulRedisConnection<String, List<Object>> getObjectList() {
         return get((Class<List<Object>>) (Class<?>) List.class);
     }
+    
+    
+    @SuppressWarnings("unchecked")
+    public static StatefulRedisConnection<String, List<Object>> getObjectList(CodecType codecType) {
+        return get((Class<List<Object>>) (Class<?>) List.class, codecType);
+    }
 
     // ================= Set 관련 (신규 추가) =================
 
-    /**
-     * Set<String> 전용 Connection
-     * 
-     * @return Set<String> Connection
-     */
     @SuppressWarnings("unchecked")
     public static StatefulRedisConnection<String, Set<String>> getStringSet() {
         return get((Class<Set<String>>) (Class<?>) Set.class);
     }
 
-    /**
-     * Set<Object> 전용 Connection
-     * 
-     * @return Set<Object> Connection
-     */
     @SuppressWarnings("unchecked")
     public static StatefulRedisConnection<String, Set<Object>> getObjectSet() {
         return get((Class<Set<Object>>) (Class<?>) Set.class);
     }
+    
+    
+    @SuppressWarnings("unchecked")
+    public static StatefulRedisConnection<String, Set<Object>> getObjectSet(CodecType codecType) {
+        return get((Class<Set<Object>>) (Class<?>) Set.class, codecType);
+    }
 
-    /**
-     * Set<SharedMap<String, Object>> 전용 Connection
-     * 
-     * @return Set<SharedMap> Connection
-     */
     @SuppressWarnings("unchecked")
     public static StatefulRedisConnection<String, Set<SharedMap<String, Object>>> getSharedMapSet() {
         return get((Class<Set<SharedMap<String, Object>>>) (Class<?>) Set.class);
     }
 
-    /**
-     * Set<LinkedMap<String, Object>> 전용 Connection
-     * 
-     * @return Set<LinkedMap> Connection
-     */
     @SuppressWarnings("unchecked")
     public static StatefulRedisConnection<String, Set<LinkedMap<String, Object>>> getLinkedMapSet() {
         return get((Class<Set<LinkedMap<String, Object>>>) (Class<?>) Set.class);
     }
 
-    /**
-     * Set<ThreadSafeLinkedMap<String, Object>> 전용 Connection
-     * 
-     * @return Set<ThreadSafeLinkedMap> Connection
-     */
     @SuppressWarnings("unchecked")
     public static StatefulRedisConnection<String, Set<ThreadSafeLinkedMap<String, Object>>> getThreadSafeLinkedMapSet() {
         return get((Class<Set<ThreadSafeLinkedMap<String, Object>>>) (Class<?>) Set.class);
     }
+
 
     // ================= Map 관련 (신규 추가) =================
 

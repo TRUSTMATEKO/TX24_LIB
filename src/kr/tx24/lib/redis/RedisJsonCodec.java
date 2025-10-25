@@ -25,15 +25,15 @@ import io.lettuce.core.codec.RedisCodec;
  *
  * @param <T> value type
  */
-public final class RedisObjectCodec<T> implements RedisCodec<String, T> {
+public final class RedisJsonCodec<T> implements RedisCodec<String, T> {
 
-    private static final Logger logger = LoggerFactory.getLogger(RedisObjectCodec.class);
+    private static final Logger logger = LoggerFactory.getLogger(RedisJsonCodec.class);
 
     private static final ObjectMapper OBJECT_MAPPER = createOptimizedObjectMapper();
 
     private final JavaType javaType;
 
-    public RedisObjectCodec(Class<T> type) {
+    public RedisJsonCodec(Class<T> type) {
         this.javaType = OBJECT_MAPPER.getTypeFactory().constructType(type);
     }
 
