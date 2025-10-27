@@ -1,4 +1,4 @@
-package kr.tx24.lib.redis2;
+package kr.tx24.lib.redis;
 
 import java.util.List;
 import java.util.Map;
@@ -7,7 +7,7 @@ import java.util.Set;
 import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.SharedMap;
 import kr.tx24.lib.map.ThreadSafeLinkedMap;
-import kr.tx24.lib.redis2.RedisUtils.TypeReference;
+import kr.tx24.lib.redis.RedisUtils.TypeReference;
 
 public enum TypeRegistry {
 	

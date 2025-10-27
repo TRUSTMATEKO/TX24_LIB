@@ -1,9 +1,6 @@
 package kr.tx24.lib.redis;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
@@ -12,32 +9,36 @@ import org.slf4j.LoggerFactory;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.codec.RedisCodec;
-import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import io.lettuce.core.api.async.RedisAsyncCommands;
+import io.lettuce.core.api.sync.RedisCommands;
 import io.lettuce.core.resource.ClientResources;
 import io.lettuce.core.resource.DefaultClientResources;
 import kr.tx24.lib.lang.SystemUtils;
-import kr.tx24.lib.map.LinkedMap;
-import kr.tx24.lib.map.SharedMap;
-import kr.tx24.lib.map.ThreadSafeLinkedMap;
 
 /**
- * Redis 연결 관리 클래스
- * - 각 타입별로 하나의 연결만 유지 (Thread-Safe)
- * - Connection을 재사용하여 성능 최적화
- * - Application 종료 시에만 연결 종료
- * - Lettuce 6.2.x 최적화 적용
- * - JSON/FST Codec 선택 지원 
+ * Redis Connection 관리
+ * 
+ * <p><b> Redis 설계 방안</b></p>
+ * <ul>
+ *   <li>Connection Pool 사용하지 않음 (Netty 기반 Non-blocking I/O</li>
+ *   <li>하나의 Connection 을 여러 쓰레드에서 재사용</li>
+ *   <li>Connection 에 대한 close() 제거, close() 는 성능 저하의 원인이며. Shutdown 시 자동 중료</li>
+ *   <li>Lettuce 공식 권장사항: "Reuse connections, don't create/close per operation"</li>
+ *   <li>getConnection() 시 close 되어 있다면 reconnect() 시도 </li>
+ * </ul>
+ * 
  * @author TX24
- * @version 2.0
+ * @version 1.0 
+ * @see <a href="https://lettuce.io/core/release/reference/">Lettuce Reference</a>
  */
 public final class Redis {
 
     private static final Logger logger = LoggerFactory.getLogger(Redis.class);
+    
     private static volatile RedisClient client;
     private static volatile ClientResources clientResources;
-
-    private static final Map<String, StatefulRedisConnection<String, ?>> connectionCache = new ConcurrentHashMap<>();
+    private static volatile StatefulRedisConnection<String, Object> connection;
+    private static volatile boolean reconnecting = false;
     
     static {
         initClient();
@@ -48,8 +49,11 @@ public final class Redis {
         throw new UnsupportedOperationException("Utility class");
     }
 
+
     private static synchronized void initClient() {
-        if (client != null) return;
+        if (client != null && connection != null && connection.isOpen()) {
+            return;
+        }
         
         try {
             SystemUtils.init();
@@ -59,481 +63,289 @@ public final class Redis {
                 throw new IllegalStateException("NOT_SET");
             }
             
-            // ClientResources 설정 (성능 최적화)
-            int cpuCount = Runtime.getRuntime().availableProcessors();
-            clientResources = DefaultClientResources.builder()
-                    .ioThreadPoolSize(Math.max(2, cpuCount)) 
-                    .computationThreadPoolSize(Math.max(2, cpuCount))
-                    .build();
             
-            // RedisURI 파싱 및 타임아웃 설정
+            // 기존 리소스 정리 (재연결의 경우)
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Exception e) {
+                    logger.debug("Error closing old connection: {}", e.getMessage());
+                }
+                connection = null;
+            }
+            
+            if (client != null) {
+                try {
+                    client.shutdown(100, 500, TimeUnit.MILLISECONDS);
+                } catch (Exception e) {
+                    logger.debug("Error shutting down old client: {}", e.getMessage());
+                }
+                client = null;
+            }
+            
+            if (clientResources == null) {
+            	// I/O 스레드: CPU 코어 수만큼 (최소 2개), Computation 스레드: CPU 코어 수만큼 (최소 2개)
+                int cpuCount = Runtime.getRuntime().availableProcessors();
+                clientResources = DefaultClientResources.builder()
+                		.ioThreadPoolSize(Math.max(2, cpuCount))
+                        .computationThreadPoolSize(Math.max(2, cpuCount))
+                        .build();
+            }
+            
+         
             RedisURI uri = RedisURI.create(redisUri);
-            uri.setTimeout(java.time.Duration.ofSeconds(10));
+            uri.setTimeout(Duration.ofSeconds(10));  // Connection timeout
             
+            // Redis Client 생성
             client = RedisClient.create(clientResources, uri);
+           
+            connection = client.connect(new TypedRedisCodec());
+            
+            // Connection 유효성 검증
+            String pong = connection.sync().ping();
+            if (!"PONG".equals(pong)) {
+                throw new IllegalStateException("Redis connection validation failed");
+            }
             
             logger.info("Redis initialized: {}", redisUri);
             
         } catch (IllegalStateException e) {
             if ("NOT_SET".equals(e.getMessage())) {
                 logger.warn("Redis 주소가 등록되지 않았습니다: -DREDIS -DREDIS_KEY");
+            } else {
+                throw e;
             }
         } catch (Exception e) {
-            logger.error("Redis client initialization failed: {}", SystemUtils.getRedisSystemUri(), e);
+        	logger.error("Redis client initialization failed: {}", SystemUtils.getRedisSystemUri(), e);
         }
     }
 
+
+    // ==================== Connection 접근 ====================
+
+    /**
+     * Redis Connection 반환
+     * Thread-Safe, 자동 재연결
+     * @return Thread-Safe한 Redis Connection
+     * @throws RuntimeException 재연결 실패 시
+     */
+    public static StatefulRedisConnection<String, Object> getConnection() {
+        if (connection != null && connection.isOpen()) {
+            return connection;
+        }
+       
+        return reconnect();
+    }
+
+    /**
+     * ⭐ Connection 재연결 (Thread-Safe)
+     * 
+     * <p><b>재연결 로직:</b></p>
+     * <ol>
+     *   <li>중복 재연결 방지 (reconnecting flag)</li>
+     *   <li>synchronized로 동시 재연결 방지</li>
+     *   <li>Double-check: 재연결 중 다른 스레드가 성공했을 수도 있음</li>
+     *   <li>initClient() 호출하여 재연결</li>
+     *   <li>재연결 성공/실패 로깅</li>
+     * </ol>
+     * 
+     * @return 재연결된 Connection
+     * @throws RuntimeException 재연결 실패 시
+     */
+    private static synchronized StatefulRedisConnection<String, Object> reconnect() {
+        // Double-check: 다른 스레드가 이미 재연결 했을 수도 있음
+        if (connection != null && connection.isOpen()) {
+            return connection;
+        }
+        
+        // 재연결 시도 중 표시
+        if (reconnecting) {
+            // 다른 스레드가 재연결 중이면 잠시 대기
+            int attempts = 0;
+            while (reconnecting && attempts < 50) {  // 최대 5초 대기
+                try {
+                    Thread.sleep(100);
+                    attempts++;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted while waiting for reconnection", e);
+                }
+            }
+            
+            // 대기 후 다시 확인
+            if (connection != null && connection.isOpen()) {
+                return connection;
+            }
+        }
+        
+        reconnecting = true;
+        
+        try {
+            logger.info("Redis connection is not available. Attempting to reconnect...");
+            
+            // 재연결 시도
+            initClient();
+            
+            // 재연결 성공 확인
+            if (connection == null || !connection.isOpen()) {
+                throw new IllegalStateException("Reconnection failed: connection is still not available");
+            }
+            
+            logger.warn("Redis reconnection successful");
+            return connection;
+            
+        } catch (Exception e) {
+            logger.warn("Redis reconnection failed", e);
+            throw new RuntimeException(
+                "Redis connection is not available and reconnection failed. " +
+                "Please check Redis server status and network connectivity.", 
+                e
+            );
+        } finally {
+            reconnecting = false;
+        }
+    }
+
+    /**
+     * ⭐ Sync Commands (동기 방식 - 권장)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Redis.sync().set("key", value);
+     * Object result = Redis.sync().get("key");
+     * </pre>
+     * 
+     * @return Thread-Safe한 Sync Commands
+     */
+    public static RedisCommands<String, Object> sync() {
+        return getConnection().sync();
+    }
+
+    /**
+     * ⭐ Async Commands (비동기 방식)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * RedisFuture<String> future = Redis.async().set("key", value);
+     * future.thenAccept(result -> System.out.println("Done: " + result));
+     * </pre>
+     * 
+     * @return Thread-Safe한 Async Commands
+     */
+    public static RedisAsyncCommands<String, Object> async() {
+        return getConnection().async();
+    }
+
+    // ==================== Connection 상태 ====================
+
+    /**
+     * Connection 활성 상태 확인
+     * 
+     * @return Connection이 열려있고 사용 가능하면 true
+     */
+    public static boolean isConnected() {
+        return connection != null && connection.isOpen();
+    }
+
+    /**
+     * Redis 서버 연결 확인 PING -> POING
+     * 
+     * @return "PONG" 또는 null (연결 실패)
+     */
+    public static String ping() {
+        try {
+            return sync().ping();
+        } catch (Exception e) {
+            logger.warn("Ping failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Redis Client 반환
+     * 
+     * @return Redis Client
+     */
     public static RedisClient getClient() {
         return client;
     }
-    
-    public static int getCachedConnectionCount() {
-        return connectionCache.size();
-    }
-    
-    public static boolean isConnectionOpen(Class<?> valueType) {
-        return isConnectionOpen(valueType, CodecType.JSON);
-    }
-    
-    public static boolean isConnectionOpen(Class<?> valueType, CodecType codecType) {
-        String cacheKey = buildCacheKey(valueType, codecType);
-        var conn = connectionCache.get(cacheKey);
-        return conn != null && conn.isOpen();
-    }
 
-    public static <K, V> void close(StatefulRedisConnection<K, V> conn) {
-        if (conn != null) {
-            try { 
-                conn.close(); 
+
+    /**
+     * ⭐⭐ Redis 리소스 정리 (애플리케이션 종료 시에만!)
+     */
+    public static synchronized void shutdown() {
+        logger.info("Shutting down Redis...");
+        
+        // 1. Connection 종료
+        if (connection != null) {
+            try {
+                if (connection.isOpen()) {
+                    connection.close();
+                    logger.debug("Connection closed");
+                }
             } catch (Exception e) {
-                logger.debug("Error closing connection", e);
+                logger.warn("Error closing connection: {}", e.getMessage());
+            } finally {
+                connection = null;
             }
         }
-    }
-    
-    public static synchronized void shutdown() {
         
-    	/*
-    	for (StatefulRedisConnection <String, ?>  conn : connectionCache.values()) { 
-            try {
-                if (conn != null && conn.isOpen()) {
-                    conn.close();
-                }
-            } catch (Exception e) {
-                logger.warn("Error closing connection", e);
-            }
-        }*/
-    	
-        // 모든 연결 종료
-        connectionCache.values().parallelStream().forEach(conn -> {
-            try {
-                if (conn != null && conn.isOpen()) {
-                    conn.close();
-                }
-            } catch (Exception e) {
-                logger.warn("Error closing connection", e);
-            }
-        });
-        
-        connectionCache.clear();
-        
-        // Redis Client 종료
+        // 2. Redis Client 종료
         if (client != null) {
             try {
                 client.shutdown(100, 1000, TimeUnit.MILLISECONDS);
-                client = null;
+                logger.debug("Redis client shutdown");
             } catch (Exception e) {
-                logger.warn("Error shutting down Redis client", e);
+                logger.warn("Error shutting down Redis client: {}", e.getMessage());
+            } finally {
+                client = null;
             }
         }
         
-        // ClientResources 종료
+        // 3. ClientResources 종료
         if (clientResources != null) {
             try {
                 clientResources.shutdown(100, 1000, TimeUnit.MILLISECONDS).get();
-                clientResources = null;
+                logger.debug("ClientResources shutdown");
             } catch (Exception e) {
-                logger.warn("Error shutting down ClientResources", e);
+                logger.warn("Error shutting down ClientResources: {}", e.getMessage());
+            } finally {
+                clientResources = null;
             }
         }
+        
+        logger.info("✅ Redis shutdown completed");
     }
-    
-    
-    /**
-     * 타입별 Connection 가져오기 (기본 - JSON Codec)
-     * 
-     * @param <V> 값 타입
-     * @param valueType 값 클래스
-     * @return Redis Connection
-     */
-    public static <V> StatefulRedisConnection<String, V> get(Class<V> valueType) {
-        return get(valueType, CodecType.JSON);
-    }
-    
+
+    // ==================== 유틸리티 ====================
 
     /**
-     * ⭐ 타입별 Connection 가져오기 (Codec 선택)
-     * 
-     * 사용 예:
-     * Redis.get(User.class, CodecType.JSON)
-     * Redis.get(Order.class, CodecType.FST)
-     * 
-     * @param <V> 값 타입
-     * @param valueType 값 클래스
-     * @param codecType Codec 타입 (JSON 또는 FST)
-     * @return Redis Connection
+     * Redis 정보 조회 
+     * @return Redis 서버 정보 요약
      */
-    @SuppressWarnings("unchecked")
-    public static <V> StatefulRedisConnection<String, V> get(Class<V> valueType, CodecType codecType) {
-        if (client == null) {
-            throw new IllegalStateException("Redis client not initialized");
+    public static String getInfo() {
+        if (!isConnected()) {
+            return "Redis: Not connected";
         }
         
-        String cacheKey = buildCacheKey(valueType, codecType);
-        
-        return (StatefulRedisConnection<String, V>) connectionCache.computeIfAbsent(
-            cacheKey, 
-            k -> {
-                RedisCodec<String, V> codec = createCodec(valueType, codecType);
-                StatefulRedisConnection<String, V> conn = client.connect(codec);
-                logger.debug("Created new Redis connection: {} [{}]", valueType.getName(), codecType);
-                return conn;
+        try {
+            String info = sync().info("server");
+            String[] lines = info.split("\r?\n");
+            StringBuilder sb = new StringBuilder();
+            
+            for (String line : lines) {
+                if (line.startsWith("redis_version:") || 
+                    line.startsWith("redis_mode:") ||
+                    line.startsWith("os:") ||
+                    line.startsWith("uptime_in_seconds:")) {
+                    sb.append(line).append("\n");
+                }
             }
-        );
-    }
-
-    /**
-     * PubSub Connection (기본 - JSON Codec)
-     */
-    public static <V> StatefulRedisPubSubConnection<String, V> getPubSub(Class<V> valueType) {
-        return getPubSub(valueType, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ PubSub Connection (Codec 선택)
-     */
-    public static <V> StatefulRedisPubSubConnection<String, V> getPubSub(Class<V> valueType, CodecType codecType) {
-        if (client == null) {
-            throw new IllegalStateException("Redis client not initialized");
-        }
-        RedisCodec<String, V> codec = createCodec(valueType, codecType);
-        return client.connectPubSub(codec);
-    }
-    
-    
-    /**
-     * Codec 생성
-     */
-    private static <V> RedisCodec<String, V> createCodec(Class<V> valueType, CodecType codecType) {
-        switch (codecType) {
-            case FST:
-                return new RedisFstCodec<>(valueType);
-            case JSON:
-            default:
-                return new RedisJsonCodec<>(valueType);
+            
+            return sb.toString();
+        } catch (Exception e) {
+            return "Redis: Error getting info - " + e.getMessage();
         }
     }
-    
-    
-    
-    
-    private static String buildCacheKey(Class<?> valueType, CodecType codecType) {
-        return valueType.getName() + ":" + codecType.name();
-    }
-
-    // ================= 기본 Convenience Methods (기존) =================
-
-    public static StatefulRedisConnection<String, String> get() {
-        return get(String.class);
-    }
-    
-    public static StatefulRedisConnection<String, String> getString() {
-        return get(String.class);
-    }
-
-    public static StatefulRedisConnection<String, Object> getObject() {
-        return get(Object.class);
-    }
-    
-    /**
-     * String Connection (Codec 선택)
-     */
-    public static StatefulRedisConnection<String, String> getString(CodecType codecType) {
-        return get(String.class, codecType);
-    }
-
-    /**
-     * Object Connection (Codec 선택)
-     */
-    public static StatefulRedisConnection<String, Object> getObject(CodecType codecType) {
-        return get(Object.class, codecType);
-    }
-
-    
-    
-
-    // ================= SharedMap 관련 (기존) =================
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, SharedMap<String, Object>> getSharedMap() {
-        return get((Class<SharedMap<String, Object>>)(Class<?>)SharedMap.class);
-    }
-    
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, SharedMap<String, Object>> getSharedMap(CodecType codecType) {
-        return get((Class<SharedMap<String, Object>>)(Class<?>)SharedMap.class, codecType);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, SharedMap<String, String>> getSharedMapString() {
-        return (StatefulRedisConnection<String, SharedMap<String, String>>) 
-            (StatefulRedisConnection<?, ?>) get((Class<SharedMap<String, Object>>)(Class<?>)SharedMap.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<SharedMap<String, Object>>> getSharedMapList() {
-        return get((Class<List<SharedMap<String, Object>>>) (Class<?>) List.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<SharedMap<String, String>>> getSharedMapListString() {
-        return (StatefulRedisConnection<String, List<SharedMap<String, String>>>) 
-            (StatefulRedisConnection<?, ?>) get((Class<List<SharedMap<String, Object>>>) (Class<?>) List.class);
-    }
-
-    // ================= LinkedMap 관련 (기존) =================
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, LinkedMap<String, Object>> getLinkedMap() {
-        return get((Class<LinkedMap<String, Object>>) (Class<?>) LinkedMap.class);
-    }
-    
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, LinkedMap<String, Object>> getLinkedMap(CodecType codecType) {
-        return get((Class<LinkedMap<String, Object>>) (Class<?>) LinkedMap.class, codecType);
-    }
-    
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, LinkedMap<String, String>> getLinkedMapString() {
-        return (StatefulRedisConnection<String, LinkedMap<String, String>>) 
-            (StatefulRedisConnection<?, ?>) get((Class<LinkedMap<String, Object>>) (Class<?>) LinkedMap.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<LinkedMap<String, Object>>> getLinkedMapList() {
-        return get((Class<List<LinkedMap<String, Object>>>) (Class<?>) List.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<LinkedMap<String, String>>> getLinkedMapListString() {
-        return (StatefulRedisConnection<String, List<LinkedMap<String, String>>>) 
-            (StatefulRedisConnection<?, ?>) get((Class<List<LinkedMap<String, Object>>>) (Class<?>) List.class);
-    }
-    
-    // ================= ThreadSafeLinkedMap 관련 (기존) =================
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, ThreadSafeLinkedMap<String, Object>> getThreadSafeLinkedMap() {
-        return get((Class<ThreadSafeLinkedMap<String, Object>>) (Class<?>) ThreadSafeLinkedMap.class);
-    }
-    
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, ThreadSafeLinkedMap<String, Object>> getThreadSafeLinkedMap(CodecType codecType) {
-        return get((Class<ThreadSafeLinkedMap<String, Object>>) (Class<?>) ThreadSafeLinkedMap.class, codecType);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, ThreadSafeLinkedMap<String, String>> getThreadSafeLinkedMapString() {
-        return (StatefulRedisConnection<String, ThreadSafeLinkedMap<String, String>>) 
-            (StatefulRedisConnection<?, ?>) get((Class<ThreadSafeLinkedMap<String, Object>>) (Class<?>) ThreadSafeLinkedMap.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<ThreadSafeLinkedMap<String, Object>>> getThreadSafeLinkedMapList() {
-        return get((Class<List<ThreadSafeLinkedMap<String, Object>>>) (Class<?>) List.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<ThreadSafeLinkedMap<String, String>>> getThreadSafeLinkedMapListString() {
-        return (StatefulRedisConnection<String, List<ThreadSafeLinkedMap<String, String>>>) 
-            (StatefulRedisConnection<?, ?>) get((Class<List<ThreadSafeLinkedMap<String, Object>>>) (Class<?>) List.class);
-    }
-
-    // ================= List 관련 (신규 추가) =================
-
-    /**
-     * List<String> 전용 Connection
-     * 
-     * @return List<String> Connection
-     */
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<String>> getStringList() {
-        return get((Class<List<String>>) (Class<?>) List.class);
-    }
-    
-    
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<String>> getStringList(CodecType codecType) {
-        return get((Class<List<String>>) (Class<?>) List.class, codecType);
-    }
-
-    /**
-     * List<Object> 전용 Connection
-     * 
-     * @return List<Object> Connection
-     */
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<Object>> getObjectList() {
-        return get((Class<List<Object>>) (Class<?>) List.class);
-    }
-    
-    
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, List<Object>> getObjectList(CodecType codecType) {
-        return get((Class<List<Object>>) (Class<?>) List.class, codecType);
-    }
-
-    // ================= Set 관련 (신규 추가) =================
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Set<String>> getStringSet() {
-        return get((Class<Set<String>>) (Class<?>) Set.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Set<Object>> getObjectSet() {
-        return get((Class<Set<Object>>) (Class<?>) Set.class);
-    }
-    
-    
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Set<Object>> getObjectSet(CodecType codecType) {
-        return get((Class<Set<Object>>) (Class<?>) Set.class, codecType);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Set<SharedMap<String, Object>>> getSharedMapSet() {
-        return get((Class<Set<SharedMap<String, Object>>>) (Class<?>) Set.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Set<LinkedMap<String, Object>>> getLinkedMapSet() {
-        return get((Class<Set<LinkedMap<String, Object>>>) (Class<?>) Set.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Set<ThreadSafeLinkedMap<String, Object>>> getThreadSafeLinkedMapSet() {
-        return get((Class<Set<ThreadSafeLinkedMap<String, Object>>>) (Class<?>) Set.class);
-    }
-
-
-    // ================= Map 관련 (신규 추가) =================
-
-    /**
-     * Map<String, String> 전용 Connection
-     * 
-     * @return Map<String, String> Connection
-     */
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Map<String, String>> getStringMap() {
-        return get((Class<Map<String, String>>) (Class<?>) Map.class);
-    }
-
-    /**
-     * Map<String, Object> 전용 Connection
-     * 
-     * @return Map<String, Object> Connection
-     */
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Map<String, Object>> getStringObjectMap() {
-        return get((Class<Map<String, Object>>) (Class<?>) Map.class);
-    }
-
-    /**
-     * Map<String, SharedMap<String, Object>> 전용 Connection
-     * 
-     * @return Map<String, SharedMap> Connection
-     */
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Map<String, SharedMap<String, Object>>> getStringSharedMapMap() {
-        return get((Class<Map<String, SharedMap<String, Object>>>) (Class<?>) Map.class);
-    }
-
-    /**
-     * Map<String, LinkedMap<String, Object>> 전용 Connection
-     * 
-     * @return Map<String, LinkedMap> Connection
-     */
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Map<String, LinkedMap<String, Object>>> getStringLinkedMapMap() {
-        return get((Class<Map<String, LinkedMap<String, Object>>>) (Class<?>) Map.class);
-    }
-
-    /**
-     * Map<String, ThreadSafeLinkedMap<String, Object>> 전용 Connection
-     * 
-     * @return Map<String, ThreadSafeLinkedMap> Connection
-     */
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Map<String, ThreadSafeLinkedMap<String, Object>>> getStringThreadSafeLinkedMapMap() {
-        return get((Class<Map<String, ThreadSafeLinkedMap<String, Object>>>) (Class<?>) Map.class);
-    }
-
-    /**
-     * Map<Object, Object> 전용 Connection
-     * 
-     * @return Map<Object, Object> Connection
-     */
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisConnection<String, Map<Object, Object>> getObjectMap() {
-        return get((Class<Map<Object, Object>>) (Class<?>) Map.class);
-    }
-
-    // ================= Pub/Sub Convenience (기존) =================
-
-    public static StatefulRedisPubSubConnection<String, Object> getPubSubObject() {
-        return getPubSub(Object.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisPubSubConnection<String, SharedMap<String, Object>> getPubSubSharedMap() {
-        return getPubSub((Class<SharedMap<String, Object>>) (Class<?>) SharedMap.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisPubSubConnection<String, SharedMap<String, String>> getPubSubSharedMapString() {
-        return getPubSub((Class<SharedMap<String, String>>) (Class<?>) SharedMap.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisPubSubConnection<String, LinkedMap<String, Object>> getPubSubLinkedMap() {
-        return getPubSub((Class<LinkedMap<String, Object>>) (Class<?>) LinkedMap.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisPubSubConnection<String, LinkedMap<String, String>> getPubSubLinkedMapString() {
-        return getPubSub((Class<LinkedMap<String, String>>) (Class<?>) LinkedMap.class);
-    }
-    
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisPubSubConnection<String, ThreadSafeLinkedMap<String, Object>> getPubSubThreadSafeLinkedMap() {
-        return getPubSub((Class<ThreadSafeLinkedMap<String, Object>>) (Class<?>) ThreadSafeLinkedMap.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static StatefulRedisPubSubConnection<String, ThreadSafeLinkedMap<String, String>> getPubSubThreadSafeLinkedMapString() {
-        return getPubSub((Class<ThreadSafeLinkedMap<String, String>>) (Class<?>) ThreadSafeLinkedMap.class);
-    }
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
 }

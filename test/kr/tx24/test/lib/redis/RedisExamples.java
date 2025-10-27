@@ -12,9 +12,9 @@ import java.util.concurrent.CompletableFuture;
 import io.lettuce.core.RedisFuture;
 import io.lettuce.core.TransactionResult;
 import kr.tx24.lib.map.SharedMap;
-import kr.tx24.lib.redis2.RedisUtils;
-import kr.tx24.lib.redis2.RedisUtils.TypeReference;
-import kr.tx24.lib.redis2.TypeRegistry;
+import kr.tx24.lib.redis.RedisUtils;
+import kr.tx24.lib.redis.TypeRegistry;
+import kr.tx24.lib.redis.RedisUtils.TypeReference;
 
 /**
  * Redis 사용 예제 - Transaction + Async 포함

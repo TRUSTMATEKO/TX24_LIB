@@ -1,4 +1,4 @@
-package kr.tx24.lib.redis2;
+package kr.tx24.lib.redis;
 
 
 import java.nio.ByteBuffer;

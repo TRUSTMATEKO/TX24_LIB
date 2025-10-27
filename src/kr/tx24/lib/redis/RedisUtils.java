@@ -3,74 +3,112 @@ package kr.tx24.lib.redis;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
-import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
+import java.util.function.Function;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.lettuce.core.GeoArgs;
 import io.lettuce.core.KeyScanCursor;
 import io.lettuce.core.KeyValue;
-import io.lettuce.core.Range;
 import io.lettuce.core.RedisFuture;
 import io.lettuce.core.ScanArgs;
-import io.lettuce.core.ScoredValue;
+import io.lettuce.core.ScanCursor;
+import io.lettuce.core.SetArgs;
 import io.lettuce.core.TransactionResult;
-import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
 import kr.tx24.lib.db.Retrieve;
-import kr.tx24.lib.lang.CommonUtils;
-import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.SharedMap;
-import kr.tx24.lib.map.ThreadSafeLinkedMap;
 
 /**
- * Redis 유틸리티 클래스
- * Lettuce 클라이언트를 사용하여 Redis 작업을 수행하는 헬퍼 메서드 제공
+ * Redis 유틸리티 클래스 (Lettuce 6.2.x, Redis 7.x)
  * 
- * <p>주요 기능:</p>
+ * <p><b>주요 기능:</b></p>
  * <ul>
- *   <li>Key/Value 기본 연산 (get, set, delete, expire 등)</li>
- *   <li>Hash 연산 (hget, hset, hincrby 등)</li>
- *   <li>List 연산 (rpush, lpush, rpop, lpop 등)</li>
- *   <li>Increment/Decrement 연산</li>
- *   <li>패턴 매칭 키 조회 및 삭제</li>
- *   <li>Cache-Aside Pattern 지원</li>
- *   <li>다양한 데이터 타입 지원 (String, SharedMap, LinkedMap, ThreadSafeLinkedMap)</li>
+ *   <li>기본 CRUD 연산 (String, Object)</li>
+ *   <li>Hash, List, Set 연산</li>
+ *   <li>⭐ Transaction 지원 (MULTI/EXEC)</li>
+ *   <li>⭐ Async 연산 지원 (CompletableFuture)</li>
+ *   <li>⭐ Pipeline 지원 (대량 작업 최적화)</li>
+ *   <li>패턴 매칭 및 대량 삭제</li>
+ *   <li>TTL 관리</li>
+ *   <li>Increment/Decrement</li>
  * </ul>
+ * 
+ * <p><b>⭐ close() 불필요:</b></p>
+ * Connection은 자동으로 재사용됩니다. 각 메서드 호출 후 close() 할 필요 없습니다.
+ * <p><b>사용 예:</b></p>
+ * <pre>
+ * // 기본 사용
+ * RedisUtils.set("key", "value");
+ * String value = RedisUtils.get("key", String.class);
+ * 
+ * // Transaction
+ * RedisUtils.executeTransaction(tx -> {
+ *     tx.set("key1", "value1");
+ *     tx.set("key2", "value2");
+ * });
+ * 
+ * // Async
+ * RedisUtils.setAsync("key", "value")
+ *     .thenAccept(result -> System.out.println("Done"));
+ * 
+ * // Pipeline (대량 작업)
+ * RedisUtils.pipeline(async -> {
+ *     List<RedisFuture<?>> list = new ArrayList<>();
+ *     for (int i = 0; i < 1000; i++) {
+ *         list.add(async.set("key" + i, "value" + i));
+ *     }
+ *     return list;
+ * });
+ * </pre>
  * 
  * @author TX24
  * @version 1.0
+ * @see Redis
+ * @see TypedRedisCodec
  */
 public final class RedisUtils {
 
     private static final Logger logger = LoggerFactory.getLogger(RedisUtils.class);
 
-    /** 분산 락 기본 TTL (초) */
-    private static final long DEFAULT_LOCK_TTL = 30L;
+    private RedisUtils() {
+        throw new UnsupportedOperationException("Utility class");
+    }
     
     
     /**
-     * ⭐ TypeReference - 복잡한 제네릭 타입 정보 보존
+     * ⭐⭐⭐ TypeReference - 제네릭 타입 정보 보존
      * 
-     * 사용 예:
+     * <p><b>사용 예:</b></p>
      * <pre>
-     * // 빈 리스트도 올바르게 처리
-     * List<SharedMap<String, Object>> emptyList = new ArrayList<>();
-     * var conn = determineConnection(emptyList, new TypeReference<List<SharedMap<String, Object>>>() {});
+     * // List<String> 조회
+     * List<String> names = RedisUtils.get("users:names", 
+     *     new TypeReference<List<String>>(){});
      * 
-     * // 복잡한 제네릭 타입
-     * var conn = determineConnection(value, new TypeReference<Map<String, List<SharedMap>>>() {});
+     * // Map<String, Integer> 조회
+     * Map<String, Integer> scores = RedisUtils.get("game:scores", 
+     *     new TypeReference<Map<String, Integer>>(){});
+     * 
+     * // 복잡한 중첩 타입
+     * Map<String, List<User>> userGroups = RedisUtils.get("groups", 
+     *     new TypeReference<Map<String, List<User>>>(){});
      * </pre>
+     * 
+     * <p><b>작동 원리:</b></p>
+     * 익명 내부 클래스를 사용하여 제네릭 타입 정보를 런타임에 보존합니다.
+     * 
+     * @param <T> 대상 타입
      */
     public abstract static class TypeReference<T> {
         private final Type type;
-        
+
         protected TypeReference() {
             Type superclass = getClass().getGenericSuperclass();
             if (superclass instanceof ParameterizedType) {
@@ -79,1823 +117,1816 @@ public final class RedisUtils {
                 throw new IllegalArgumentException("TypeReference must be parameterized");
             }
         }
-        
+
+        /**
+         * 타입 정보 반환
+         * 
+         * @return Type 객체
+         */
         public Type getType() {
             return type;
+        }
+
+        /**
+         * Raw 클래스 반환
+         * 
+         * @return Class 객체
+         */
+        @SuppressWarnings("unchecked")
+        public Class<T> getRawType() {
+            if (type instanceof Class) {
+                return (Class<T>) type;
+            } else if (type instanceof ParameterizedType) {
+                return (Class<T>) ((ParameterizedType) type).getRawType();
+            }
+            throw new IllegalStateException("Unable to determine raw type");
+        }
+
+        @Override
+        public String toString() {
+            return "TypeReference<" + type + ">";
         }
     }
     
 
-    private RedisUtils() {
-        throw new UnsupportedOperationException("Utility class");
-    }
-
-    // ------------------- 공통 Helper -------------------
+    // ==================== 기본 Operations ====================
 
     /**
-     * Redis 작업을 수행하는 함수형 인터페이스
+     * 값 저장 (기본)
      * 
-     * @param <K> Redis 키 타입
-     * @param <V> Redis 값 타입
-     * @param <R> 반환 타입
-     */
-    @FunctionalInterface
-    private interface RedisAction<K, V, R> {
-        R execute(StatefulRedisConnection<K, V> conn);
-    }
-
-    /**
-     * Redis 작업 실행 헬퍼 메서드
-     * Lettuce의 Connection은 Thread-Safe하므로 close 불필요
-     * 
-     * @param <K> Redis 키 타입
-     * @param <V> Redis 값 타입
-     * @param <R> 반환 타입
-     * @param conn Redis 연결 객체
-     * @param action 실행할 Redis 작업
-     * @return 작업 결과
-     */
-    private static <K, V, R> R withRedis(StatefulRedisConnection<K, V> conn, RedisAction<K, V, R> action) {
-        return action.execute(conn);
-    }
-
-
-
-    // ------------------- Connection 결정 (타입 기반) -------------------
-
-    /**
-     * 값의 타입에 따라 적절한 Redis Connection 반환 (기존 - JSON Codec)
-     * 
-     * @param <T> 값 타입
-     * @param val 값 객체
-     * @return 타입에 맞는 Redis 연결 객체
-     */
-    private static <T> StatefulRedisConnection<String, T> determineConnection(T val) {
-        return determineConnection(val, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ 값의 타입에 따라 적절한 Redis Connection 반환 (Codec 선택)
-     * 
-     * @param <T> 값 타입
-     * @param val 값 객체
-     * @param codecType Codec 타입
-     * @return 타입에 맞는 Redis 연결 객체
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineConnection(T val, CodecType codecType) {
-        if (val == null) {
-            return (StatefulRedisConnection<String, T>) Redis.getObject(codecType);
-        }
-        
-        // JDK 17 instanceof pattern matching 사용
-        if (val instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getString(codecType);
-        } else if (val instanceof SharedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getSharedMap(codecType);
-        } else if (val instanceof LinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getLinkedMap(codecType);
-        } else if (val instanceof ThreadSafeLinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMap(codecType);
-        } else if (val instanceof List<?> list) {
-            return determineListConnection(list, codecType);
-        } else if (val instanceof Set<?> set) {
-            return determineSetConnection(set, codecType);
-        } else if (val instanceof Map<?, ?> map) {
-            return determineMapConnection(map, codecType);
-        }
-        
-        return (StatefulRedisConnection<String, T>) Redis.getObject(codecType);
-    }
-
-    /**
-     * ⭐ 타입 정보를 명시적으로 받는 Connection 결정 메서드 (기존 - JSON Codec)
-     * 
-     * 사용 예:
+     * <p><b>사용 예:</b></p>
      * <pre>
-     * // 빈 리스트도 올바르게 처리
-     * List<SharedMap> emptyList = new ArrayList<>();
-     * var conn = determineConnection(emptyList, new TypeReference<List<SharedMap>>() {});
+     * RedisUtils.set("user:name", "John");
+     * RedisUtils.set("user:age", 30);
      * 
-     * // 복잡한 제네릭 타입
-     * var conn = determineConnection(value, new TypeReference<Map<String, List<SharedMap>>>() {});
+     * SharedMap<String, Object> user = new SharedMap<>();
+     * user.put("id", 123);
+     * RedisUtils.set("user:123", user);
      * </pre>
      * 
-     * @param <T> 값 타입
-     * @param val 값 객체
-     * @param typeRef 타입 참조
-     * @return 타입에 맞는 Redis 연결 객체
+     * @param key Redis 키 (null 불가)
+     * @param value 값 (모든 타입 가능, TypedRedisCodec으로 자동 직렬화)
+     * @throws IllegalArgumentException key가 null인 경우
      */
-    private static <T> StatefulRedisConnection<String, T> determineConnection(T val, TypeReference<T> typeRef) {
-        return determineConnection(val, typeRef, CodecType.JSON);
+    public static void set(String key, Object value) {
+        Redis.sync().set(key, value);
     }
 
     /**
-     * ⭐⭐ 타입 정보를 명시적으로 받는 Connection 결정 메서드 (Codec 선택) - 핵심!
+     * 값 저장 (TTL 설정)
      * 
-     * 복잡한 제네릭 타입을 100% 정확하게 처리
-     * 
-     * 사용 예:
+     * <p><b>사용 예:</b></p>
      * <pre>
-     * // 빈 리스트 + FST
-     * List<SharedMap<String, Object>> emptyList = new ArrayList<>();
-     * var conn = determineConnection(emptyList, 
-     *     new TypeReference<List<SharedMap<String, Object>>>() {}, 
-     *     CodecType.FST);
+     * // 세션 저장 (30분)
+     * RedisUtils.set("session:token", sessionData, 1800);
      * 
-     * // 복잡한 중첩 타입 + FST
-     * Map<String, List<SharedMap<String, Object>>> complex = new HashMap<>();
-     * var conn = determineConnection(complex,
-     *     new TypeReference<Map<String, List<SharedMap<String, Object>>>>() {},
-     *     CodecType.FST);
+     * // 캐시 저장 (1시간)
+     * RedisUtils.set("cache:product:123", product, 3600);
+     * 
+     * // 일회용 토큰 (5분)
+     * RedisUtils.set("otp:user123", "123456", 300);
      * </pre>
      * 
-     * @param <T> 값 타입
-     * @param val 값 객체
-     * @param typeRef 타입 참조
-     * @param codecType Codec 타입
-     * @return 타입에 맞는 Redis 연결 객체
+     * @param key Redis 키
+     * @param value 값
+     * @param seconds TTL (초 단위, 0보다 커야 함)
+     * @throws IllegalArgumentException seconds가 0 이하인 경우
+     */
+    public static void set(String key, Object value, long seconds) {
+        Redis.sync().setex(key, seconds, value);
+    }
+
+    /**
+     * 키가 없을 때만만 성공 처리   
+     * - SET NX) , SET if NOT exists
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 분산 락 획득
+     * boolean acquired = RedisUtils.setNx("lock:resource", "owner123");
+     * if (acquired) {
+     *     try {
+     *         // 크리티컬 섹션
+     *         processResource();`
+     *     } finally {
+     *         RedisUtils.del("lock:resource");
+     *     }
+     * }
+     * 
+     * // 중복 방지
+     * boolean isNew = RedisUtils.setNx("processed:order:123", "true");
+     * if (isNew) {
+     *     processOrder(123);
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param value 값
+     * @return 키가 없어서 설정에 성공하면 true, 키가 이미 존재하면 false
+     */
+    public static boolean setNx(String key, Object value) {
+        String result = Redis.sync().set(key, value, SetArgs.Builder.nx());
+        return "OK".equals(result);
+    }
+
+    /**
+     * 키가 없을 때만만 성공 처리   , TTL 포함
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 분산 락 (5초 타임아웃)
+     * boolean acquired = RedisUtils.setNx("lock:payment", "owner", 5);
+     * 
+     * // Rate limiting (1분에 1번)
+     * boolean canProcess = RedisUtils.setNx("rate:user123", "1", 60);
+     * if (canProcess) {
+     *     processRequest();
+     * } else {
+     *     throw new RateLimitException();
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param value 값
+     * @param seconds TTL (초 단위)
+     * @return 키가 없어서 설정에 성공하면 true, 키가 이미 존재하면 false
+     */
+    public static boolean setNx(String key, Object value, long seconds) {
+        String result = Redis.sync().set(key, value, SetArgs.Builder.nx().ex(seconds));
+        return "OK".equals(result);
+    }
+
+    /**
+     * 값 조회 (기본)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Object value = RedisUtils.get("key");
+     * if (value != null) {
+     *     // 타입 확인 후 캐스팅
+     *     if (value instanceof String) {
+     *         String str = (String) value;
+     *     }
+     * }
+     * </pre>
+     * 
+     * <p><b>주의:</b></p>
+     * 타입 안전성이 필요한 경우 {@link #get(String, Class)} 사용을 권장합니다.
+     * 
+     * @param key Redis 키
+     * @return 값 (TypedRedisCodec으로 자동 역직렬화), 키가 없으면 null
+     */
+    public static Object get(String key) {
+        return Redis.sync().get(key);
+    }
+
+    /**
+     * ⭐ 타입 안전한 값 조회 (권장)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // String
+     * String name = RedisUtils.get("user:name", String.class);
+     * 
+     * // Integer
+     * Integer age = RedisUtils.get("user:age", Integer.class);
+     * 
+     * // 커스텀 타입
+     * SharedMap<?, ?> user = RedisUtils.get("user:123", SharedMap.class);
+     * 
+     * // List (제네릭 타입은 런타임에 검증 불가)
+     * List<?> items = (List<?>) RedisUtils.get("items");
+     * </pre>
+     * 
+     * @param <T> 반환 타입
+     * @param key Redis 키
+     * @param clazz 예상 타입 (null 불가)
+     * @return 값 (지정된 타입으로 캐스팅됨), 키가 없으면 null
+     * @throws ClassCastException 실제 타입이 clazz와 다른 경우
+     * @throws IllegalArgumentException clazz가 null인 경우
      */
     @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineConnection(
-            T val, TypeReference<T> typeRef, CodecType codecType) {
+    public static <T> T get(String key, Class<T> clazz) {
+        Object value = get(key);
+        if (value == null) return null;
+        if (clazz.isInstance(value)) return (T) value;
+        throw new ClassCastException("Expected " + clazz.getName() + " but got " + value.getClass().getName());
+    }
+    
+    
+    /**
+     * TypeToken을 사용한 제네릭 타입 안전 조회 (권장)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // List<String>
+     * List<String> names = RedisUtils.get("users:names", 
+     *     new TypeReference<List<String>>(){});
+     * 
+     * // Map<String, Integer>
+     * Map<String, Integer> scores = RedisUtils.get("game:scores", 
+     *     new TypeReference<Map<String, Integer>>(){});
+     * 
+     * // Set<Long>
+     * Set<Long> ids = RedisUtils.get("user:ids", 
+     *     new TypeReference<Set<Long>>(){});
+     * 
+     * // 복잡한 중첩 타입
+     * Map<String, List<User>> groups = RedisUtils.get("user:groups", 
+     *     new TypeReference<Map<String, List<User>>>(){});
+     * 
+     * // null 체크
+     * List<String> tags = RedisUtils.get("article:tags", 
+     *     new TypeReference<List<String>>(){});
+     * if (tags != null) {
+     *     tags.forEach(System.out::println);
+     * }
+     * </pre>
+     * 
+     * <p><b>주의사항:</b></p>
+     * - 반드시 익명 내부 클래스로 생성해야 함: `new TypeReference<T>(){}`
+     * - 중괄호 `{}` 필수!
+     * - 저장 시 타입과 조회 시 타입이 일치해야 함
+     * 
+     * @param <T> 반환 타입
+     * @param key Redis 키
+     * @param typeRef TypeReference (제네릭 타입 정보 포함)
+     * @return 값 (제네릭 타입으로 안전하게 캐스팅됨), 키가 없으면 null
+     * @throws ClassCastException 실제 저장된 타입과 요청 타입이 다른 경우
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T get(String key, TypeReference<T> typeRef) {
+        Object value = get(key);
+        if (value == null) return null;
         
-        Type type = typeRef.getType();
+        // Raw 타입으로 먼저 확인
+        Class<T> rawType = typeRef.getRawType();
         
-        // ParameterizedType이 아니면 기존 로직 사용
-        if (!(type instanceof ParameterizedType paramType)) {
-            return determineConnection(val, codecType);
+        if (rawType.isInstance(value)) {
+            // 타입이 맞으면 캐스팅
+            return (T) value;
         }
         
-        Type rawType = paramType.getRawType();
-        Type[] typeArgs = paramType.getActualTypeArguments();
+        // 타입이 맞지 않으면 예외
+        throw new ClassCastException(
+            "Expected " + typeRef.getType() + 
+            " but got " + value.getClass().getName()
+        );
+    }
+    
+    
+    public static <T> T get(String key, TypeRegistry typeRegistry) {
+        return get(key, typeRegistry.get());
+    }
+    
+
+    /**
+     * ⭐ TypeToken을 사용한 값 조회 with 기본값
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 키가 없으면 빈 리스트 반환
+     * List<String> names = RedisUtils.getOrDefault("users:names", 
+     *     new TypeReference<List<String>>(){}, 
+     *     new ArrayList<>());
+     * 
+     * // 키가 없으면 빈 맵 반환
+     * Map<String, Integer> scores = RedisUtils.getOrDefault("scores", 
+     *     new TypeReference<Map<String, Integer>>(){}, 
+     *     new HashMap<>());
+     * </pre>
+     * 
+     * @param <T> 반환 타입
+     * @param key Redis 키
+     * @param typeRef TypeReference
+     * @param defaultValue 기본값 (키가 없을 때 반환)
+     * @return 값 또는 기본값
+     */
+    public static <T> T getOrDefault(String key, TypeReference<T> typeRef, T defaultValue) {
+        T value = get(key, typeRef);
+        return value != null ? value : defaultValue;
+    }
+    
+    
+    public static <T> T getOrDefault(String key, TypeRegistry typeRegistry, T defaultValue) {
+        return getOrDefault(key, typeRegistry.get(), defaultValue);
+    }
+
+    /**
+     * 값 조회 후 삭제 , 일정의 Take  
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 일회용 토큰 사용
+     * String token = (String) RedisUtils.getAndDelete("otp:user123");
+     * if (token != null && token.equals(inputToken)) {
+     *     // 인증 성공
+     * }
+     * 
+     * // 임시 데이터 소비
+     * Object data = RedisUtils.getAndDelete("temp:data:123");
+     * processData(data);
+     * </pre>
+     * 
+     * <p><b>원자성:</b></p>
+     * GET과 DEL이 원자적으로 실행됩니다.
+     * 
+     * @param key Redis 키
+     * @return 삭제된 값, 키가 없으면 null
+     */
+    public static Object getAndDelete(String key) {
+        return Redis.sync().getdel(key);
+    }
+
+    /**
+     * 여러 키의 값 조회 (MGET)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * List<KeyValue<String, Object>> results = 
+     *     RedisUtils.mget("user:1:name", "user:2:name", "user:3:name");
+     * 
+     * for (KeyValue<String, Object> kv : results) {
+     *     System.out.println(kv.getKey() + " = " + kv.getValue());
+     * }
+     * </pre>
+     * 
+     * <p><b>성능:</b></p>
+     * 여러 개의 GET을 한 번의 왕복으로 처리하므로 훨씬 빠릅니다.
+     * 
+     * @param keys Redis 키들 (최소 1개)
+     * @return 키-값 쌍 리스트 (순서 보장)
+     * @throws IllegalArgumentException keys가 비어있는 경우
+     */
+    public static List<KeyValue<String, Object>> mget(String... keys) {
+        return Redis.sync().mget(keys);
+    }
+
+    /**
+     * 키 삭제 (단일)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Long deleted = RedisUtils.del("temp:key");
+     * if (deleted > 0) {
+     *     System.out.println("키가 삭제되었습니다.");
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return 삭제된 키 개수 (0 또는 1)
+     */
+    public static Long del(String key) {
+        return Redis.sync().del(key);
+    }
+
+    /**
+     * 여러 키 삭제 (MGET의 반대)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 여러 키 한 번에 삭제
+     * Long deleted = RedisUtils.del("key1", "key2", "key3");
+     * System.out.println(deleted + "개 키 삭제");
+     * 
+     * // 세션 관련 키 모두 삭제
+     * RedisUtils.del("session:user123", "session:user123:data", "session:user123:meta");
+     * </pre>
+     * 
+     * @param keys Redis 키들 (최소 1개)
+     * @return 삭제된 키 개수
+     */
+    public static Long del(String... keys) {
+        return Redis.sync().del(keys);
+    }
+
+    /**
+     * 키 존재 여부 확인
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * if (RedisUtils.exists("user:123")) {
+     *     // 사용자가 존재함
+     *     User user = loadUserFromRedis("user:123");
+     * } else {
+     *     // DB에서 로드
+     *     User user = loadUserFromDB(123);
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return 키가 존재하면 true, 없으면 false
+     */
+    public static boolean exists(String key) {
+        return Redis.sync().exists(key) > 0;
+    }
+
+    /**
+     * TTL 설정 (키에 만료 시간 설정)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 기존 키에 TTL 추가
+     * RedisUtils.set("cache:data", data);
+     * RedisUtils.expire("cache:data", 3600);  // 1시간 후 만료
+     * 
+     * // 세션 갱신
+     * if (RedisUtils.exists("session:token")) {
+     *     RedisUtils.expire("session:token", 1800);  // 30분 연장
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param seconds TTL (초 단위, 0보다 커야 함)
+     * @return 성공하면 true, 키가 없으면 false
+     */
+    public static boolean expire(String key, long seconds) {
+        return Redis.sync().expire(key, seconds);
+    }
+
+    /**
+     * TTL 조회 (남은 만료 시간 확인)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Long ttl = RedisUtils.ttl("session:token");
+     * if (ttl == -2) {
+     *     System.out.println("키가 존재하지 않음");
+     * } else if (ttl == -1) {
+     *     System.out.println("만료 시간이 설정되지 않음 (무기한)");
+     * } else {
+     *     System.out.println(ttl + "초 후 만료");
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return 남은 TTL (초), -1: 만료 시간 없음 (무기한), -2: 키 없음
+     */
+    public static Long ttl(String key) {
+        return Redis.sync().ttl(key);
+    }
+
+    /**
+     * 키 이름 변경 (RENAME)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 임시 키를 영구 키로 변경
+     * RedisUtils.set("temp:processing:123", data);
+     * // 처리 완료 후
+     * RedisUtils.rename("temp:processing:123", "result:123");
+     * </pre>
+     * 
+     * <p><b>주의:</b></p>
+     * - newKey가 이미 존재하면 덮어씁니다.
+     * - oldKey가 없으면 예외 발생
+     * 
+     * @param oldKey 기존 키 (반드시 존재해야 함)
+     * @param newKey 새 키 (기존 키 있으면 덮어씀)
+     * @return 성공 메시지 "OK"
+     * @throws RuntimeException oldKey가 존재하지 않는 경우
+     */
+    public static String rename(String oldKey, String newKey) {
+        return Redis.sync().rename(oldKey, newKey);
+    }
+    
+    
+    
+
+    /**
+     * 키 타입 조회
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String type = RedisUtils.type("key");
+     * switch (type) {
+     *     case "string":  // String 값
+     *     case "list":    // List
+     *     case "set":     // Set
+     *     case "zset":    // Sorted Set
+     *     case "hash":    // Hash
+     *     case "none":    // 키가 없음
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return 타입 문자열 ("string", "list", "set", "zset", "hash", "none")
+     */
+    public static String type(String key) {
+        return Redis.sync().type(key);
+    }
+
+    // ==================== 패턴 매칭 ====================
+
+    /**
+     * 패턴에 매칭되는 키 조회 (KEYS)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 모든 사용자 키 조회
+     * List<String> userKeys = RedisUtils.keys("user:*");
+     * 
+     * // 특정 날짜의 로그 조회
+     * List<String> todayLogs = RedisUtils.keys("log:2024-01-15:*");
+     * </pre>
+     * 
+     * <p><b>⚠️ 주의:</b></p>
+     * - 프로덕션 환경에서는 {@link #scan(String, long)} 사용 권장
+     * - KEYS는 blocking 명령어라 대용량 데이터에서 서버 지연 발생
+     * - 개발/테스트 환경에서만 사용
+     * 
+     * @param pattern 패턴 (예: "user:*", "cache:product:*")
+     * @return 매칭되는 키 리스트
+     */
+    public static List<String> keys(String pattern) {
+        return Redis.sync().keys(pattern);
+    }
+
+    /**
+     * ⭐ 패턴에 매칭되는 키 조회 (SCAN - 프로덕션 권장)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 대용량 데이터에서도 안전
+     * List<String> userKeys = RedisUtils.scan("user:*", 100);
+     * 
+     * // 캐시 키 조회
+     * List<String> cacheKeys = RedisUtils.scan("cache:*", 1000);
+     * </pre>
+     * 
+     * <p><b>장점:</b></p>
+     * - Non-blocking (서버 블로킹 없음)
+     * - 커서 기반 순회 (메모리 효율적)
+     * - 대용량 데이터에 적합
+     * 
+     * @param pattern 패턴 (예: "user:*")
+     * @param count 한 번에 조회할 키 개수 (힌트, 정확하지 않을 수 있음)
+     * @return 매칭되는 모든 키 리스트
+     */
+    public static List<String> scan(String pattern, long count) {
+        List<String> result = new ArrayList<>();
+        ScanCursor cursor = ScanCursor.INITIAL;
+        ScanArgs args = ScanArgs.Builder.matches(pattern).limit(count);
         
-        // ============================================
-        // List<T> 처리
-        // ============================================
-        if (rawType == List.class && typeArgs.length > 0) {
-            Type elementType = typeArgs[0];
+        do {
+            KeyScanCursor<String> scanResult = Redis.sync().scan(cursor, args);
+            result.addAll(scanResult.getKeys());
+            cursor = ScanCursor.of(scanResult.getCursor());
+        } while (!cursor.isFinished());
+        
+        return result;
+    }
+
+    /**
+     * ⭐ 패턴에 매칭되는 모든 키 삭제
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 캐시 전체 삭제
+     * long deleted = RedisUtils.deleteByPattern("cache:*");
+     * System.out.println(deleted + "개 캐시 삭제");
+     * 
+     * // 특정 사용자 데이터 삭제
+     * RedisUtils.deleteByPattern("user:123:*");
+     * 
+     * // 임시 데이터 정리
+     * RedisUtils.deleteByPattern("temp:*");
+     * </pre>
+     * 
+     * <p><b>내부 동작:</b></p>
+     * SCAN으로 키를 찾고 DEL로 삭제 (안전하고 효율적)
+     * 
+     * @param pattern 패턴 (예: "cache:*")
+     * @return 삭제된 키 개수
+     */
+    public static long deleteByPattern(String pattern) {
+        List<String> keys = scan(pattern, 100);
+        if (keys.isEmpty()) return 0;
+        return del(keys.toArray(new String[0]));
+    }
+
+    // ==================== Increment/Decrement ====================
+
+    /**
+     * 값 증가 (INCR - 1씩 증가)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 방문자 수 카운트
+     * Long visitors = RedisUtils.incr("counter:visitors");
+     * 
+     * // 페이지뷰 카운트
+     * Long pageviews = RedisUtils.incr("counter:pageview");
+     * 
+     * // ID 생성
+     * Long nextId = RedisUtils.incr("id:user");
+     * </pre>
+     * 
+     * <p><b>원자성:</b></p>
+     * Thread-Safe하게 증가합니다. 동시성 문제 없음.
+     * 
+     * @param key Redis 키 (값이 없으면 0으로 초기화 후 증가)
+     * @return 증가 후 값
+     * @throws RuntimeException 값이 숫자가 아닌 경우
+     */
+    public static Long incr(String key) {
+        return Redis.sync().incr(key);
+    }
+
+    /**
+     * 값 증가 (INCRBY - 지정된 양만큼 증가)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 포인트 적립
+     * Long points = RedisUtils.incrBy("user:123:points", 100);
+     * 
+     * // 재고 증가
+     * Long stock = RedisUtils.incrBy("product:456:stock", 50);
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param amount 증가량 (양수여야 함, 음수는 감소 효과)
+     * @return 증가 후 값
+     */
+    public static Long incrBy(String key, long amount) {
+        return Redis.sync().incrby(key, amount);
+    }
+
+    /**
+     * 값 감소 (DECR - 1씩 감소)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 재고 감소
+     * Long stock = RedisUtils.decr("product:789:stock");
+     * if (stock < 0) {
+     *     throw new OutOfStockException();
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키 (값이 없으면 0으로 초기화 후 감소)
+     * @return 감소 후 값
+     */
+    public static Long decr(String key) {
+        return Redis.sync().decr(key);
+    }
+
+    /**
+     * 값 감소 (DECRBY - 지정된 양만큼 감소)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 포인트 차감
+     * Long points = RedisUtils.decrBy("user:123:points", 50);
+     * 
+     * // 재고 감소
+     * Long stock = RedisUtils.decrBy("product:456:stock", 10);
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param amount 감소량 (양수여야 함)
+     * @return 감소 후 값
+     */
+    public static Long decrBy(String key, long amount) {
+        return Redis.sync().decrby(key, amount);
+    }
+
+    // ==================== Hash Operations ====================
+
+    /**
+     * Hash 필드 값 설정 (HSET)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 사용자 정보 저장
+     * RedisUtils.hset("user:123", "name", "John");
+     * RedisUtils.hset("user:123", "age", 30);
+     * RedisUtils.hset("user:123", "email", "john@example.com");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param field 필드명
+     * @param value 값
+     * @return 새 필드가 생성되면 true, 기존 필드 업데이트면 false
+     */
+    public static boolean hset(String key, String field, Object value) {
+        return Redis.sync().hset(key, field, value);
+    }
+
+    /**
+     * Hash 여러 필드 값 설정 (HMSET)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Map<String, Object> user = new HashMap<>();
+     * user.put("name", "John");
+     * user.put("age", 30);
+     * user.put("email", "john@example.com");
+     * RedisUtils.hmset("user:123", user);
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param map 필드-값 맵
+     * @return 성공 메시지 "OK"
+     */
+    public static String hmset(String key, Map<String, Object> map) {
+        return Redis.sync().hmset(key, map);
+    }
+
+    /**
+     * Hash 필드 값 조회 (HGET)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Object name = RedisUtils.hget("user:123", "name");
+     * Object age = RedisUtils.hget("user:123", "age");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param field 필드명
+     * @return 값, 필드가 없으면 null
+     */
+    public static Object hget(String key, String field) {
+        return Redis.sync().hget(key, field);
+    }
+    
+    
+    /**
+     * ⭐ Hash 필드 값 조회 (TypeToken 지원)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // List<String> 필드 조회
+     * List<String> tags = RedisUtils.hget("article:123", "tags", 
+     *     new TypeReference<List<String>>(){});
+     * 
+     * // Map 필드 조회
+     * Map<String, Object> meta = RedisUtils.hget("article:123", "metadata", 
+     *     new TypeReference<Map<String, Object>>(){});
+     * </pre>
+     * 
+     * @param <T> 반환 타입
+     * @param key Redis 키
+     * @param field 필드명
+     * @param typeRef TypeReference
+     * @return 필드 값, 없으면 null
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T hget(String key, String field, TypeReference<T> typeRef) {
+        Object value = hget(key, field);
+        if (value == null) return null;
+        
+        Class<T> rawType = typeRef.getRawType();
+        if (rawType.isInstance(value)) {
+            return (T) value;
+        }
+        
+        throw new ClassCastException(
+            "Expected " + typeRef.getType() + 
+            " but got " + value.getClass().getName()
+        );
+    }
+    
+    
+    public static <T> T hget(String key, String field, TypeRegistry  typeRegistry) {
+    	return hget(key,field,typeRegistry.get());
+    }
+    
+    
+    
+
+    /**
+     * Hash 모든 필드 조회 (HGETALL)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Map<String, Object> user = RedisUtils.hgetAll("user:123");
+     * String name = (String) user.get("name");
+     * Integer age = (Integer) user.get("age");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return 필드-값 맵 (키가 없으면 빈 맵)
+     */
+    public static Map<String, Object> hgetAll(String key) {
+        return Redis.sync().hgetall(key);
+    }
+
+    /**
+     * Hash 필드 삭제 (HDEL)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 단일 필드 삭제
+     * RedisUtils.hdel("user:123", "temp_field");
+     * 
+     * // 여러 필드 삭제
+     * RedisUtils.hdel("user:123", "field1", "field2", "field3");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param fields 필드명들
+     * @return 삭제된 필드 개수
+     */
+    public static Long hdel(String key, String... fields) {
+        return Redis.sync().hdel(key, fields);
+    }
+
+    /**
+     * Hash 필드 존재 여부 (HEXISTS)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * if (RedisUtils.hexists("user:123", "email")) {
+     *     Object email = RedisUtils.hget("user:123", "email");
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param field 필드명
+     * @return 필드가 존재하면 true
+     */
+    public static boolean hexists(String key, String field) {
+        return Redis.sync().hexists(key, field);
+    }
+
+    /**
+     * Hash 필드 값 증가 (HINCRBY)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 상품 조회수 증가
+     * Long views = RedisUtils.hincrBy("product:123", "views", 1);
+     * 
+     * // 재고 증가
+     * Long stock = RedisUtils.hincrBy("product:123", "stock", 10);
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param field 필드명
+     * @param amount 증가량
+     * @return 증가 후 값
+     */
+    public static Long hincrBy(String key, String field, long amount) {
+        return Redis.sync().hincrby(key, field, amount);
+    }
+
+    // ==================== List Operations ====================
+
+    /**
+     * List 왼쪽에 값 추가 (LPUSH)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 최신 알림을 맨 앞에 추가
+     * RedisUtils.lpush("notifications:user123", "새 메시지가 있습니다");
+     * 
+     * // 여러 값 추가
+     * RedisUtils.lpush("queue:tasks", "task3", "task2", "task1");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param values 값들 (오른쪽부터 왼쪽으로 추가됨)
+     * @return List 길이
+     */
+    public static Long lpush(String key, Object... values) {
+        return Redis.sync().lpush(key, values);
+    }
+
+    /**
+     * List 오른쪽에 값 추가 (RPUSH)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 큐에 작업 추가 (FIFO)
+     * RedisUtils.rpush("queue:jobs", "job1");
+     * RedisUtils.rpush("queue:jobs", "job2");
+     * 
+     * // 로그 추가
+     * RedisUtils.rpush("logs", "2024-01-15 10:00:00 - User login");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param values 값들
+     * @return List 길이
+     */
+    public static Long rpush(String key, Object... values) {
+        return Redis.sync().rpush(key, values);
+    }
+
+    /**
+     * List 왼쪽에서 값 제거 및 반환 (LPOP)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 큐에서 작업 가져오기 (FIFO with RPUSH)
+     * Object job = RedisUtils.lpop("queue:jobs");
+     * if (job != null) {
+     *     processJob(job);
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return 제거된 값, List가 비었으면 null
+     */
+    public static Object lpop(String key) {
+        return Redis.sync().lpop(key);
+    }
+
+    /**
+     * List 오른쪽에서 값 제거 및 반환 (RPOP)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 스택에서 값 가져오기 (LIFO)
+     * Object item = RedisUtils.rpop("stack:items");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return 제거된 값, List가 비었으면 null
+     */
+    public static Object rpop(String key) {
+        return Redis.sync().rpop(key);
+    }
+
+    /**
+     * List 범위 조회 (LRANGE)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 전체 조회
+     * List<Object> all = RedisUtils.lrange("list", 0, -1);
+     * 
+     * // 최근 10개
+     * List<Object> recent = RedisUtils.lrange("logs", 0, 9);
+     * 
+     * // 10~19번째
+     * List<Object> page2 = RedisUtils.lrange("items", 10, 19);
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param start 시작 인덱스 (0부터 시작, 음수는 끝에서부터)
+     * @param stop 종료 인덱스 (-1은 끝까지)
+     * @return 값 리스트
+     */
+    public static List<Object> lrange(String key, long start, long stop) {
+        return Redis.sync().lrange(key, start, stop);
+    }
+    
+    
+    /**
+     * List 범위 조회 (TypeToken 지원)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // String 리스트
+     * List<String> logs = RedisUtils.lrange("logs", 0, 9, 
+     *     new TypeReference<List<String>>(){});
+     * 
+     * // User 리스트
+     * List<User> users = RedisUtils.lrange("users:active", 0, -1, 
+     *     new TypeReference<List<User>>(){});
+     * </pre>
+     * 
+     * @param <T> 반환 타입
+     * @param key Redis 키
+     * @param start 시작 인덱스
+     * @param stop 종료 인덱스
+     * @param typeRef TypeReference
+     * @return 값 리스트
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T lrange(String key, long start, long stop, TypeReference<T> typeRef) {
+        List<Object> values = lrange(key, start, stop);
+        
+        // 빈 리스트는 그대로 반환
+        if (values.isEmpty()) {
+            return (T) values;
+        }
+        
+        Class<T> rawType = typeRef.getRawType();
+        if (rawType.isInstance(values)) {
+            return (T) values;
+        }
+        
+        throw new ClassCastException(
+            "Expected " + typeRef.getType() + 
+            " but got List<" + values.get(0).getClass().getName() + ">"
+        );
+    }
+    
+    public static <T> T lrange(String key, long start, long stop, TypeRegistry typeRegistry) {
+    	return lrange(key, start, stop, typeRegistry.get());
+    }
+    
+    
+
+    /**
+     * List 길이 조회 (LLEN)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Long queueSize = RedisUtils.llen("queue:jobs");
+     * System.out.println("대기 중인 작업: " + queueSize);
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return List 길이, 키가 없으면 0
+     */
+    public static Long llen(String key) {
+        return Redis.sync().llen(key);
+    }
+
+    // ==================== Set Operations ====================
+
+    /**
+     * Set에 값 추가 (SADD)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 태그 추가
+     * RedisUtils.sadd("article:123:tags", "java", "redis", "spring");
+     * 
+     * // 온라인 사용자
+     * RedisUtils.sadd("users:online", "user123");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param members 값들 (중복 자동 제거)
+     * @return 추가된 값 개수 (이미 존재하는 값은 제외)
+     */
+    public static Long sadd(String key, Object... members) {
+        return Redis.sync().sadd(key, members);
+    }
+
+    /**
+     * Set에서 값 제거 (SREM)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 태그 제거
+     * RedisUtils.srem("article:123:tags", "deprecated");
+     * 
+     * // 오프라인 처리
+     * RedisUtils.srem("users:online", "user123");
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param members 값들
+     * @return 제거된 값 개수
+     */
+    public static Long srem(String key, Object... members) {
+        return Redis.sync().srem(key, members);
+    }
+
+    /**
+     * Set 모든 값 조회 (SMEMBERS)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Set<Object> tags = RedisUtils.smembers("article:123:tags");
+     * for (Object tag : tags) {
+     *     System.out.println(tag);
+     * }
+     * </pre>
+     * 
+     * <p><b>⚠️ 주의:</b></p>
+     * 대용량 Set은 성능 문제 발생 가능. SSCAN 사용 고려.
+     * 
+     * @param key Redis 키
+     * @return 값 Set, 키가 없으면 빈 Set
+     */
+    public static Set<Object> smembers(String key) {
+        return Redis.sync().smembers(key);
+    }
+    
+    
+    /**
+     * ⭐ Set 조회 (TypeToken 지원)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // String Set
+     * Set<String> tags = RedisUtils.smembers("article:tags", 
+     *     new TypeReference<Set<String>>(){});
+     * 
+     * // Long Set
+     * Set<Long> userIds = RedisUtils.smembers("online:users", 
+     *     new TypeReference<Set<Long>>(){});
+     * </pre>
+     * 
+     * @param <T> 반환 타입
+     * @param key Redis 키
+     * @param typeRef TypeReference
+     * @return Set
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T smembers(String key, TypeReference<T> typeRef) {
+        Set<Object> values = smembers(key);
+        
+        Class<T> rawType = typeRef.getRawType();
+        if (rawType.isInstance(values)) {
+            return (T) values;
+        }
+        
+        throw new ClassCastException(
+            "Expected " + typeRef.getType() + 
+            " but got Set<...>"
+        );
+    }
+    
+    
+    public static <T> T smembers(String key, TypeRegistry typeRegistry) {
+    	return smembers(key, typeRegistry.get());
+    }
+
+    
+    
+
+    /**
+     * Set 값 존재 여부 (SISMEMBER)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * if (RedisUtils.sismember("users:online", "user123")) {
+     *     System.out.println("사용자가 온라인입니다");
+     * }
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param member 값
+     * @return 값이 존재하면 true
+     */
+    public static boolean sismember(String key, Object member) {
+        return Redis.sync().sismember(key, member);
+    }
+
+    /**
+     * Set 크기 조회 (SCARD)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Long onlineCount = RedisUtils.scard("users:online");
+     * System.out.println("온라인 사용자: " + onlineCount);
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return Set 크기, 키가 없으면 0
+     */
+    public static Long scard(String key) {
+        return Redis.sync().scard(key);
+    }
+
+    // ==================== Transaction (MULTI/EXEC) ====================
+
+    /**
+     * ⭐⭐⭐ Transaction 실행 (MULTI/EXEC)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 은행 계좌 이체
+     * TransactionResult result = RedisUtils.executeTransaction(tx -> {
+     *     tx.decrby("account:A", 1000);
+     *     tx.incrby("account:B", 1000);
+     *     tx.incr("transfer:count");
+     * });
+     * 
+     * // 장바구니 체크아웃
+     * RedisUtils.executeTransaction(tx -> {
+     *     tx.del("cart:user123");
+     *     tx.set("order:123", orderData);
+     *     tx.decrby("product:456:stock", quantity);
+     * });
+     * </pre>
+     * 
+     * <p><b>⭐ 원자성 보장:</b></p>
+     * - Transaction 내 모든 명령어가 원자적으로 실행됨
+     * - 중간에 다른 클라이언트의 명령어가 끼어들 수 없음
+     * - 하나라도 실패하면 전체 롤백 (DISCARD)
+     * 
+     * <p><b>⚠️ 주의:</b></p>
+     * - Transaction 내에서는 결과를 즉시 사용할 수 없음
+     * - EXEC 시점에 모든 명령어가 실행됨
+     * 
+     * @param operations Transaction 내에서 실행할 작업
+     * @return Transaction 실행 결과
+     * @throws RuntimeException Transaction 실패 시
+     */
+    public static TransactionResult executeTransaction(Consumer<RedisCommands<String, Object>> operations) {
+        RedisCommands<String, Object> sync = Redis.sync();
+        
+        try {
+            String multiResult = sync.multi();
+            if (!"OK".equals(multiResult)) {
+                throw new RuntimeException("Failed to start transaction: " + multiResult);
+            }
             
-            if (elementType == String.class) {
-                return (StatefulRedisConnection<String, T>) Redis.getStringList(codecType);
-            } else if (isTypeOf(elementType, SharedMap.class)) {
-                return (StatefulRedisConnection<String, T>) Redis.getSharedMapList();
-            } else if (isTypeOf(elementType, LinkedMap.class)) {
-                return (StatefulRedisConnection<String, T>) Redis.getLinkedMapList();
-            } else if (isTypeOf(elementType, ThreadSafeLinkedMap.class)) {
-                return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapList();
-            }
-            return (StatefulRedisConnection<String, T>) Redis.getObjectList(codecType);
-        }
-        
-        // ============================================
-        // Set<T> 처리
-        // ============================================
-        if (rawType == Set.class && typeArgs.length > 0) {
-            Type elementType = typeArgs[0];
+            operations.accept(sync);
+            TransactionResult result = sync.exec();
             
-            if (elementType == String.class) {
-                return (StatefulRedisConnection<String, T>) Redis.getStringSet();
-            } else if (isTypeOf(elementType, SharedMap.class)) {
-                return (StatefulRedisConnection<String, T>) Redis.getSharedMapSet();
-            } else if (isTypeOf(elementType, LinkedMap.class)) {
-                return (StatefulRedisConnection<String, T>) Redis.getLinkedMapSet();
-            } else if (isTypeOf(elementType, ThreadSafeLinkedMap.class)) {
-                return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapSet();
-            }
-            return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
-        }
-        
-        // ============================================
-        // Map<K, V> 처리
-        // ============================================
-        if (rawType == Map.class && typeArgs.length == 2) {
-            Type keyType = typeArgs[0];
-            Type valueType = typeArgs[1];
+            logger.debug("Transaction executed: {} commands", result != null ? result.size() : 0);
+            return result;
             
-            if (keyType == String.class && valueType == String.class) {
-                return (StatefulRedisConnection<String, T>) Redis.getStringMap();
-            } else if (keyType == String.class && valueType == Object.class) {
-                return (StatefulRedisConnection<String, T>) Redis.getStringObjectMap();
-            } else if (keyType == String.class && isTypeOf(valueType, SharedMap.class)) {
-                return (StatefulRedisConnection<String, T>) Redis.getStringSharedMapMap();
+        } catch (Exception e) {
+            try {
+                sync.discard();
+                logger.warn("Transaction discarded: {}", e.getMessage());
+            } catch (Exception discardError) {
+                logger.error("Error discarding transaction", discardError);
             }
-            return (StatefulRedisConnection<String, T>) Redis.getObjectMap();
+            throw new RuntimeException("Transaction failed", e);
         }
-        
-        // 기타 복잡한 제네릭 타입
-        return (StatefulRedisConnection<String, T>) Redis.getObject(codecType);
     }
 
     /**
-     * Type이 특정 클래스인지 확인하는 헬퍼 메서드
+     * Transaction 실행 (결과 리스트 반환)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * List<Object> results = RedisUtils.executeTransactionWithResult(tx -> {
+     *     tx.set("key1", "value1");       // results[0]: "OK"
+     *     tx.set("key2", "value2");       // results[1]: "OK"
+     *     tx.get("key1");                 // results[2]: "value1"
+     *     tx.incr("counter");             // results[3]: 1
+     * });
+     * 
+     * String setResult = (String) results.get(0);  // "OK"
+     * String value = (String) results.get(2);      // "value1"
+     * Long counter = (Long) results.get(3);        // 1
+     * </pre>
+     * 
+     * @param operations Transaction 내에서 실행할 작업
+     * @return 각 명령어의 실행 결과 리스트 (순서 보장)
+     * @throws RuntimeException Transaction이 discard된 경우
      */
-    private static boolean isTypeOf(Type type, Class<?> clazz) {
-        if (type instanceof Class<?>) {
-            return clazz.isAssignableFrom((Class<?>) type);
-        } else if (type instanceof ParameterizedType paramType) {
-            Type rawType = paramType.getRawType();
-            if (rawType instanceof Class<?>) {
-                return clazz.isAssignableFrom((Class<?>) rawType);
+    public static List<Object> executeTransactionWithResult(
+            Consumer<RedisCommands<String, Object>> operations) {
+        
+        TransactionResult result = executeTransaction(operations);
+        if (result == null || result.wasDiscarded()) {
+            throw new RuntimeException("Transaction was discarded");
+        }
+        
+        List<Object> results = new ArrayList<>();
+        for (int i = 0; i < result.size(); i++) {
+            results.add(result.get(i));
+        }
+        return results;
+    }
+
+    // ==================== Async Operations ====================
+
+    /**
+     * ⭐⭐⭐ 비동기 값 저장
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 기본 사용
+     * RedisUtils.setAsync("key", "value")
+     *     .thenAccept(result -> System.out.println("저장 완료: " + result))
+     *     .exceptionally(e -> {
+     *         System.err.println("오류: " + e.getMessage());
+     *         return null;
+     *     });
+     * 
+     * // 여러 작업 순차 실행
+     * RedisUtils.setAsync("key1", "value1")
+     *     .thenCompose(r -> RedisUtils.setAsync("key2", "value2"))
+     *     .thenCompose(r -> RedisUtils.setAsync("key3", "value3"))
+     *     .thenRun(() -> System.out.println("모든 저장 완료"));
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param value 값
+     * @return CompletableFuture<String> "OK" 또는 null
+     */
+    public static CompletableFuture<String> setAsync(String key, Object value) {
+        return Redis.async().set(key, value).toCompletableFuture();
+    }
+
+    /**
+     * 비동기 값 조회
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * RedisUtils.getAsync("key")
+     *     .thenAccept(value -> {
+     *         if (value != null) {
+     *             System.out.println("값: " + value);
+     *         }
+     *     });
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return CompletableFuture<Object> 값
+     */
+    public static CompletableFuture<Object> getAsync(String key) {
+        return Redis.async().get(key).toCompletableFuture();
+    }
+    
+    /**
+     * ⭐ 비동기 값 조회 (TypeToken 지원)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * CompletableFuture<List<String>> future = RedisUtils.getAsync("tags", 
+     *     new TypeReference<List<String>>(){});
+     * 
+     * future.thenAccept(tags -> {
+     *     tags.forEach(System.out::println);
+     * });
+     * </pre>
+     * 
+     * @param <T> 반환 타입
+     * @param key Redis 키
+     * @param typeRef TypeReference
+     * @return CompletableFuture
+     */
+    public static <T> CompletableFuture<T> getAsync(String key, TypeReference<T> typeRef) {
+        return getAsync(key).thenApply(value -> {
+            if (value == null) return null;
+            return get(key, typeRef);  // 타입 검증
+        });
+    }
+    
+    
+    public static <T> CompletableFuture<T> getAsync(String key, TypeRegistry typeRegistry) {
+        return getAsync(key).thenApply(value -> {
+            if (value == null) return null;
+            return get(key, typeRegistry.get());  // 타입 검증
+        });
+    }
+    
+
+    /**
+     * 비동기 키 삭제
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * RedisUtils.delAsync("temp:key")
+     *     .thenAccept(deleted -> 
+     *         System.out.println(deleted + "개 키 삭제"));
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return CompletableFuture<Long> 삭제된 키 개수
+     */
+    public static CompletableFuture<Long> delAsync(String key) {
+        return Redis.async().del(key).toCompletableFuture();
+    }
+
+    /**
+     * 비동기 여러 작업 실행
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * RedisUtils.executeAsync(async -> {
+     *     async.set("key1", "value1");
+     *     async.set("key2", "value2");
+     *     async.incr("counter");
+     * }).thenRun(() -> System.out.println("모든 작업 완료"));
+     * </pre>
+     * 
+     * @param operations 비동기 작업
+     * @return CompletableFuture<Void>
+     */
+    public static CompletableFuture<Void> executeAsync(
+            Consumer<RedisAsyncCommands<String, Object>> operations) {
+        
+        return CompletableFuture.runAsync(() -> {
+            RedisAsyncCommands<String, Object> async = Redis.async();
+            operations.accept(async);
+        });
+    }
+
+    /**
+     * Pipeline
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 1000개 키 일괄 저장
+     * List<CompletableFuture<?>> futures = RedisUtils.pipeline(async -> {
+     *     List<RedisFuture<?>> list = new ArrayList<>();
+     *     for (int i = 0; i < 1000; i++) {
+     *         list.add(async.set("key" + i, "value" + i));
+     *     }
+     *     return list;
+     * });
+     * 
+     * // 모든 작업 완료 대기
+     * CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+     * </pre>
+     * 
+     * <p><b>⭐ Lettuce 6.x에서의 Pipeline:</b></p>
+     * <ul>
+     *   <li>Lettuce는 자동으로 command batching을 수행</li>
+     *   <li>Async commands를 연속으로 호출하면 자동으로 최적화됨</li>
+     *   <li>명시적인 flush 제어 불필요 (deprecated됨)</li>
+     *   <li>단순히 여러 async 명령을 실행하고 future를 모으면 됨</li>
+     * </ul>
+     * 
+     * <p><b>성능:</b></p>
+     * - 순차 실행 1000건: ~1000ms
+     * - Pipeline 1000건: ~50ms (20배 빠름!)
+     * 
+     * @param operations Pipeline 작업
+     * @return 각 명령어의 CompletableFuture 리스트
+     */
+    public static List<CompletableFuture<?>> pipeline(
+            Function<RedisAsyncCommands<String, Object>, List<RedisFuture<?>>> operations) {
+        
+        // Lettuce 6.x에서는 async commands가 자동으로 최적화됨
+        RedisAsyncCommands<String, Object> async = Redis.async();
+        
+        // 여러 명령을 연속으로 실행 (자동 batching)
+        List<RedisFuture<?>> futures = operations.apply(async);
+        
+        // RedisFuture를 CompletableFuture로 변환
+        List<CompletableFuture<?>> completableFutures = new ArrayList<>();
+        for (RedisFuture<?> future : futures) {
+            completableFutures.add(future.toCompletableFuture());
+        }
+        
+        return completableFutures;
+    }
+    
+    
+    /**
+     * ⭐⭐⭐ Pipeline with Wait (모든 작업 완료 대기)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 1000개 키 저장하고 완료 대기
+     * RedisUtils.pipelineAndWait(async -> {
+     *     List<RedisFuture<?>> list = new ArrayList<>();
+     *     for (int i = 0; i < 1000; i++) {
+     *         list.add(async.set("key" + i, "value" + i));
+     *     }
+     *     return list;
+     * });
+     * 
+     * System.out.println("모든 저장 완료!");
+     * </pre>
+     * 
+     * <p><b>장점:</b></p>
+     * - 간단한 사용법 (자동 대기)
+     * - 예외 처리 자동화
+     * - 로깅 포함
+     * 
+     * @param operations Pipeline 작업
+     * @throws RuntimeException Pipeline 실행 중 오류 발생 시
+     */
+    public static void pipelineAndWait(
+            Function<RedisAsyncCommands<String, Object>, List<RedisFuture<?>>> operations) {
+        
+        List<CompletableFuture<?>> futures = pipeline(operations);
+        
+        try {
+            // 모든 작업 완료 대기
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            
+            logger.debug("Pipeline completed: {} commands", futures.size());
+            
+        } catch (Exception e) {
+            logger.error("Pipeline failed", e);
+            throw new RuntimeException("Pipeline execution failed", e);
+        }
+    }
+
+    /**
+     * ⭐ 대량 SET 최적화 (Pipeline 자동 적용)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Map<String, Object> data = new HashMap<>();
+     * for (int i = 0; i < 1000; i++) {
+     *     data.put("key" + i, "value" + i);
+     * }
+     * 
+     * RedisUtils.msetPipeline(data);
+     * System.out.println("1000개 키 저장 완료!");
+     * </pre>
+     * 
+     * @param map 키-값 맵
+     */
+    public static void msetPipeline(Map<String, Object> map) {
+        if (map == null || map.isEmpty()) {
+            return;
+        }
+        
+        pipelineAndWait(async -> {
+            List<RedisFuture<?>> futures = new ArrayList<>();
+            for (Map.Entry<String, Object> entry : map.entrySet()) {
+                futures.add(async.set(entry.getKey(), entry.getValue()));
+            }
+            return futures;
+        });
+    }
+
+    /**
+     * ⭐ 대량 SET with TTL 최적화
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Map<String, Object> sessions = new HashMap<>();
+     * sessions.put("session:user1", sessionData1);
+     * sessions.put("session:user2", sessionData2);
+     * 
+     * RedisUtils.msetPipelineWithTTL(sessions, 3600);  // 1시간
+     * </pre>
+     * 
+     * @param map 키-값 맵
+     * @param seconds TTL (초)
+     */
+    public static void msetPipeline(Map<String, Object> map, long seconds) {
+        if (map == null || map.isEmpty()) {
+            return;
+        }
+        
+        pipelineAndWait(async -> {
+            List<RedisFuture<?>> futures = new ArrayList<>();
+            for (Map.Entry<String, Object> entry : map.entrySet()) {
+                futures.add(async.setex(entry.getKey(), seconds, entry.getValue()));
+            }
+            return futures;
+        });
+    }
+
+    /**
+     * ⭐ 대량 GET 최적화 (Pipeline 자동 적용)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * List<String> keys = Arrays.asList("key1", "key2", "key3", ...);
+     * Map<String, Object> results = RedisUtils.mgetPipeline(keys);
+     * 
+     * for (Map.Entry<String, Object> entry : results.entrySet()) {
+     *     System.out.println(entry.getKey() + " = " + entry.getValue());
+     * }
+     * </pre>
+     * 
+     * @param keys 키 리스트
+     * @return 키-값 맵 (값이 null인 키는 제외)
+     */
+    public static Map<String, Object> mgetPipeline(List<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return new HashMap<>();
+        }
+        
+        List<CompletableFuture<Object>> futures = new ArrayList<>();
+        
+        // 모든 GET을 비동기로 실행
+        for (String key : keys) {
+            futures.add(getAsync(key));
+        }
+        
+        // 모든 결과 수집
+        Map<String, Object> result = new HashMap<>();
+        for (int i = 0; i < keys.size(); i++) {
+            try {
+                Object value = futures.get(i).join();
+                if (value != null) {
+                    result.put(keys.get(i), value);
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to get key: {}", keys.get(i), e);
             }
         }
-        return false;
-    }
-
-    /**
-     * Class 기반 Connection 결정 (기존 - JSON Codec)
-     */
-    private static <T> StatefulRedisConnection<String, T> determineConnectionByClass(Class<T> clazz) {
-        return determineConnectionByClass(clazz, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ Class 기반 Connection 결정 (Codec 선택)
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineConnectionByClass(
-            Class<T> clazz, CodecType codecType) {
         
-        if (clazz == String.class) {
-            return (StatefulRedisConnection<String, T>) Redis.getString(codecType);
-        } else if (SharedMap.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getSharedMap(codecType);
-        } else if (LinkedMap.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getLinkedMap(codecType);
-        } else if (ThreadSafeLinkedMap.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMap(codecType);
-        } else if (List.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectList(codecType);
-        } else if (Set.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectSet(codecType);
-        } else if (Map.class.isAssignableFrom(clazz)) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringObjectMap();
+        return result;
+    }
+
+    /**
+     * ⭐ 대량 DEL 최적화 (Pipeline 자동 적용)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * List<String> keys = Arrays.asList("key1", "key2", "key3", ...);
+     * long deleted = RedisUtils.mdelPipeline(keys);
+     * System.out.println(deleted + "개 키 삭제");
+     * </pre>
+     * 
+     * @param keys 키 리스트
+     * @return 삭제된 키 개수
+     */
+    public static long mdelPipeline(List<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return 0;
         }
         
-        return Redis.get(clazz, codecType);
-    }
-
-    /**
-     * List Connection 결정 (기존)
-     */
-    private static <T> StatefulRedisConnection<String, T> determineListConnection(List<?> list) {
-        return determineListConnection(list, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ List Connection 결정 (Codec 선택)
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineListConnection(
-            List<?> list, CodecType codecType) {
+        // 배치 사이즈 (한 번에 100개씩)
+        int batchSize = 100;
+        long totalDeleted = 0;
         
-        if (list.isEmpty()) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectList(codecType);
+        for (int i = 0; i < keys.size(); i += batchSize) {
+            int end = Math.min(i + batchSize, keys.size());
+            List<String> batch = keys.subList(i, end);
+            
+            String[] keyArray = batch.toArray(new String[0]);
+            totalDeleted += del(keyArray);
         }
         
-        Object first = list.get(0);
-        if (first instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringList(codecType);
-        } else if (first instanceof SharedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getSharedMapList();
-        } else if (first instanceof LinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getLinkedMapList();
-        } else if (first instanceof ThreadSafeLinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapList();
-        }
-        
-        return (StatefulRedisConnection<String, T>) Redis.getObjectList(codecType);
-    }
-
-    /**
-     * Set Connection 결정 (기존)
-     */
-    private static <T> StatefulRedisConnection<String, T> determineSetConnection(Set<?> set) {
-        return determineSetConnection(set, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ Set Connection 결정 (Codec 선택)
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineSetConnection(
-            Set<?> set, CodecType codecType) {
-        
-        if (set.isEmpty()) {
-            return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
-        }
-        
-        Object first = set.iterator().next();
-        if (first instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringSet();
-        } else if (first instanceof SharedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getSharedMapSet();
-        } else if (first instanceof LinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getLinkedMapSet();
-        } else if (first instanceof ThreadSafeLinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getThreadSafeLinkedMapSet();
-        }
-        
-        return (StatefulRedisConnection<String, T>) Redis.getObjectSet();
-    }
-
-    /**
-     * Map Connection 결정 (기존)
-     */
-    private static <T> StatefulRedisConnection<String, T> determineMapConnection(Map<?, ?> map) {
-        return determineMapConnection(map, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ Map Connection 결정 (Codec 선택)
-     */
-    @SuppressWarnings("unchecked")
-    private static <T> StatefulRedisConnection<String, T> determineMapConnection(
-            Map<?, ?> map, CodecType codecType) {
-        
-        if (map.isEmpty()) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringObjectMap();
-        }
-        
-        Map.Entry<?, ?> first = map.entrySet().iterator().next();
-        Object key = first.getKey();
-        Object value = first.getValue();
-        
-        if (key instanceof String && value instanceof String) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringMap();
-        } else if (key instanceof String && value instanceof SharedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringSharedMapMap();
-        } else if (key instanceof String && value instanceof LinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringLinkedMapMap();
-        } else if (key instanceof String && value instanceof ThreadSafeLinkedMap) {
-            return (StatefulRedisConnection<String, T>) Redis.getStringThreadSafeLinkedMapMap();
-        }
-        
-        return (StatefulRedisConnection<String, T>) Redis.getStringObjectMap();
+        return totalDeleted;
     }
 
 
-    // ------------------- 기본 Key/Value Operations -------------------
+    // ==================== Utility ====================
 
     /**
      * Redis 서버 연결 테스트
      * 
-     * @return "PONG" 문자열
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String pong = RedisUtils.ping();
+     * if ("PONG".equals(pong)) {
+     *     System.out.println("Redis 연결 정상");
+     * } else {
+     *     System.out.println("Redis 연결 실패");
+     * }
+     * </pre>
+     * 
+     * @return "PONG" 또는 null (연결 실패)
      */
     public static String ping() {
-        return withRedis(Redis.getString(), conn -> conn.sync().ping());
+        return Redis.ping();
     }
 
     /**
-     * 키의 남은 TTL을 초 단위로 조회
+     * 모든 키 개수 조회 (DBSIZE)
      * 
-     * @param key Redis 키
-     * @return 남은 TTL (초), 키가 없으면 -2, TTL이 없으면 -1
+     * @return 현재 데이터베이스의 키 개수
      */
-    public static long ttl(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().ttl(key));
+    public static Long dbSize() {
+        return Redis.sync().dbsize();
     }
 
     /**
-     * 키의 남은 TTL을 밀리초 단위로 조회
+     * 현재 데이터베이스의 모든 키 삭제 (FLUSHDB)
      * 
-     * @param key Redis 키
-     * @return 남은 TTL (밀리초), 키가 없으면 -2, TTL이 없으면 -1
-     */
-    public static long pttl(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().pttl(key));
-    }
-
-    /**
-     * 하나 이상의 키를 삭제
+     * <p><b>⚠️ 주의:</b></p>
+     * 현재 DB의 모든 데이터가 삭제됩니다!
      * 
-     * @param keys 삭제할 키들
-     * @return 삭제된 키의 개수
+     * @return 성공 메시지 "OK"
      */
-    public static long del(String... keys) {
-        return withRedis(Redis.getString(), conn -> conn.sync().del(keys));
+    public static String flushDb() {
+        return Redis.sync().flushdb();
     }
-    
+
     /**
-     * 패턴에 매칭되는 모든 키를 동기 방식으로 삭제
+     * 모든 데이터베이스의 모든 키 삭제 (FLUSHALL)
      * 
-     * @param pattern 키 패턴 (예: "user:*", "session:*")
-     * @return 삭제된 키의 개수
-     */
-    public static long deletePattern(String pattern) {
-        if (CommonUtils.isNullOrSpace(pattern)) {
-            return 0;
-        }
-
-        // 패턴 매칭되는 키 조회
-        List<String> keys = scan(pattern);
-
-        if (CommonUtils.isEmpty(keys)) {
-            return 0;
-        }
-
-        // 일괄 삭제
-        long deletedCount = del(keys.toArray(new String[0]));
-        
-        logger.debug("deletePattern: deleted {} ,pattern: {}", deletedCount, pattern);
-        return deletedCount;
-    }
-    
-    /**
-     * 패턴에 매칭되는 모든 키를 비동기 방식으로 삭제
+     * <p><b>⚠️⚠️ 매우 주의:</b></p>
+     * Redis 서버의 모든 데이터가 삭제됩니다!
      * 
-     * @param pattern 키 패턴 (예: "user:*", "session:*")
+     * @return 성공 메시지 "OK"
      */
-    public static void deletePatternAsync(String pattern) {
-        if (CommonUtils.isNullOrSpace(pattern)) {
-            return;
-        }
-
-        // 패턴 매칭되는 키 조회
-        List<String> keys = scan(pattern);
-
-        if (CommonUtils.isEmpty(keys)) {
-            return;
-        }
-
-        // 비동기로 삭제
-        withRedis(Redis.getString(), conn -> {
-            conn.async().del(keys.toArray(new String[0]))
-                .thenAccept(count -> 
-                    logger.debug("deletePatternAsync: deleted {} ,pattern: {}", count, pattern)
-                )
-                .exceptionally(throwable -> {
-                    logger.debug("deletePatternAsync: failed for pattern: {}", pattern, throwable);
-                    return null;
-                });
-            return null;
-        });
+    public static String flushAll() {
+        return Redis.sync().flushall();
     }
 
     /**
-     * 하나 이상의 키가 존재하는지 확인
+     * Redis 서버 정보 조회 (INFO)
      * 
-     * @param keys 확인할 키들
-     * @return 존재하는 키의 개수
+     * @return 서버 정보 (전체)
      */
-    public static long exist(String... keys) {
-        return withRedis(Redis.getString(), conn -> conn.sync().exists(keys));
+    public static String info() {
+        return Redis.sync().info();
     }
 
     /**
-     * Hash에서 특정 필드가 존재하는지 확인
+     * Redis 서버 정보 조회 (섹션별)
      * 
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @return 존재 여부
-     */
-    public static boolean exist(String key, String field) {
-        return withRedis(Redis.getString(), conn -> conn.sync().hexists(key, field));
-    }
-
-    /**
-     * Hash에서 특정 필드(숫자)가 존재하는지 확인
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명 (숫자)
-     * @return 존재 여부
-     */
-    public static boolean exists(String key, long field) {
-        return exist(key, String.valueOf(field));
-    }
-
-    /**
-     * 키에 TTL 설정 (초 단위)
-     * 
-     * @param key Redis 키
-     * @param seconds TTL (초)
-     * @return 설정 성공 여부
-     */
-    public static boolean expire(String key, long seconds) {
-        return withRedis(Redis.getString(), conn -> conn.sync().expire(key, seconds));
-    }
-
-    /**
-     * 키에 만료 시각 설정 (Unix timestamp)
-     * 
-     * @param key Redis 키
-     * @param timestamp Unix timestamp (초)
-     * @return 설정 성공 여부
-     */
-    public static boolean expireAt(String key, long timestamp) {
-        return withRedis(Redis.getString(), conn -> conn.sync().expireat(key, timestamp));
-    }
-
-    /**
-     * 키에 만료 시각 설정 (Date 객체)
-     * 
-     * @param key Redis 키
-     * @param date 만료 일시
-     * @return 설정 성공 여부
-     */
-    public static boolean expireAt(String key, Date date) {
-        return withRedis(Redis.getString(), conn -> conn.sync().expireat(key, date));
-    }
-
-    // ------------------- Increment/Decrement Operations -------------------
-
-    /**
-     * 키의 값을 1 증가 (없으면 0으로 초기화 후 증가)
-     * 
-     * @param key Redis 키
-     * @return 증가 후 값
-     */
-    public static long incr(String key) {
-        return withRedis(Redis.getString(), conn -> {
-            String value = conn.sync().get(key);
-            if (CommonUtils.isNullOrSpace(value)) {
-                conn.sync().set(key, "0");
-            }
-            return conn.sync().incr(key);
-        });
-    }
-
-    /**
-     * 키의 값을 지정한 수만큼 증가 (없으면 0으로 초기화 후 증가)
-     * 
-     * @param key Redis 키
-     * @param val 증가할 값
-     * @return 증가 후 값
-     */
-    public static long incrBy(String key, long val) {
-        return withRedis(Redis.getString(), conn -> {
-            String value = conn.sync().get(key);
-            if (CommonUtils.isNullOrSpace(value)) {
-                conn.sync().set(key, "0");
-            }
-            return conn.sync().incrby(key, val);
-        });
-    }
-
-    /**
-     * 키의 값을 실수만큼 증가 (없으면 0으로 초기화 후 증가)
-     * 
-     * @param key Redis 키
-     * @param val 증가할 값 (실수)
-     * @return 증가 후 값
-     */
-    public static double incrBy(String key, double val) {
-        return withRedis(Redis.getString(), conn -> {
-            String value = conn.sync().get(key);
-            if (CommonUtils.isNullOrSpace(value)) {
-                conn.sync().set(key, "0");
-            }
-            return conn.sync().incrbyfloat(key, val);
-        });
-    }
-
-    /**
-     * 키의 값을 1 감소
-     * 
-     * @param key Redis 키
-     * @return 감소 후 값
-     */
-    public static long decr(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().decr(key));
-    }
-
-    /**
-     * 키의 값을 지정한 수만큼 감소
-     * 
-     * @param key Redis 키
-     * @param val 감소할 값
-     * @return 감소 후 값
-     */
-    public static long decrBy(String key, long val) {
-        return withRedis(Redis.getString(), conn -> conn.sync().decrby(key, val));
-    }
-
-    /**
-     * 키의 값을 실수만큼 감소
-     * 
-     * @param key Redis 키
-     * @param val 감소할 값 (실수)
-     * @return 감소 후 값
-     */
-    public static double decrBy(String key, double val) {
-        return withRedis(Redis.getString(), conn -> {
-            double current = CommonUtils.parseDouble(conn.sync().get(key));
-            double newValue = current - val;
-            conn.sync().set(key, String.valueOf(newValue));
-            return newValue;
-        });
-    }
-
-    // ------------------- Hash Operations -------------------
-
-    /**
-     * Hash 필드의 값을 1 증가
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @return 증가 후 값
-     */
-    public static long incrHash(String key, String field) {
-        return incrByHash(key, field, 1L);
-    }
-
-    /**
-     * Hash 필드의 값을 지정한 수만큼 증가 (없으면 0으로 초기화 후 증가)
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @param val 증가할 값
-     * @return 증가 후 값
-     */
-    public static long incrByHash(String key, String field, long val) {
-        return withRedis(Redis.getString(), conn -> {
-            String value = conn.sync().hget(key, field);
-            if (CommonUtils.isNullOrSpace(value)) {
-                conn.sync().hset(key, field, "0");
-            }
-            return conn.sync().hincrby(key, field, val);
-        });
-    }
-
-    /**
-     * Hash 필드의 값을 실수만큼 증가 (없으면 0으로 초기화 후 증가)
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @param val 증가할 값 (실수)
-     * @return 증가 후 값
-     */
-    public static double incrByHash(String key, String field, double val) {
-        return withRedis(Redis.getString(), conn -> {
-            String value = conn.sync().hget(key, field);
-            if (CommonUtils.isNullOrSpace(value)) {
-                conn.sync().hset(key, field, "0");
-            }
-            return conn.sync().hincrbyfloat(key, field, val);
-        });
-    }
-
-    /**
-     * Hash 필드의 값을 1 감소
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @return 감소 후 값
-     */
-    public static long decrHash(String key, String field) {
-        return decrByHash(key, field, 1L);
-    }
-
-    /**
-     * Hash 필드의 값을 지정한 수만큼 감소
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @param val 감소할 값
-     * @return 감소 후 값
-     */
-    public static long decrByHash(String key, String field, long val) {
-        return withRedis(Redis.getString(), conn -> {
-            long currentValue = CommonUtils.parseLong(conn.sync().hget(key, field));
-            long newValue = currentValue - val;
-            conn.sync().hset(key, field, String.valueOf(newValue));
-            return newValue;
-        });
-    }
-
-    /**
-     * Hash 필드의 값을 실수만큼 감소
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @param val 감소할 값 (실수)
-     * @return 감소 후 값
-     */
-    public static double decrByHash(String key, String field, double val) {
-        return withRedis(Redis.getString(), conn -> {
-            double currentValue = CommonUtils.parseDouble(conn.sync().hget(key, field));
-            double newValue = currentValue - val;
-            conn.sync().hset(key, field, String.valueOf(newValue));
-            return newValue;
-        });
-    }
-
-    /**
-     * Hash에 필드-값 설정
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @param val 저장할 값
-     * @return 새로운 필드 추가 여부 (true: 새 필드, false: 기존 필드 업데이트)
-     */
-    public static boolean setHash(String key, String field, Object val) {
-        StatefulRedisConnection<String, Object> conn = determineConnection(val);
-        return withRedis(conn, c -> c.sync().hset(key, field, val));
-    }
-
-    /**
-     * Hash에 필드-값 설정 (필드명이 숫자인 경우)
-     * 
-     * @param key Redis 키
-     * @param field Hash 필드명 (숫자)
-     * @param val 저장할 값
-     * @return 새로운 필드 추가 여부
-     */
-    public static boolean setHash(String key, long field, Object val) {
-        return setHash(key, String.valueOf(field), val);
-    }
-
-    /**
-     * Hash에서 필드 값 조회
-     * 
-     * @param <T> 반환 타입
-     * @param key Redis 키
-     * @param field Hash 필드명
-     * @param clazz 반환 클래스 타입
-     * @return 필드 값
-     */
-    public static <T> T getHash(String key, String field, Class<T> clazz) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz);
-        return withRedis(conn, c -> clazz.cast(c.sync().hget(key, field)));
-    }
-
-    /**
-     * Hash에서 필드 값 조회 (필드명이 숫자인 경우)
-     * 
-     * @param <T> 반환 타입
-     * @param key Redis 키
-     * @param field Hash 필드명 (숫자)
-     * @param clazz 반환 클래스 타입
-     * @return 필드 값
-     */
-    public static <T> T getHash(String key, long field, Class<T> clazz) {
-        return getHash(key, String.valueOf(field), clazz);
-    }
-
-    // ------------------- List Operations -------------------
-
-    /**
-     * List 오른쪽에 추가 (기존 - JSON)
-     */
-    public static <T> Long rpush(String key, T val) {
-        return rpush(key, val, CodecType.JSON);
-    }
-    
-    
-    /**
-     * ⭐ List 오른쪽에 추가 (Codec 선택)
-     */
-    @SuppressWarnings("unchecked")
-    public static <T> Long rpush(String key, T val, CodecType codecType) {
-        if (key == null || key.trim().isEmpty() || val == null) {
-            return 0L;
-        }
-        
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
-            return conn.sync().rpush(key, val);
-        } catch (Exception e) {
-            logger.warn("Redis RPUSH failed: key={}, codec={}, error={}", 
-                key, codecType, e.getMessage());
-            return 0L;
-        }
-    }
-
-    /**
-     * List 오른쪽에 추가 (기존 - JSON)
-     */
-    public static <T> void rpushAsync(String key, T val) {
-        rpushAsync(key, val, CodecType.JSON);
-    }
-    
-    
-    /**
-     * ⭐ List 오른쪽에 추가 (Codec 선택)
-     */
-    @SuppressWarnings("unchecked")
-    public static <T> void rpushAsync(String key, T val, CodecType codecType) {
-        if (key == null || key.trim().isEmpty() || val == null) {
-        }
-        
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
-            RedisFuture<Long> future = conn.async().rpush(key, val);
-            future.thenAccept(v -> logger.debug("rpush async completed for key: {} with length: {}", key, v))
-                  .exceptionally(throwable -> {
-                      logger.debug("rpush async failed for key: {}", key, throwable);
-                      return null;
-                  });
-        } catch (Exception e) {
-            logger.debug("Redis RPUSH failed: key={}, codec={}, error={}", 
-                key, codecType, e.getMessage());
-        }
-    }
-    
-    
-
-    /**
-     * List 왼쪽에 추가 (기존 - JSON)
-     */
-    public static <T> Long lpush(String key, T val) {
-        return lpush(key, val, CodecType.JSON);
-    }
-    
-    
-    /**
-     * ⭐ List 왼쪽에 추가 (Codec 선택)
-     */
-    @SuppressWarnings("unchecked")
-    public static <T> Long lpush(String key, T val, CodecType codecType) {
-        if (key == null || key.trim().isEmpty() || val == null) {
-            return 0L;
-        }
-        
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
-            return conn.sync().lpush(key, val);
-        } catch (Exception e) {
-            logger.warn("Redis RPUSH failed: key={}, codec={}, error={}", 
-                key, codecType, e.getMessage());
-            return 0L;
-        }
-    }
-
-    /**
-     * List 왼쪽에 추가 (기존 - JSON)
-     */
-    public static <T> void lpushAsync(String key, T val) {
-        lpushAsync(key, val, CodecType.JSON);
-    }
-    
-    
-    /**
-     * ⭐ List 왼쪽에 추가 (Codec 선택)
-     */
-    @SuppressWarnings("unchecked")
-    public static <T> void lpushAsync(String key, T val, CodecType codecType) {
-        if (key == null || key.trim().isEmpty() || val == null) {
-        }
-        
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
-            RedisFuture<Long> future = conn.async().lpush(key, val);
-            future.thenAccept(v -> logger.debug("lpush async completed for key: {} with length: {}", key, v))
-                  .exceptionally(throwable -> {
-                      logger.debug("lpush async failed for key: {}", key, throwable);
-                      return null;
-                  });
-        } catch (Exception e) {
-            logger.debug("Redis LPUSH failed: key={}, codec={}, error={}", 
-                key, codecType, e.getMessage());
-        }
-    }
-    
-    
-    
-    
-    
-
-    /**
-     * List의 오른쪽(끝)에서 값을 꺼내서 반환 (기존 - JSON)
-     */
-    public static <T> T rpop(String key, Class<T> clazz) {
-        return rpop(key, clazz, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ List의 오른쪽(끝)에서 값을 꺼내서 반환 (Codec 선택)
-     */
-    public static <T> T rpop(String key, Class<T> clazz, CodecType codecType) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
-        return withRedis(conn, c -> clazz.cast(c.sync().rpop(key)));
-    }
-
-
-
-    /**
-     * List의 오른쪽(끝)에서 값을 지정한 갯수만큼 꺼내서 반환 (기존 - JSON)
-     */
-    public static <T> T rpops(String key, Number size, Class<T> clazz) {
-        return rpops(key, size, clazz, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ List의 오른쪽(끝)에서 값을 지정한 갯수만큼 꺼내서 반환 (Codec 선택)
-     */
-    public static <T> T rpops(String key, Number size, Class<T> clazz, CodecType codecType) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
-        return withRedis(conn, c -> clazz.cast(c.sync().rpop(key, CommonUtils.parseLong(size))));
-    }
-
- 
-
-    /**
-     * List의 왼쪽(앞)에서 값을 꺼내서 반환 (기존 - JSON)
-     */
-    public static <T> T lpop(String key, Class<T> clazz) {
-        return lpop(key, clazz, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ List의 왼쪽(앞)에서 값을 꺼내서 반환 (Codec 선택)
-     */
-    public static <T> T lpop(String key, Class<T> clazz, CodecType codecType) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
-        return withRedis(conn, c -> clazz.cast(c.sync().lpop(key)));
-    }
-
-    
-    /**
-     * List의 왼쪽(앞)에서 값을 지정한 갯수만큼 꺼내서 반환 (기존 - JSON)
-     */
-    public static <T> T lpops(String key, Number size, Class<T> clazz) {
-        return lpops(key, size, clazz, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ List의 왼쪽(앞)에서 값을 지정한 갯수만큼 꺼내서 반환 (Codec 선택)
-     */
-    public static <T> T lpops(String key, Number size, Class<T> clazz, CodecType codecType) {
-        StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
-        return withRedis(conn, c -> clazz.cast(c.sync().lpop(key, CommonUtils.parseLong(size))));
-    }
-
-    /**
-     * List의 길이 조회
-     * 
-     * @param key Redis 키
-     * @return List의 길이
-     */
-    public static long llen(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().llen(key));
-    }
-
-    // ------------------- Generic get/set (with custom connection) -------------------
-
-    /**
-     * 커스텀 Connection을 사용한 값 조회
-     * 
-     * @param <V> 값 타입
-     * @param key Redis 키
-     * @param conn Redis 연결 객체
-     * @return 조회된 값
-     */
-    public static <V> V get(String key, StatefulRedisConnection<String, V> conn) {
-        return withRedis(conn, c -> c.sync().get(key));
-    }
-
-    /**
-     * 커스텀 Connection을 사용한 값 저장
-     * 
-     * @param <V> 값 타입
-     * @param key Redis 키
-     * @param val 저장할 값
-     * @param expire TTL (초), 0이면 영구 저장
-     * @param conn Redis 연결 객체
-     * @return "OK" (성공 시)
-     */
-    public static <V> String set(String key, V val, long expire, StatefulRedisConnection<String, V> conn) {
-        return withRedis(conn, c -> {
-            if (expire > 0) {
-                return c.sync().setex(key, expire, val);
-            } else {
-                return c.sync().set(key, val);
-            }
-        });
-    }
-
-    // ------------------- Scan / Keys Operations -------------------
-
-    /**
-     * 패턴에 매칭되는 모든 키 조회 (KEYS 명령 사용)
-     * 주의: 프로덕션에서는 성능 이슈로 scan() 메서드 권장
-     * 
-     * @param pattern 키 패턴 (예: "user:*")
-     * @return 매칭되는 키 목록
-     */
-    public static List<String> keys(String pattern) {
-        return withRedis(Redis.getString(), conn -> conn.sync().keys(pattern));
-    }
-
-    /**
-     * Hash의 모든 필드명 조회
-     * 
-     * @param key Redis 키
-     * @return 필드명 목록
-     */
-    public static List<String> keysHash(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().hkeys(key));
-    }
-
-    /**
-     * 패턴에 매칭되는 키를 SCAN으로 조회 (기본 limit: 999,999)
-     * 
-     * @param key 키 패턴
-     * @return 매칭되는 키 목록 (정렬됨)
-     */
-    public static List<String> scan(String key) {
-        return scan(key, new ScanArgs().match(key).limit(999_999));
-    }
-
-    /**
-     * 패턴에 매칭되는 키를 SCAN으로 조회 (커스텀 ScanArgs)
-     * 
-     * @param key 키 패턴
-     * @param args SCAN 파라미터
-     * @return 매칭되는 키 목록 (정렬됨)
-     */
-    public static List<String> scan(String key, ScanArgs args) {
-        return withRedis(Redis.getString(), conn -> {
-            KeyScanCursor<String> cursor = conn.sync().scan(args);
-            List<String> list = cursor == null ? new ArrayList<>() : new ArrayList<>(cursor.getKeys());
-            list.sort(String::compareTo);
-            return list;
-        });
-    }
-
-    // ---------------- String Operations ----------------
-    
-    
-    public static Object get(String key) {
-        return get(key, Object.class, CodecType.JSON);
-    }
-    
-    public static Object get(String key, CodecType codecType) {
-        return get(key, Object.class, codecType);
-    }
-    
-    
-    public static <T> T get(String key, Class<T> clazz) {
-        return get(key, clazz, CodecType.JSON);
-    }
-    
-    
-    public static <T> T get(String key, Class<T> clazz, CodecType codecType) {
-        if (key == null || key.trim().isEmpty()) {
-            logger.warn("Redis GET ignored: key is null or empty");
-            return null;
-        }
-        
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnectionByClass(clazz, codecType);
-            return conn.sync().get(key);
-        } catch (Exception e) {
-            logger.error("Redis GET failed: key={}, class={}, codec={}, error={}", 
-                key, clazz.getSimpleName(), codecType, e.getMessage());
-            return null;
-        }
-    }
-    
-    
-    public static <T> T get(String key, TypeReference<T> typeRef) {
-        return get(key, typeRef, CodecType.JSON);
-    }
-    
-    
-    /**
-     * ⭐⭐ TypeReference로 값 조회 (Codec 선택) - 복잡한 제네릭용
-     * 
-     * 사용 예:
+     * <p><b>사용 예:</b></p>
      * <pre>
-     * List<SharedMap<String, Object>> list = RedisUtils.get("key",
-     *     new TypeReference<List<SharedMap<String, Object>>>() {},
-     *     CodecType.FST);
+     * String serverInfo = RedisUtils.info("server");
+     * String memoryInfo = RedisUtils.info("memory");
+     * String statsInfo = RedisUtils.info("stats");
      * </pre>
+     * 
+     * @param section 섹션명 (server, memory, stats, clients, replication 등)
+     * @return 해당 섹션의 서버 정보
      */
-    public static <T> T get(String key, TypeReference<T> typeRef, CodecType codecType) {
-        if (key == null || key.trim().isEmpty()) {
-            logger.warn("Redis GET ignored: key is null or empty");
-            return null;
-        }
+    public static String info(String section) {
+        return Redis.sync().info(section);
+    }
+    
+    
+    
+    /**
+     * 랜덤 키 조회 (RANDOMKEY)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String randomKey = RedisUtils.randomKey();
+     * if (randomKey != null) {
+     *     System.out.println("랜덤 키: " + randomKey);
+     * }
+     * </pre>
+     * 
+     * @return 랜덤 키, DB가 비어있으면 null
+     */
+    public static String randomKey() {
+        return Redis.sync().randomkey();
+    }
+
+    /**
+     * TTL 제거 (영구 저장으로 변경) (PERSIST)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * RedisUtils.set("temp:data", value, 3600);  // 1시간 TTL
+     * RedisUtils.persist("temp:data");  // TTL 제거, 영구 저장
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @return TTL이 제거되었으면 true, 키가 없거나 이미 영구 저장이면 false
+     */
+    public static boolean persist(String key) {
+        return Redis.sync().persist(key);
+    }
+
+    /**
+     * 지연 작업 추가 (Sorted Set 기반 Delayed Queue)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 5분 후 실행될 작업 추가
+     * RedisUtils.addDelayedTask("tasks:queue", "task-001", 300);
+     * 
+     * // 1시간 후 실행될 작업 추가
+     * RedisUtils.addDelayedTask("tasks:queue", "send-email-123", 3600);
+     * </pre>
+     * 
+     * @param queueKey 큐 키
+     * @param taskId 작업 ID
+     * @param delaySeconds 지연 시간 (초)
+     * @return 성공 여부
+     */
+    public static boolean addDelayedTask(String queueKey, String taskId, long delaySeconds) {
+        long executeTime = System.currentTimeMillis() + (delaySeconds * 1000);
+        return Redis.sync().zadd(queueKey, executeTime, taskId) >= 0;
+    }
+
+    /**
+     * 실행 가능한 작업 조회 및 제거
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // Worker 스레드에서 실행
+     * while (true) {
+     *     List<String> tasks = RedisUtils.pollDelayedTasks("tasks:queue", 10);
+     *     
+     *     for (String taskId : tasks) {
+     *         processTask(taskId);
+     *     }
+     *     
+     *     if (tasks.isEmpty()) {
+     *         Thread.sleep(1000);
+     *     }
+     * }
+     * </pre>
+     * 
+     * @param queueKey 큐 키
+     * @param batchSize 한 번에 가져올 작업 수
+     * @return 실행 가능한 작업 리스트
+     */
+    public static List<String> pollDelayedTasks(String queueKey, int batchSize) {
+        long now = System.currentTimeMillis();
         
-        try {
-            // TypeReference를 사용하여 정확한 Connection 획득
-            StatefulRedisConnection<String, T> conn = determineConnection(null, typeRef, codecType);
-            return conn.sync().get(key);
-        } catch (Exception e) {
-            logger.error("Redis GET failed: key={}, codec={}, error={}", 
-                key, codecType, e.getMessage());
-            return null;
-        }
-    }
-
-
-    /**
-     * String 값 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 값
-     */
-    public static String get(String key, long expire) {
-        return getValue(key, expire, Redis.getString());
-    }
-
-    /**
-     * 값 저장 (기존 - JSON Codec)
-     */
-    public static <T> boolean set(String key, T val) {
-        return set(key, val, CodecType.JSON);
-    }
-
-    /**
-     * ⭐ 값 저장 (Codec 선택)
-     */
-    public static <T> boolean set(String key, T val, CodecType codecType) {
-        if (key == null || key.trim().isEmpty()) {
-            logger.warn("Redis SET ignored: key is null or empty");
-            return false;
-        }
+        // 실행 가능한 작업 조회 (List<Object>로 받음)
+        List<Object> objectTasks = Redis.sync().zrangebyscore(
+            queueKey,
+            io.lettuce.core.Range.create(0.0, (double) now),
+            io.lettuce.core.Limit.create(0, batchSize)
+        );
         
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
-            String result = conn.sync().set(key, val);
-            return "OK".equals(result);
-        } catch (Exception e) {
-            logger.error("Redis SET failed: key={}, codec={}, error={}", key, codecType, e.getMessage());
-            return false;
-        }
-    }
-    
-    
-    public static <T> boolean set(String key, T val, TypeReference<T> typeRef) {
-        return set(key, val, typeRef, CodecType.JSON);
-    }
-    
-    public static <T> boolean set(String key, T val, TypeReference<T> typeRef, CodecType codecType) {
-        if (key == null || key.trim().isEmpty()) {
-            logger.warn("Redis SET ignored: key is null or empty");
-            return false;
-        }
-        
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnection(val, typeRef, codecType);
-            String result = conn.sync().set(key, val);
-            return "OK".equals(result);
-        } catch (Exception e) {
-            logger.error("Redis SET failed: key={}, codec={}, error={}", key, codecType, e.getMessage());
-            return false;
-        }
-    }
-    
-    
-    public static <T> boolean setex(String key, long seconds, T val) {
-        return setex(key, seconds, val, CodecType.JSON);
-    }
-    
-    
-    public static <T> boolean setex(String key, long seconds, T val, CodecType codecType) {
-        if (key == null || key.trim().isEmpty()) {
-            logger.warn("Redis SETEX ignored: key is null or empty");
-            return false;
-        }
-        
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnection(val, codecType);
-            String result = conn.sync().setex(key, seconds, val);
-            return "OK".equals(result);
-        } catch (Exception e) {
-            logger.error("Redis SETEX failed: key={}, ttl={}, codec={}, error={}", 
-                key, seconds, codecType, e.getMessage());
-            return false;
-        }
-    }
-    
-    public static <T> boolean setex(String key, long seconds, T val, TypeReference<T> typeRef) {
-        return setex(key, seconds, val, typeRef, CodecType.JSON);
-    }
-
-    public static <T> boolean setex(String key, long seconds, T val, 
-            TypeReference<T> typeRef, CodecType codecType) {
-        if (key == null || key.trim().isEmpty()) {
-            logger.warn("Redis SETEX ignored: key is null or empty");
-            return false;
-        }
-        
-        try {
-            StatefulRedisConnection<String, T> conn = determineConnection(val, typeRef, codecType);
-            String result = conn.sync().setex(key, seconds, val);
-            return "OK".equals(result);
-        } catch (Exception e) {
-            logger.error("Redis SETEX failed: key={}, ttl={}, codec={}, error={}", 
-                key, seconds, codecType, e.getMessage());
-            return false;
-        }
-    }
-
-
-    /**
-     * String 값 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param val 저장할 값
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String set(String key, String val, long expire) {
-        return setValue(key, val, expire, Redis.getString());
-    }
-
-    // ---------------- SharedMap Operations ----------------
-    
-    /**
-     * SharedMap<String, Object> 값 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 SharedMap
-     */
-    public static SharedMap<String, Object> getSharedMap(String key) {
-        return getSharedMap(key, 0);
-    }
-
-    /**
-     * SharedMap<String, Object> 값 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 SharedMap
-     */
-    public static SharedMap<String, Object> getSharedMap(String key, long expire) {
-        return getValue(key, expire, Redis.getSharedMap());
-    }
-
-    /**
-     * SharedMap<String, Object> 값 저장
-     * 
-     * @param key Redis 키
-     * @param val 저장할 SharedMap
-     * @return "OK" (성공 시)
-     */
-    public static String set(String key, SharedMap<String, Object> val) {
-        return set(key, val, 0);
-    }
-
-    /**
-     * SharedMap<String, Object> 값 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param val 저장할 SharedMap
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String set(String key, SharedMap<String, Object> val, long expire) {
-        return setValue(key, val, expire, Redis.getSharedMap());
-    }
-
-    // ---------------- SharedMap<String,String> Operations ----------------
-    
-    /**
-     * SharedMap<String, String> 값 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 SharedMap
-     */
-    public static SharedMap<String, String> getSharedMapString(String key) {
-        return getSharedMapString(key, 0);
-    }
-
-    /**
-     * SharedMap<String, String> 값 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 SharedMap
-     */
-    public static SharedMap<String, String> getSharedMapString(String key, long expire) {
-        return getValue(key, expire, Redis.getSharedMapString());
-    }
-
-    /**
-     * SharedMap<String, String> 값 저장
-     * 
-     * @param key Redis 키
-     * @param val 저장할 SharedMap
-     * @return "OK" (성공 시)
-     */
-    public static String setString(String key, SharedMap<String, String> val) {
-        return setString(key, val, 0);
-    }
-
-    /**
-     * SharedMap<String, String> 값 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param val 저장할 SharedMap
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setString(String key, SharedMap<String, String> val, long expire) {
-        return setValue(key, val, expire, Redis.getSharedMapString());
-    }
-
-    // ---------------- SharedMap<String,Object> List Operations ----------------
-    
-    /**
-     * SharedMap<String, Object> 리스트 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 SharedMap 리스트
-     */
-    public static List<SharedMap<String, Object>> getSharedMapList(String key) {
-        return getSharedMapList(key, 0);
-    }
-
-    /**
-     * SharedMap<String, Object> 리스트 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 SharedMap 리스트
-     */
-    public static List<SharedMap<String, Object>> getSharedMapList(String key, long expire) {
-        return getValue(key, expire, Redis.getSharedMapList());
-    }
-
-    /**
-     * SharedMap<String, Object> 리스트 저장
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 SharedMap 리스트
-     * @return "OK" (성공 시)
-     */
-    public static String setSharedMapList(String key, List<SharedMap<String, Object>> vals) {
-        return setSharedMapList(key, vals, 0);
-    }
-
-    /**
-     * SharedMap<String, Object> 리스트 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 SharedMap 리스트
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setSharedMapList(String key, List<SharedMap<String, Object>> vals, long expire) {
-        return setValue(key, vals, expire, Redis.getSharedMapList());
-    }
-
-    // ---------------- SharedMap<String,String> List Operations ----------------
-    
-    /**
-     * SharedMap<String, String> 리스트 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 SharedMap 리스트
-     */
-    public static List<SharedMap<String, String>> getSharedMapListString(String key) {
-        return getSharedMapListString(key, 0);
-    }
-
-    /**
-     * SharedMap<String, String> 리스트 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 SharedMap 리스트
-     */
-    public static List<SharedMap<String, String>> getSharedMapListString(String key, long expire) {
-        return getValue(key, expire, Redis.getSharedMapListString());
-    }
-
-    /**
-     * SharedMap<String, String> 리스트 저장
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 SharedMap 리스트
-     * @return "OK" (성공 시)
-     */
-    public static String setShared(String key, List<SharedMap<String, String>> vals) {
-        return setShared(key, vals, 0);
-    }
-
-    /**
-     * SharedMap<String, String> 리스트 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 SharedMap 리스트
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setShared(String key, List<SharedMap<String, String>> vals, long expire) {
-        return setValue(key, vals, expire, Redis.getSharedMapListString());
-    }
-
-    // ---------------- LinkedMap Operations ----------------
-    
-    /**
-     * LinkedMap<String, Object> 값 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 LinkedMap
-     */
-    public static LinkedMap<String, Object> getLinkedMap(String key) {
-        return getLinkedMap(key, 0);
-    }
-
-    /**
-     * LinkedMap<String, Object> 값 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 LinkedMap
-     */
-    public static LinkedMap<String, Object> getLinkedMap(String key, long expire) {
-        return getValue(key, expire, Redis.getLinkedMap());
-    }
-
-    /**
-     * LinkedMap<String, Object> 값 저장
-     * 
-     * @param key Redis 키
-     * @param val 저장할 LinkedMap
-     * @return "OK" (성공 시)
-     */
-    public static String setLinkedMap(String key, LinkedMap<String, Object> val) {
-        return setLinkedMap(key, val, 0);
-    }
-
-    /**
-     * LinkedMap<String, Object> 값 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param val 저장할 LinkedMap
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setLinkedMap(String key, LinkedMap<String, Object> val, long expire) {
-        return setValue(key, val, expire, Redis.getLinkedMap());
-    }
-
-    // ---------------- LinkedMap<String,String> Operations ----------------
-    
-    /**
-     * LinkedMap<String, String> 값 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 LinkedMap
-     */
-    public static LinkedMap<String, String> getLinkedMapString(String key) {
-        return getLinkedMapString(key, 0);
-    }
-
-    /**
-     * LinkedMap<String, String> 값 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 LinkedMap
-     */
-    public static LinkedMap<String, String> getLinkedMapString(String key, long expire) {
-        return getValue(key, expire, Redis.getLinkedMapString());
-    }
-
-    /**
-     * LinkedMap<String, String> 값 저장
-     * 
-     * @param key Redis 키
-     * @param val 저장할 LinkedMap
-     * @return "OK" (성공 시)
-     */
-    public static String set(String key, LinkedMap<String, String> val) {
-        return set(key, val, 0);
-    }
-
-    /**
-     * LinkedMap<String, String> 값 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param val 저장할 LinkedMap
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String set(String key, LinkedMap<String, String> val, long expire) {
-        return setValue(key, val, expire, Redis.getLinkedMapString());
-    }
-
-    // ---------------- LinkedMap<String,Object> List Operations ----------------
-    
-    /**
-     * LinkedMap<String, Object> 리스트 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 LinkedMap 리스트
-     */
-    public static List<LinkedMap<String, Object>> getLinkedMapList(String key) {
-        return getLinkedMapList(key, 0);
-    }
-
-    /**
-     * LinkedMap<String, Object> 리스트 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 LinkedMap 리스트
-     */
-    public static List<LinkedMap<String, Object>> getLinkedMapList(String key, long expire) {
-        return getValue(key, expire, Redis.getLinkedMapList());
-    }
-
-    /**
-     * LinkedMap<String, Object> 리스트 저장
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 LinkedMap 리스트
-     * @return "OK" (성공 시)
-     */
-    public static String setLinkedMapList(String key, List<LinkedMap<String, Object>> vals) {
-        return setLinkedMapList(key, vals, 0);
-    }
-
-    /**
-     * LinkedMap<String, Object> 리스트 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 LinkedMap 리스트
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setLinkedMapList(String key, List<LinkedMap<String, Object>> vals, long expire) {
-        return setValue(key, vals, expire, Redis.getLinkedMapList());
-    }
-
-    // ---------------- LinkedMap<String,String> List Operations ----------------
-    
-    /**
-     * LinkedMap<String, String> 리스트 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 LinkedMap 리스트
-     */
-    public static List<LinkedMap<String, String>> getLinkedMapListString(String key) {
-        return getLinkedMapListString(key, 0);
-    }
-
-    /**
-     * LinkedMap<String, String> 리스트 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 LinkedMap 리스트
-     */
-    public static List<LinkedMap<String, String>> getLinkedMapListString(String key, long expire) {
-        return getValue(key, expire, Redis.getLinkedMapListString());
-    }
-
-    /**
-     * LinkedMap<String, String> 리스트 저장
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 LinkedMap 리스트
-     * @return "OK" (성공 시)
-     */
-    public static String setLinkedMapListString(String key, List<LinkedMap<String, String>> vals) {
-        return setLinkedMapListString(key, vals, 0);
-    }
-
-    /**
-     * LinkedMap<String, String> 리스트 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 LinkedMap 리스트
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setLinkedMapListString(String key, List<LinkedMap<String, String>> vals, long expire) {
-        return setValue(key, vals, expire, Redis.getLinkedMapListString());
-    }
-
-    // ---------------- ThreadSafeLinkedMap Operations ----------------
-    
-    /**
-     * ThreadSafeLinkedMap<String, Object> 값 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 ThreadSafeLinkedMap
-     */
-    public static ThreadSafeLinkedMap<String, Object> getThreadSafeLinkedMap(String key) {
-        return getThreadSafeLinkedMap(key, 0);
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, Object> 값 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 ThreadSafeLinkedMap
-     */
-    public static ThreadSafeLinkedMap<String, Object> getThreadSafeLinkedMap(String key, long expire) {
-        return getValue(key, expire, Redis.getThreadSafeLinkedMap());
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, Object> 값 저장
-     * 
-     * @param key Redis 키
-     * @param val 저장할 ThreadSafeLinkedMap
-     * @return "OK" (성공 시)
-     */
-    public static String setThreadSafeLinkedMap(String key, ThreadSafeLinkedMap<String, Object> val) {
-        return setThreadSafeLinkedMap(key, val, 0);
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, Object> 값 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param val 저장할 ThreadSafeLinkedMap
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setThreadSafeLinkedMap(String key, ThreadSafeLinkedMap<String, Object> val, long expire) {
-        return setValue(key, val, expire, Redis.getThreadSafeLinkedMap());
-    }
-
-    // ---------------- ThreadSafeLinkedMap<String,String> Operations ----------------
-    
-    /**
-     * ThreadSafeLinkedMap<String, String> 값 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 ThreadSafeLinkedMap
-     */
-    public static ThreadSafeLinkedMap<String, String> getThreadSafeLinkedMapString(String key) {
-        return getThreadSafeLinkedMapString(key, 0);
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, String> 값 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 ThreadSafeLinkedMap
-     */
-    public static ThreadSafeLinkedMap<String, String> getThreadSafeLinkedMapString(String key, long expire) {
-        return getValue(key, expire, Redis.getThreadSafeLinkedMapString());
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, String> 값 저장
-     * 
-     * @param key Redis 키
-     * @param val 저장할 ThreadSafeLinkedMap
-     * @return "OK" (성공 시)
-     */
-    public static String set(String key, ThreadSafeLinkedMap<String, String> val) {
-        return set(key, val, 0);
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, String> 값 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param val 저장할 ThreadSafeLinkedMap
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String set(String key, ThreadSafeLinkedMap<String, String> val, long expire) {
-        return setValue(key, val, expire, Redis.getThreadSafeLinkedMapString());
-    }
-
-    // ---------------- ThreadSafeLinkedMap<String,Object> List Operations ----------------
-    
-    /**
-     * ThreadSafeLinkedMap<String, Object> 리스트 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 ThreadSafeLinkedMap 리스트
-     */
-    public static List<ThreadSafeLinkedMap<String, Object>> getThreadSafeLinkedMapList(String key) {
-        return getThreadSafeLinkedMapList(key, 0);
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, Object> 리스트 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 ThreadSafeLinkedMap 리스트
-     */
-    public static List<ThreadSafeLinkedMap<String, Object>> getThreadSafeLinkedMapList(String key, long expire) {
-        return getValue(key, expire, Redis.getThreadSafeLinkedMapList());
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, Object> 리스트 저장
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 ThreadSafeLinkedMap 리스트
-     * @return "OK" (성공 시)
-     */
-    public static String setThreadSafeLinkedList(String key, List<ThreadSafeLinkedMap<String, Object>> vals) {
-        return setThreadSafeLinkedList(key, vals, 0);
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, Object> 리스트 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 ThreadSafeLinkedMap 리스트
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setThreadSafeLinkedList(String key, List<ThreadSafeLinkedMap<String, Object>> vals, long expire) {
-        return setValue(key, vals, expire, Redis.getThreadSafeLinkedMapList());
-    }
-
-    // ---------------- ThreadSafeLinkedMap<String,String> List Operations ----------------
-    
-    /**
-     * ThreadSafeLinkedMap<String, String> 리스트 조회
-     * 
-     * @param key Redis 키
-     * @return 조회된 ThreadSafeLinkedMap 리스트
-     */
-    public static List<ThreadSafeLinkedMap<String, String>> getThreadSafeLinkedMapListString(String key) {
-        return getThreadSafeLinkedMapListString(key, 0);
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, String> 리스트 조회 및 TTL 갱신
-     * 
-     * @param key Redis 키
-     * @param expire TTL (초), 0이면 갱신하지 않음
-     * @return 조회된 ThreadSafeLinkedMap 리스트
-     */
-    public static List<ThreadSafeLinkedMap<String, String>> getThreadSafeLinkedMapListString(String key, long expire) {
-        return getValue(key, expire, Redis.getThreadSafeLinkedMapListString());
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, String> 리스트 저장
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 ThreadSafeLinkedMap 리스트
-     * @return "OK" (성공 시)
-     */
-    public static String setThreadSafeLinkedListString(String key, List<ThreadSafeLinkedMap<String, String>> vals) {
-        return setThreadSafeLinkedListString(key, vals, 0);
-    }
-
-    /**
-     * ThreadSafeLinkedMap<String, String> 리스트 저장 및 TTL 설정
-     * 
-     * @param key Redis 키
-     * @param vals 저장할 ThreadSafeLinkedMap 리스트
-     * @param expire TTL (초), 0이면 영구 저장
-     * @return "OK" (성공 시)
-     */
-    public static String setThreadSafeLinkedListString(String key, List<ThreadSafeLinkedMap<String, String>> vals, long expire) {
-        return setValue(key, vals, expire, Redis.getThreadSafeLinkedMapListString());
-    }
-
-    // ------------------- Private Helper Methods -------------------
-
-    /**
-     * Redis에서 값을 조회하고, expire가 지정되면 TTL을 갱신합니다.
-     * 
-     * @param <T> 값 타입
-     * @param key Redis 키
-     * @param expire TTL (초 단위, 0이면 갱신하지 않음)
-     * @param conn Redis 연결 (Singleton, Thread-Safe)
-     * @return 조회된 값 (없으면 null)
-     */
-    private static <T> T getValue(String key, long expire, StatefulRedisConnection<String, T> conn) {
-        return withRedis(conn, c -> {
-            T value = c.sync().get(key);
-            
-            // 값이 존재하고 expire가 지정된 경우 TTL 갱신
-            if (value != null && expire > 0) {
-                c.sync().expire(key, expire);
+        // List<String>으로 변환
+        List<String> tasks = new ArrayList<>();
+        for (Object obj : objectTasks) {
+            if (obj instanceof String) {
+                tasks.add((String) obj);
             }
-            
-            return value;
-        });
+        }
+        
+        // 조회된 작업 제거 (Object[] 배열로 변환)
+        if (!tasks.isEmpty()) {
+            Redis.sync().zrem(queueKey, tasks.toArray());
+        }
+        
+        return tasks;
     }
-
-    /**
-     * Redis에 값을 저장하고, expire가 지정되면 TTL을 설정합니다.
-     * 
-     * @param <T> 값 타입
-     * @param key Redis 키
-     * @param val 저장할 값
-     * @param expire TTL (초 단위, 0이면 영구 저장)
-     * @param conn Redis 연결 (Singleton, Thread-Safe)
-     * @return "OK" (성공 시)
-     */
-    private static <T> String setValue(String key, T val, long expire, StatefulRedisConnection<String, T> conn) {
-        return withRedis(conn, c -> {
-            if (expire > 0) {
-                return c.sync().setex(key, expire, val);
-            } else {
-                return c.sync().set(key, val);
-            }
-        });
-    }
-
-    // ------------------- Cache Pattern Helper -------------------
 
     /**
      * Cache-Aside Pattern: Redis 캐시 조회 후 없으면 DB에서 조회하여 캐싱
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Retrieve retrieve = new Retrieve()
+     *     .sql("SELECT * FROM users WHERE id = ?")
+     *     .addParam(userId);
+     * 
+     * SharedMap<String, Object> user = RedisUtils.fetchRow("user:" + userId, retrieve);
+     * </pre>
      * 
      * <p>동작 순서:</p>
      * <ol>
@@ -1915,1616 +1946,179 @@ public final class RedisUtils {
     /**
      * Cache-Aside Pattern with TTL
      * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 1시간 캐싱
+     * SharedMap<String, Object> user = RedisUtils.fetchRow(
+     *     "user:" + userId, 
+     *     retrieve, 
+     *     3600
+     * );
+     * </pre>
+     * 
      * @param key Redis 키
      * @param retrieve DB 조회 객체
      * @param expire TTL (초 단위, 0이면 영구 저장)
      * @return 조회된 데이터 (단일 행)
      */
-    public static SharedMap<String, Object> fetchRow(String key, Retrieve retrieve, long expire) {
-        // 1. 캐시 확인
-        if (exist(key) > 0) {
-            return getSharedMap(key, expire); // TTL 갱신
+    public static SharedMap<String, Object> fetchRow(String key, Retrieve retrieve, long expireSeconds) {
+        // 1. 캐시 확인 (exists + get을 한 번에)
+        SharedMap<String, Object> cached = get(key, TypeRegistry.MAP_SHAREDMAP_OBJECT);
+        
+        if (cached != null) {
+            // TTL 갱신 (expireSeconds > 0일 때만)
+            if (expireSeconds > 0) {
+                expire(key, expireSeconds);
+            }
+            return cached;
         }
         
         // 2. DB 조회
         SharedMap<String, Object> map = retrieve.select().getRowFirst();
         
-        // 3. 캐시 저장
+        // 3. 캐시 저장 (데이터가 있을 때만)
         if (map != null && !map.isEmpty()) {
-            set(key, map, expire);
+            if (expireSeconds > 0) {
+                set(key, map, expireSeconds);
+            } else {
+                set(key, map);
+            }
         }
         
         return map;
     }
-
-    /**
-     * Cache-Aside Pattern for List
-     * 
-     * @param key Redis 키
-     * @param retrieve DB 조회 객체
-     * @return 조회된 데이터 (다중 행)
-     */
-    public static List<SharedMap<String, Object>> fetchRows(String key, Retrieve retrieve) {
-        return fetchRows(key, retrieve, 0);
-    }
-
-    /**
-     * Cache-Aside Pattern for List with TTL
-     * 
-     * @param key Redis 키
-     * @param retrieve DB 조회 객체
-     * @param expire TTL (초 단위, 0이면 영구 저장)
-     * @return 조회된 데이터 (다중 행)
-     */
-    public static List<SharedMap<String, Object>> fetchRows(String key, Retrieve retrieve, long expire) {
-        // 1. 캐시 확인
-        if (exist(key) > 0) {
-            return getSharedMapList(key, expire); // TTL 갱신
-        }
-        
-        // 2. DB 조회
-        List<SharedMap<String, Object>> list = retrieve.select().getRows();
-        
-        // 3. 캐시 저장
-        if (list != null && !list.isEmpty()) {
-            setSharedMapList(key, list, expire);
-        }
-        
-        return list;
-    }
     
     
-    
-    
-    
- // ================= SET (집합) 연산 =================
-
     /**
-     * Set에 하나 이상의 멤버 추가
+     * TTL 조회 (밀리초 단위) (PTTL)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 밀리초 단위로 정확한 TTL 확인
+     * Long ttlMs = RedisUtils.pttl("session:token");
+     * System.out.println("남은 시간: " + ttlMs + "ms");
+     * 
+     * // 초 단위와 비교
+     * Long ttlSec = RedisUtils.ttl("session:token");  // 초
+     * Long ttlMs = RedisUtils.pttl("session:token");  // 밀리초
+     * </pre>
+     * 
+     * <p><b>반환값:</b></p>
+     * <ul>
+     *   <li>양수: 남은 TTL (밀리초)</li>
+     *   <li>-1: TTL 없음 (영구 저장)</li>
+     *   <li>-2: 키가 존재하지 않음</li>
+     * </ul>
      * 
      * @param key Redis 키
-     * @param members 추가할 멤버들
-     * @return 추가된 멤버 개수
+     * @return TTL (밀리초 단위)
      */
-    public static long sadd(String key, String... members) {
-        return withRedis(Redis.getString(), conn -> conn.sync().sadd(key, members));
+    public static Long pttl(String key) {
+        return Redis.sync().pttl(key);
     }
 
     /**
-     * Set에서 하나 이상의 멤버 제거
+     * TTL 설정 (밀리초 단위) (PEXPIRE)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 500ms 후 만료
+     * RedisUtils.pexpire("temp:data", 500);
+     * 
+     * // 1.5초 후 만료
+     * RedisUtils.pexpire("temp:data", 1500);
+     * 
+     * // 정확한 타이밍 제어
+     * RedisUtils.set("rate:limit", 1);
+     * RedisUtils.pexpire("rate:limit", 100);  // 100ms
+     * </pre>
+     * 
+     * <p><b>활용 사례:</b></p>
+     * - Rate limiting (밀리초 단위 제어)
+     * - 짧은 시간 캐싱
+     * - 정확한 타이밍 제어
      * 
      * @param key Redis 키
-     * @param members 제거할 멤버들
-     * @return 제거된 멤버 개수
-     */
-    public static long srem(String key, String... members) {
-        return withRedis(Redis.getString(), conn -> conn.sync().srem(key, members));
-    }
-
-    /**
-     * Set의 모든 멤버 조회
-     * 
-     * @param key Redis 키
-     * @return 멤버 Set
-     */
-    public static Set<String> smembers(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().smembers(key));
-    }
-
-    /**
-     * Set에 멤버가 존재하는지 확인
-     * 
-     * @param key Redis 키
-     * @param member 확인할 멤버
-     * @return 존재 여부
-     */
-    public static boolean sismember(String key, String member) {
-        return withRedis(Redis.getString(), conn -> conn.sync().sismember(key, member));
-    }
-
-    /**
-     * Set의 크기(멤버 개수) 조회
-     * 
-     * @param key Redis 키
-     * @return Set 크기
-     */
-    public static long scard(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().scard(key));
-    }
-
-    /**
-     * 여러 Set의 합집합
-     * 
-     * @param keys Set 키들
-     * @return 합집합 Set
-     */
-    public static Set<String> sunion(String... keys) {
-        return withRedis(Redis.getString(), conn -> conn.sync().sunion(keys));
-    }
-
-    /**
-     * 여러 Set의 교집합
-     * 
-     * @param keys Set 키들
-     * @return 교집합 Set
-     */
-    public static Set<String> sinter(String... keys) {
-        return withRedis(Redis.getString(), conn -> conn.sync().sinter(keys));
-    }
-
-    /**
-     * Set 간의 차집합
-     * 
-     * @param keys Set 키들 (첫 번째 Set에서 나머지 Set들을 뺌)
-     * @return 차집합 Set
-     */
-    public static Set<String> sdiff(String... keys) {
-        return withRedis(Redis.getString(), conn -> conn.sync().sdiff(keys));
-    }
-
-    // ================= SORTED SET (정렬된 집합) 연산 =================
-
-    /**
-     * Sorted Set에 score와 함께 멤버 추가
-     * 
-     * @param key Redis 키
-     * @param score 점수
-     * @param member 멤버
-     * @return 추가된 멤버 개수
-     */
-    public static long zadd(String key, double score, String member) {
-        return withRedis(Redis.getString(), conn -> conn.sync().zadd(key, score, member));
-    }
-
-    /**
-     * Sorted Set에서 멤버 제거
-     * 
-     * @param key Redis 키
-     * @param members 제거할 멤버들
-     * @return 제거된 멤버 개수
-     */
-    public static long zrem(String key, String... members) {
-        return withRedis(Redis.getString(), conn -> conn.sync().zrem(key, members));
-    }
-
-    /**
-     * 인덱스 범위로 멤버 조회 (오름차순)
-     * 
-     * @param key Redis 키
-     * @param start 시작 인덱스
-     * @param stop 종료 인덱스
-     * @return 멤버 리스트
-     */
-    public static List<String> zrange(String key, long start, long stop) {
-        return withRedis(Redis.getString(), conn -> conn.sync().zrange(key, start, stop));
-    }
-
-    /**
-     * 인덱스 범위로 멤버 조회 (내림차순)
-     * 
-     * @param key Redis 키
-     * @param start 시작 인덱스
-     * @param stop 종료 인덱스
-     * @return 멤버 리스트
-     */
-    public static List<String> zrevrange(String key, long start, long stop) {
-        return withRedis(Redis.getString(), conn -> conn.sync().zrevrange(key, start, stop));
-    }
-
-    /**
-     * score 범위로 멤버 조회
-     * 
-     * @param key Redis 키
-     * @param min 최소 score
-     * @param max 최대 score
-     * @return 멤버 리스트
-     */
-    public static List<String> zrangebyscore(String key, double min, double max) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().zrangebyscore(key, Range.create(min, max)));
-    }
-
-    /**
-     * 멤버의 순위 조회 (오름차순, 0부터 시작)
-     * 
-     * @param key Redis 키
-     * @param member 멤버
-     * @return 순위 (없으면 null)
-     */
-    public static Long zrank(String key, String member) {
-        return withRedis(Redis.getString(), conn -> conn.sync().zrank(key, member));
-    }
-
-    /**
-     * 멤버의 score 조회
-     * 
-     * @param key Redis 키
-     * @param member 멤버
-     * @return score (없으면 null)
-     */
-    public static Double zscore(String key, String member) {
-        return withRedis(Redis.getString(), conn -> conn.sync().zscore(key, member));
-    }
-
-    /**
-     * Sorted Set의 크기(멤버 개수) 조회
-     * 
-     * @param key Redis 키
-     * @return Sorted Set 크기
-     */
-    public static long zcard(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().zcard(key));
-    }
-
-    /**
-     * 멤버의 score 증가
-     * 
-     * @param key Redis 키
-     * @param increment 증가할 값
-     * @param member 멤버
-     * @return 증가 후 score
-     */
-    public static double zincrby(String key, double increment, String member) {
-        return withRedis(Redis.getString(), conn -> conn.sync().zincrby(key, increment, member));
-    }
-
-    // ================= LIST 추가 연산 =================
-
-    /**
-     * List의 범위 조회
-     * 
-     * @param key Redis 키
-     * @param start 시작 인덱스
-     * @param stop 종료 인덱스
-     * @return 범위 내 값 리스트
-     */
-    public static List<String> lrange(String key, long start, long stop) {
-        return withRedis(Redis.getString(), conn -> conn.sync().lrange(key, start, stop));
-    }
-
-    /**
-     * 특정 인덱스의 값 조회
-     * 
-     * @param key Redis 키
-     * @param index 인덱스
-     * @return 해당 인덱스의 값
-     */
-    public static String lindex(String key, long index) {
-        return withRedis(Redis.getString(), conn -> conn.sync().lindex(key, index));
-    }
-
-    /**
-     * 특정 인덱스의 값 수정
-     * 
-     * @param key Redis 키
-     * @param index 인덱스
-     * @param value 새 값
-     * @return "OK" (성공 시)
-     */
-    public static String lset(String key, long index, String value) {
-        return withRedis(Redis.getString(), conn -> conn.sync().lset(key, index, value));
-    }
-
-    /**
-     * List에서 값 제거
-     * 
-     * @param key Redis 키
-     * @param count 제거할 개수 (0: 모두, 양수: 앞에서부터, 음수: 뒤에서부터)
-     * @param value 제거할 값
-     * @return 제거된 개수
-     */
-    public static long lrem(String key, long count, String value) {
-        return withRedis(Redis.getString(), conn -> conn.sync().lrem(key, count, value));
-    }
-
-    /**
-     * List를 특정 범위로 자르기
-     * 
-     * @param key Redis 키
-     * @param start 시작 인덱스
-     * @param stop 종료 인덱스
-     * @return "OK" (성공 시)
-     */
-    public static String ltrim(String key, long start, long stop) {
-        return withRedis(Redis.getString(), conn -> conn.sync().ltrim(key, start, stop));
-    }
-
-    // ================= HASH 추가 연산 =================
-
-    /**
-     * Hash의 모든 필드와 값 조회
-     * 
-     * @param key Redis 키
-     * @return 필드-값 Map
-     */
-    public static Map<String, String> hgetall(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().hgetall(key));
-    }
-
-    /**
-     * Hash의 모든 값만 조회
-     * 
-     * @param key Redis 키
-     * @return 값 리스트
-     */
-    public static List<String> hvals(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().hvals(key));
-    }
-
-    /**
-     * Hash의 필드 개수 조회
-     * 
-     * @param key Redis 키
-     * @return 필드 개수
-     */
-    public static long hlen(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().hlen(key));
-    }
-
-    /**
-     * Hash 필드 삭제
-     * 
-     * @param key Redis 키
-     * @param fields 삭제할 필드들
-     * @return 삭제된 필드 개수
-     */
-    public static long hdel(String key, String... fields) {
-        return withRedis(Redis.getString(), conn -> conn.sync().hdel(key, fields));
-    }
-
-    /**
-     * 여러 필드 한번에 조회
-     * 
-     * @param key Redis 키
-     * @param fields 조회할 필드들
-     * @return 필드 값 리스트
-     */
-    public static List<KeyValue<String, String>> hmget(String key, String... fields) {
-        return withRedis(Redis.getString(), conn -> conn.sync().hmget(key, fields));
-    }
-
-    /**
-     * 여러 필드 한번에 설정
-     * 
-     * @param key Redis 키
-     * @param map 필드-값 Map
-     * @return "OK" (성공 시)
-     */
-    public static String hmset(String key, Map<String, String> map) {
-        return withRedis(Redis.getString(), conn -> conn.sync().hmset(key, map));
-    }
-
-    // ================= BATCH 작업 =================
-
-    /**
-     * 여러 키 한번에 조회
-     * 
-     * @param keys 조회할 키들
-     * @return 키-값 리스트
-     */
-    public static List<KeyValue<String, String>> mget(String... keys) {
-        return withRedis(Redis.getString(), conn -> conn.sync().mget(keys));
-    }
-
-    /**
-     * 여러 키 한번에 설정
-     * 
-     * @param map 키-값 Map
-     * @return "OK" (성공 시)
-     */
-    public static String mset(Map<String, String> map) {
-        return withRedis(Redis.getString(), conn -> conn.sync().mset(map));
-    }
-
-    /**
-     * 모든 키가 없을 때만 여러 키 설정
-     * 
-     * @param map 키-값 Map
-     * @return 설정 성공 여부
-     */
-    public static boolean msetnx(Map<String, String> map) {
-        return withRedis(Redis.getString(), conn -> conn.sync().msetnx(map));
-    }
-
-    /**
-     * 대량 삭제 (청크 단위)
-     * 
-     * @param keys 삭제할 키들
-     * @param chunkSize 청크 크기
-     * @return 삭제된 총 키 개수
-     */
-    public static long batchDelete(List<String> keys, int chunkSize) {
-        if (CommonUtils.isEmpty(keys)) {
-            return 0;
-        }
-
-        long totalDeleted = 0;
-        List<String> chunk = new ArrayList<>();
-
-        for (String key : keys) {
-            chunk.add(key);
-            if (chunk.size() >= chunkSize) {
-                totalDeleted += RedisUtils.del(chunk.toArray(new String[0]));
-                chunk.clear();
-            }
-        }
-
-        // 남은 키 처리
-        if (!chunk.isEmpty()) {
-            totalDeleted += RedisUtils.del(chunk.toArray(new String[0]));
-        }
-
-        logger.debug("batchDelete: deleted {} keys", totalDeleted);
-        return totalDeleted;
-    }
-
-    // ================= BIT 연산 =================
-
-    /**
-     * 비트 설정
-     * 
-     * @param key Redis 키
-     * @param offset 오프셋
-     * @param value 비트 값 (0 또는 1)
-     * @return 이전 비트 값
-     */
-    public static long setbit(String key, long offset, int value) {
-        return withRedis(Redis.getString(), conn -> conn.sync().setbit(key, offset, value));
-    }
-
-    /**
-     * 비트 조회
-     * 
-     * @param key Redis 키
-     * @param offset 오프셋
-     * @return 비트 값 (0 또는 1)
-     */
-    public static long getbit(String key, long offset) {
-        return withRedis(Redis.getString(), conn -> conn.sync().getbit(key, offset));
-    }
-
-    /**
-     * 1인 비트 개수
-     * 
-     * @param key Redis 키
-     * @return 비트 카운트
-     */
-    public static long bitcount(String key) {
-        return withRedis(Redis.getString(), conn -> conn.sync().bitcount(key));
-    }
-
-    // ================= HYPERLOGLOG (카디널리티 추정) =================
-
-    /**
-     * HyperLogLog에 요소 추가
-     * 
-     * @param key Redis 키
-     * @param values 추가할 값들
-     * @return 추가 여부 (HyperLogLog 변경되면 1)
-     */
-    public static long pfadd(String key, String... values) {
-        return withRedis(Redis.getString(), conn -> conn.sync().pfadd(key, values));
-    }
-
-    /**
-     * HyperLogLog 카디널리티 추정
-     * 
-     * @param keys HyperLogLog 키들
-     * @return 추정된 유니크 요소 개수
-     */
-    public static long pfcount(String... keys) {
-        return withRedis(Redis.getString(), conn -> conn.sync().pfcount(keys));
-    }
-
-    /**
-     * 여러 HyperLogLog 병합
-     * 
-     * @param destkey 목적지 키
-     * @param sourcekeys 소스 키들
-     * @return "OK" (성공 시)
-     */
-    public static String pfmerge(String destkey, String... sourcekeys) {
-        return withRedis(Redis.getString(), conn -> conn.sync().pfmerge(destkey, sourcekeys));
-    }
-
-    // ================= 분산 락 패턴 =================
-
-    /**
-     * 분산 락 획득 시도
-     * 
-     * @param lockKey 락 키
-     * @param requestId 요청 ID (락 소유자 식별)
-     * @param expireTime 락 만료 시간 (초)
-     * @return 락 획득 성공 여부
-     */
-    public static boolean tryLock(String lockKey, String requestId, long expireTime) {
-        return withRedis(Redis.getString(), conn -> {
-            String result = conn.sync().set(lockKey, requestId, 
-                io.lettuce.core.SetArgs.Builder.nx().ex(expireTime));
-            return "OK".equals(result);
-        });
-    }
-
-    /**
-     * 분산 락 획득 시도 (기본 TTL 사용)
-     * 
-     * @param lockKey 락 키
-     * @param requestId 요청 ID
-     * @return 락 획득 성공 여부
-     */
-    public static boolean tryLock(String lockKey, String requestId) {
-        return tryLock(lockKey, requestId, DEFAULT_LOCK_TTL);
-    }
-
-    /**
-     * 분산 락 해제
-     * 
-     * @param lockKey 락 키
-     * @param requestId 요청 ID (락 소유자만 해제 가능)
-     * @return 락 해제 성공 여부
-     */
-    public static boolean unlock(String lockKey, String requestId) {
-        return withRedis(Redis.getString(), conn -> {
-            // Lua 스크립트로 원자적 해제 (소유자 확인 후 삭제)
-            String script = 
-                "if redis.call('get', KEYS[1]) == ARGV[1] then " +
-                "    return redis.call('del', KEYS[1]) " +
-                "else " +
-                "    return 0 " +
-                "end";
-            
-            Long result = conn.sync().eval(script, 
-                io.lettuce.core.ScriptOutputType.INTEGER, 
-                new String[]{lockKey}, requestId);
-            
-            return result != null && result == 1L;
-        });
-    }
-
-    /**
-     * 락 갱신 (TTL 연장)
-     * 
-     * @param lockKey 락 키
-     * @param requestId 요청 ID
-     * @param expireTime 새로운 만료 시간 (초)
-     * @return 갱신 성공 여부
-     */
-    public static boolean renewLock(String lockKey, String requestId, long expireTime) {
-        return withRedis(Redis.getString(), conn -> {
-            String script = 
-                "if redis.call('get', KEYS[1]) == ARGV[1] then " +
-                "    return redis.call('expire', KEYS[1], ARGV[2]) " +
-                "else " +
-                "    return 0 " +
-                "end";
-            
-            Long result = conn.sync().eval(script, 
-                io.lettuce.core.ScriptOutputType.INTEGER, 
-                new String[]{lockKey}, requestId, String.valueOf(expireTime));
-            
-            return result != null && result == 1L;
-        });
-    }
-
-    
-
-    // ================= LEADERBOARD (순위표) =================
-
-    /**
-     * 리더보드에 점수 추가/업데이트
-     * 
-     * @param leaderboardKey 리더보드 키
-     * @param userId 사용자 ID
-     * @param score 점수
-     * @return 추가/업데이트 성공 여부
-     */
-    public static boolean addScore(String leaderboardKey, String userId, double score) {
-        long result = zadd(leaderboardKey, score, userId);
-        return result >= 0;
-    }
-
-    /**
-     * 상위 N명 조회 (내림차순)
-     * 
-     * @param leaderboardKey 리더보드 키
-     * @param topN 조회할 인원 수
-     * @return 상위 N명의 사용자 ID 리스트
-     */
-    public static List<String> getTopN(String leaderboardKey, int topN) {
-        return zrevrange(leaderboardKey, 0, topN - 1);
-    }
-
-    /**
-     * 상위 N명 조회 (점수 포함)
-     * 
-     * @param leaderboardKey 리더보드 키
-     * @param topN 조회할 인원 수
-     * @return 상위 N명의 사용자 ID와 점수
-     */
-    public static List<ScoredValue<String>> getTopNWithScores(String leaderboardKey, int topN) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().zrevrangeWithScores(leaderboardKey, 0, topN - 1));
-    }
-
-    /**
-     * 사용자 순위 조회 (1부터 시작)
-     * 
-     * @param leaderboardKey 리더보드 키
-     * @param userId 사용자 ID
-     * @return 순위 (없으면 null)
-     */
-    public static Long getUserRank(String leaderboardKey, String userId) {
-        return withRedis(Redis.getString(), conn -> {
-            Long rank = conn.sync().zrevrank(leaderboardKey, userId);
-            return rank != null ? rank + 1 : null;
-        });
-    }
-
-    /**
-     * 점수 범위로 사용자 조회
-     * 
-     * @param leaderboardKey 리더보드 키
-     * @param minScore 최소 점수
-     * @param maxScore 최대 점수
-     * @return 범위 내 사용자 리스트
-     */
-    public static List<String> getScoreRange(String leaderboardKey, double minScore, double maxScore) {
-        return zrangebyscore(leaderboardKey, minScore, maxScore);
-    }
-
-    // ================= 고급 캐시 패턴 =================
-
-    /**
-     * 캐시에 없으면 계산 후 저장 (Cache-Aside Pattern)
-     * 
-     * @param <T> 반환 타입
-     * @param key Redis 키
-     * @param supplier 값 계산 함수
-     * @param expire TTL (초)
-     * @param conn Redis 연결
-     * @return 조회/계산된 값
-     */
-    public static <T> T getOrCompute(String key, Supplier<T> supplier, long expire, 
-                                      StatefulRedisConnection<String, T> conn) {
-        return withRedis(conn, c -> {
-            // 1. 캐시 확인
-            T value = c.sync().get(key);
-            
-            if (value != null) {
-                // 캐시 히트 - TTL 갱신
-                if (expire > 0) {
-                    c.sync().expire(key, expire);
-                }
-                return value;
-            }
-            
-            // 2. 캐시 미스 - 값 계산
-            T computed = supplier.get();
-            
-            // 3. 캐시 저장
-            if (computed != null) {
-                if (expire > 0) {
-                    c.sync().setex(key, expire, computed);
-                } else {
-                    c.sync().set(key, computed);
-                }
-            }
-            
-            return computed;
-        });
-    }
-
-    /**
-     * 캐시에 없을 때만 계산 후 저장
-     * 
-     * @param key Redis 키
-     * @param supplier 값 계산 함수
-     * @param expire TTL (초)
-     * @return 조회/계산된 값
-     */
-    public static String computeIfAbsent(String key, Supplier<String> supplier, long expire) {
-        return getOrCompute(key, supplier, expire, Redis.getString());
-    }
-
-    /**
-     * 캐시 조회 실패 시 폴백 값 반환
-     * 
-     * @param <T> 반환 타입
-     * @param key Redis 키
-     * @param fallback 폴백 값
-     * @param conn Redis 연결
-     * @return 캐시 값 또는 폴백 값
-     */
-    public static <T> T getWithFallback(String key, T fallback, StatefulRedisConnection<String, T> conn) {
-        return withRedis(conn, c -> {
-            T value = c.sync().get(key);
-            return value != null ? value : fallback;
-        });
-    }
-
-    /**
-     * 캐시 강제 갱신
-     * 
-     * @param <T> 값 타입
-     * @param key Redis 키
-     * @param supplier 새 값 계산 함수
-     * @param expire TTL (초)
-     * @param conn Redis 연결
-     * @return 갱신된 값
-     */
-    public static <T> T refreshCache(String key, Supplier<T> supplier, long expire, 
-                                      StatefulRedisConnection<String, T> conn) {
-        return withRedis(conn, c -> {
-            T value = supplier.get();
-            
-            if (value != null) {
-                if (expire > 0) {
-                    c.sync().setex(key, expire, value);
-                } else {
-                    c.sync().set(key, value);
-                }
-            }
-            
-            return value;
-        });
-    }
-
-    /**
-     * 캐시 예열 (Cache Warming)
-     * 
-     * @param keys 예열할 키-값 Map
-     * @param expire TTL (초)
-     */
-    public static void cacheWarming(Map<String, String> keys, long expire) {
-        if (CommonUtils.isEmpty(keys)) {
-            return;
-        }
-
-        withRedis(Redis.getString(), conn -> {
-            keys.forEach((key, value) -> {
-                if (expire > 0) {
-                    conn.sync().setex(key, expire, value);
-                } else {
-                    conn.sync().set(key, value);
-                }
-            });
-            logger.info("Cache warming completed for {} keys", keys.size());
-            return null;
-        });
-    }
-
-    
-
-    // ================= GEO (지리정보) 연산 =================
-
-    /**
-     * 위치 정보 추가
-     * 
-     * @param key Redis 키
-     * @param longitude 경도
-     * @param latitude 위도
-     * @param member 멤버명
-     * @return 추가된 멤버 개수
-     */
-    public static long geoadd(String key, double longitude, double latitude, String member) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().geoadd(key, longitude, latitude, member));
-    }
-
-    /**
-     * 두 지점 간 거리 계산
-     * 
-     * @param key Redis 키
-     * @param from 시작 지점
-     * @param to 도착 지점
-     * @param unit 거리 단위 (m, km, mi, ft)
-     * @return 거리
-     */
-    public static Double geodist(String key, String from, String to, GeoArgs.Unit unit) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().geodist(key, from, to, unit));
-    }
-
-    /**
-     * 반경 내 위치 검색
-     * 
-     * @param key Redis 키
-     * @param longitude 중심점 경도
-     * @param latitude 중심점 위도
-     * @param distance 반경
-     * @param unit 거리 단위
-     * @return 반경 내 위치 리스트
-     */
-    public static Set<String> georadius(String key, double longitude, double latitude, 
-                                        double distance, GeoArgs.Unit unit) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().georadius(key, longitude, latitude, distance, unit));
-    }
-
-    /**
-     * 위치 좌표 조회
-     * 
-     * @param key Redis 키
-     * @param members 조회할 멤버들
-     * @return 좌표 리스트
-     */
-    public static List<io.lettuce.core.GeoCoordinates> geopos(String key, String... members) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().geopos(key, members));
-    }
-
- 
-    // ================= UTILITY 헬퍼 =================
-
-    /**
-     * 키 이름 변경
-     * 
-     * @param oldKey 기존 키
-     * @param newKey 새 키
-     * @return "OK" (성공 시)
-     */
-    public static String rename(String oldKey, String newKey) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().rename(oldKey, newKey));
-    }
-
-    /**
-     * 키가 없을 때만 이름 변경
-     * 
-     * @param oldKey 기존 키
-     * @param newKey 새 키
-     * @return 변경 성공 여부
-     */
-    public static boolean renamenx(String oldKey, String newKey) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().renamenx(oldKey, newKey));
-    }
-
-    /**
-     * 키의 데이터 타입 조회
-     * 
-     * @param key Redis 키
-     * @return 데이터 타입 (string, list, set, zset, hash, stream)
-     */
-    public static String type(String key) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().type(key));
-    }
-
-    /**
-     * 랜덤 키 조회
-     * 
-     * @return 랜덤 키
-     */
-    public static String randomKey() {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().randomkey());
-    }
-
-    /**
-     * TTL 제거 (영구 저장으로 변경)
-     * 
-     * @param key Redis 키
+     * @param milliseconds TTL (밀리초 단위)
      * @return 성공 여부
      */
-    public static boolean persist(String key) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().persist(key));
-    }
-    
-    
-    /**
-     * 메시지 발행
-     * 
-     * @param channel 채널명
-     * @param message 메시지
-     * @return 메시지를 받은 구독자 수
-     */
-    public static long publish(String channel, String message) {
-        return withRedis(Redis.getString(), conn -> 
-            conn.sync().publish(channel, message));
-    }
-
-
-    // ================= 트랜잭션 =================
-
-    /**
-     * 트랜잭션 실행
-     * 
-     * 예제:
-     * TransactionResult result = executeTransaction(redis -> {
-     *     redis.set("user:1:name", "홍길동");
-     *     redis.set("user:1:age", "30");
-     *     redis.set("user:1:city", "서울");
-     * });
-     *
-     * @param commands Redis 연결을 받아서 실행할 명령어들을 정의하는 Consumer 함수
-     * @return 트랜잭션 결과
-     */
-    public static TransactionResult executeTransaction(java.util.function.Consumer<RedisCommands<String, String>> commands) {
-        return withRedis(Redis.getString(), conn -> {
-            conn.sync().multi();
-            try {
-                commands.accept(conn.sync());
-                return conn.sync().exec();
-            } catch (Exception e) {
-                conn.sync().discard();
-                logger.error("Transaction failed and rolled back", e);
-                throw e;
-            }
-        });
-    }
-    
-    /**
-     * 트랜잭션 실행 (타입 자동 감지)
-     * 
-     * 예제:
-     * SharedMap data = new SharedMap();
-     * data.put("name", "홍길동");
-     * 
-     * TransactionResult result = executeTransaction(data, redis -> {
-     *     redis.set("user:profile", data);
-     *     redis.expire("user:profile", 3600);
-     *     redis.hset("user:123:stats", "last_login", String.valueOf(System.currentTimeMillis()));
-     * });
-     * 
-     * // List<SharedMap> 예제
-     * List<SharedMap> userList = Arrays.asList(userData);
-     * TransactionResult result2 = executeTransaction(userList, redis -> {
-     *     redis.rpush("users:batch", userList.toArray(new SharedMap[0]));
-     *     redis.expire("users:pending", 1800);
-     * });
-     * TransactionResult result1 = executeTransaction("", stringRedis -> {
-     * stringRedis.set("counter", "1");
-     * stringRedis.incr("counter");
-     * });
-     *
-     * @param <T> 값 타입
-     * @param typeHint 타입 힌트 (연결 결정용)
-     * @param commands Redis 연결을 받아서 실행할 명령어들
-     * @return 트랜잭션 결과
-     */
-    
-    public static <T> TransactionResult executeTransaction(T typeHint, Consumer<RedisCommands<String, T>> commands) {
-        StatefulRedisConnection<String, T> connection = determineConnection(typeHint);
-        return withRedis(connection, conn -> {
-            conn.sync().multi();
-            try {
-                commands.accept(conn.sync());
-                return conn.sync().exec();
-            } catch (Exception e) {
-                conn.sync().discard();
-                logger.error("Generic transaction failed and rolled back for type: {}", 
-                            typeHint != null ? typeHint.getClass().getSimpleName() : "null", e);
-                throw e;
-            }
-        });
+    public static boolean pexpire(String key, long milliseconds) {
+        return Redis.sync().pexpire(key, milliseconds);
     }
 
     /**
-     * Watch를 사용한 낙관적 락 트랜잭션 (제네릭 타입 지원)
+     * 특정 시각에 만료 설정 (EXPIREAT)
      * 
-     * Watch Key가 트랜잭션 실행 중 다른 클라이언트에 의해 변경되면 트랜잭션이 실패합니다.
-     * 주로 읽기-수정-쓰기 패턴에서 동시성 제어를 위해 사용됩니다.
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 특정 날짜/시간에 만료
+     * LocalDateTime expireTime = LocalDateTime.of(2025, 12, 31, 23, 59, 59);
+     * long timestamp = expireTime.toEpochSecond(ZoneOffset.UTC);
+     * RedisUtils.expireAt("promotion:2025", timestamp);
      * 
-     * 예제 1 - 계좌 이체 (동시성 제어):
-     * TransactionResult result = executeTransactionWithWatch("balance:123", "", redis -> {
-     *     String fromBalance = redis.get("balance:123");
-     *     String toBalance = redis.get("balance:456");
-     *     if (fromBalance != null && toBalance != null) {
-     *         int from = Integer.parseInt(fromBalance);
-     *         int to = Integer.parseInt(toBalance);
-     *         if (from >= 1000) {  // 잔액 충분 확인
-     *             redis.set("balance:123", String.valueOf(from - 1000));
-     *             redis.set("balance:456", String.valueOf(to + 1000));
-     *             redis.rpush("transactions:123", "transfer_out:1000:" + System.currentTimeMillis());
-     *         }
-     *     }
-     * });
-     * boolean success = (result != null); // null이면 다른 클라이언트가 잔액 변경으로 실패
+     * // 자정에 만료 (일일 데이터)
+     * LocalDateTime midnight = LocalDateTime.now().plusDays(1).withHour(0).withMinute(0).withSecond(0);
+     * RedisUtils.expireAt("daily:stats", midnight.toEpochSecond(ZoneOffset.UTC));
      * 
-     * 예제 2 - 상품 재고 관리:
-     * TransactionResult result = executeTransactionWithWatch("stock:product456", "", redis -> {
-     *     String stockStr = redis.get("stock:product456");
-     *     if (stockStr != null) {
-     *         int currentStock = Integer.parseInt(stockStr);
-     *         if (currentStock >= 5) {  // 재고 충분 확인
-     *             redis.set("stock:product456", String.valueOf(currentStock - 5));
-     *             redis.incrby("sold:product456", 5);
-     *             if (currentStock - 5 <= 10) {
-     *                 redis.rpush("low_stock_alerts", "product456");
-     *             }
-     *         }
-     *     }
-     * });
+     * // 현재 시간 + 1시간
+     * long oneHourLater = System.currentTimeMillis() / 1000 + 3600;
+     * RedisUtils.expireAt("session:user", oneHourLater);
+     * </pre>
      * 
-     * 예제 3 - SharedMap 사용자 프로필 업데이트:
-     * SharedMap profileUpdate = new SharedMap();
-     * TransactionResult result = executeTransactionWithWatch("profile:user123", profileUpdate, redis -> {
-     *     SharedMap currentProfile = redis.get("profile:user123");
-     *     if (currentProfile != null) {
-     *         SharedMap updatedProfile = new SharedMap(currentProfile);
-     *         updatedProfile.put("status", "premium");
-     *         updatedProfile.put("last_modified", System.currentTimeMillis());
-     *         updatedProfile.put("version", ((Integer) updatedProfile.getOrDefault("version", 0)) + 1);
-     *         redis.set("profile:user123", updatedProfile);
-     *         
-     *         SharedMap changeLog = new SharedMap();
-     *         changeLog.put("field", "status");
-     *         changeLog.put("new_value", "premium");
-     *         changeLog.put("timestamp", System.currentTimeMillis());
-     *         redis.rpush("profile_changes:user123", changeLog);
-     *     }
-     * });
-     * 
-     * 예제 4 - List<SharedMap> 배치 업데이트:
-     * List<SharedMap> batchUpdates = new ArrayList<>();
-     * TransactionResult result = executeTransactionWithWatch("batch_lock:users", batchUpdates, redis -> {
-     *     String lockStatus = redis.get("batch_lock:users");
-     *     if (lockStatus == null) {
-     *         redis.setex("batch_lock:users", 300, "processing"); // 5분 TTL
-     *         
-     *         for (String userId : Arrays.asList("user1", "user2", "user3")) {
-     *             SharedMap userUpdate = new SharedMap();
-     *             userUpdate.put("user_id", userId);
-     *             userUpdate.put("status", "active");
-     *             userUpdate.put("updated_at", System.currentTimeMillis());
-     *             batchUpdates.add(userUpdate);
-     *             redis.hset("user:" + userId, "status", "active");
-     *         }
-     *         redis.rpush("batch_results", batchUpdates.toArray(new SharedMap[0]));
-     *     }
-     * });
-     * 
-     * 예제 5 - 조회수 중복 방지:
-     * TransactionResult result = executeTransactionWithWatch("views:post789", "", redis -> {
-     *     String userViewKey = "user_viewed:user123:post789";
-     *     if (redis.get(userViewKey) == null) {  // 이미 조회했는지 확인
-     *         String viewsStr = redis.get("views:post789");
-     *         int currentViews = viewsStr != null ? Integer.parseInt(viewsStr) : 0;
-     *         redis.set("views:post789", String.valueOf(currentViews + 1));
-     *         redis.setex(userViewKey, 86400, "1");  // 24시간 TTL
-     *         redis.zadd("popular_posts", currentViews + 1, "post789");
-     *     }
-     * });
-     * 
-     * 실패 처리 패턴:
-     * int maxRetries = 3;
-     * for (int i = 0; i < maxRetries; i++) {
-     *     TransactionResult result = executeTransactionWithWatch("critical_key", "", redis -> {
-     *         redis.incr("critical_counter");
-     *     });
-     *     if (result != null) break;  // 성공
-     *     Thread.sleep(10 + (i * 10));  // 백오프 후 재시도
-     * }
-     *
-     * @param <T> 값 타입
-     * @param watchKey 감시할 키 (이 키가 변경되면 트랜잭션이 실패함)
-     * @param typeHint 타입 힌트 (적절한 Redis 연결 결정용)
-     * @param commands Redis 연결을 받아서 실행할 명령어들을 정의하는 Consumer 함수
-     * @return 트랜잭션 결과 (null이면 watch된 키가 변경되어 트랜잭션 실패)
-     */
-    public static <T> TransactionResult executeTransactionWithWatch(String watchKey, T typeHint, Consumer<RedisCommands<String, T>> commands) {
-        StatefulRedisConnection<String, T> connection = determineConnection(typeHint);
-        return withRedis(connection, conn -> {
-            conn.sync().watch(watchKey);
-            conn.sync().multi();
-            try {
-                commands.accept(conn.sync());
-                return conn.sync().exec();
-            } catch (Exception e) {
-                conn.sync().discard();
-                conn.sync().unwatch();
-                logger.error("Generic transaction with watch failed and rolled back for type: {}", 
-                            typeHint != null ? typeHint.getClass().getSimpleName() : "null", e);
-                throw e;
-            }
-        });
-    }
-
-
-
-    // ================= TTL 기반 작업 큐 =================
-
-    /**
-     * 지연 작업 큐에 작업 추가
-     * 
-     * @param queueKey 큐 키
-     * @param taskId 작업 ID
-     * @param delaySeconds 지연 시간 (초)
-     * @return 추가 성공 여부
-     */
-    public static boolean addDelayedTask(String queueKey, String taskId, long delaySeconds) {
-        long executeTime = System.currentTimeMillis() + (delaySeconds * 1000);
-        return zadd(queueKey, executeTime, taskId) >= 0;
-    }
-
-    /**
-     * 실행 가능한 작업 조회 및 제거
-     * 
-     * @param queueKey 큐 키
-     * @param batchSize 한 번에 가져올 작업 수
-     * @return 실행 가능한 작업 리스트
-     */
-    public static List<String> pollDelayedTasks(String queueKey, int batchSize) {
-        return withRedis(Redis.getString(), conn -> {
-            long now = System.currentTimeMillis();
-            
-            // 실행 가능한 작업 조회
-            List<String> tasks = conn.sync().zrangebyscore(
-                queueKey, 
-                Range.create(0.0, (double) now), 
-                io.lettuce.core.Limit.create(0, batchSize)
-            );
-            
-            // 조회된 작업 제거
-            if (!tasks.isEmpty()) {
-                conn.sync().zrem(queueKey, tasks.toArray(new String[0]));
-            }
-            
-            return tasks;
-        });
-    }
-
-    // ================= 유틸리티 메서드 =================
-
-    /**
-     * 여러 키의 값을 Map으로 조회
-     * 
-     * @param keys 조회할 키들
-     * @return 키-값 Map
-     */
-    public static Map<String, String> mgetAsMap(String... keys) {
-        List<KeyValue<String, String>> values = mget(keys);
-        Map<String, String> result = new java.util.HashMap<>();
-        
-        for (KeyValue<String, String> kv : values) {
-            if (kv.hasValue()) {
-                result.put(kv.getKey(), kv.getValue());
-            }
-        }
-        
-        return result;
-    }
-    
-    
-    /**
-     * 여러 키의 값을 지정한 타입의 Map으로 조회 (제네릭 버전)
-     * 
-     * 예제 1 - SharedMap 조회:
-     * SharedMap typeHint = new SharedMap();
-     * Map<String, SharedMap> userProfiles = mgetAsMap(typeHint, 
-     *     "profile:user1", "profile:user2", "profile:user3");
-     * 
-     * SharedMap user1Profile = userProfiles.get("profile:user1");
-     * if (user1Profile != null) {
-     *     String name = (String) user1Profile.get("name");
-     *     Integer age = (Integer) user1Profile.get("age");
-     * }
-     * 
-     * 예제 2 - LinkedMap 조회:
-     * LinkedMap typeHint = new LinkedMap();
-     * Map<String, LinkedMap> orderedData = mgetAsMap(typeHint,
-     *     "ordered:data1", "ordered:data2");
-     * 
-     * 예제 3 - Object 조회:
-     * Object typeHint = new Object();
-     * Map<String, Object> mixedData = mgetAsMap(typeHint,
-     *     "cache:obj1", "cache:obj2", "cache:obj3");
-     * 
-     * @param <T> 값 타입
-     * @param typeHint 타입 힌트 (적절한 Redis 연결 결정용)
-     * @param keys 조회할 키들
-     * @return 키-값 Map
-     */
-    
-    public static <T> Map<String, T> mgetAsMap(T typeHint, String... keys) {
-        StatefulRedisConnection<String, T> connection = determineConnection(typeHint);
-        
-        return withRedis(connection, conn -> {
-            List<KeyValue<String, T>> values = conn.sync().mget(keys);
-            Map<String, T> result = new java.util.HashMap<>();
-
-            for (KeyValue<String, T> kv : values) {
-                if (kv.hasValue()) {
-                    result.put(kv.getKey(), kv.getValue());
-                }
-            }
-
-            return result;
-        });
-    }
-    
-    
-    /**
-     * 여러 키의 값을 TypeReference로 지정한 타입의 Map으로 조회 (타입 안전)
-     * 
-     * 예제 1 - List<SharedMap> 조회:
-     * List<SharedMap> emptyList = new ArrayList<>();
-     * Map<String, List<SharedMap>> userLists = mgetAsMap(emptyList, 
-     *     new TypeReference<List<SharedMap>>() {}, 
-     *     "users:active", "users:pending", "users:blocked");
-     * 
-     * List<SharedMap> activeUsers = userLists.get("users:active");
-     * if (activeUsers != null && !activeUsers.isEmpty()) {
-     *     for (SharedMap user : activeUsers) {
-     *         String userId = (String) user.get("id");
-     *         String status = (String) user.get("status");
-     *     }
-     * }
-     * 
-     * 예제 2 - Set<String> 조회:
-     * Set<String> emptySet = new HashSet<>();
-     * Map<String, Set<String>> tagSets = mgetAsMap(emptySet, 
-     *     new TypeReference<Set<String>>() {},
-     *     "tags:tech", "tags:business", "tags:entertainment");
-     * 
-     * 예제 3 - Map<String, Object> 조회:
-     * Map<String, Object> emptyMap = new HashMap<>();
-     * Map<String, Map<String, Object>> configMaps = mgetAsMap(emptyMap,
-     *     new TypeReference<Map<String, Object>>() {},
-     *     "config:app", "config:db", "config:cache");
-     * 
-     * @param <T> 값 타입
-     * @param typeHint 타입 힌트
-     * @param typeRef 타입 참조
-     * @param keys 조회할 키들
-     * @return 키-값 Map
-     */
-    public static <T> Map<String, T> mgetAsMap(T typeHint, TypeReference<T> typeRef, String... keys) {
-        StatefulRedisConnection<String, T> connection = determineConnection(typeHint, typeRef);
-        
-        return withRedis(connection, conn -> {
-            List<KeyValue<String, T>> values = conn.sync().mget(keys);
-            Map<String, T> result = new java.util.HashMap<>();
-
-            for (KeyValue<String, T> kv : values) {
-                if (kv.hasValue()) {
-                    result.put(kv.getKey(), kv.getValue());
-                }
-            }
-
-            return result;
-        });
-    }
-    
-    
-    /**
-     * 패턴 매칭으로 키를 찾아서 값들을 Map으로 조회 (제네릭 버전)
-     * 
-     * 예제:
-     * SharedMap typeHint = new SharedMap();
-     * Map<String, SharedMap> userProfiles = mgetByPatternAsMap(typeHint, "profile:user*");
-     * 
-     * // profile:user1, profile:user2, profile:user3 등의 모든 키 조회
-     * for (Map.Entry<String, SharedMap> entry : userProfiles.entrySet()) {
-     *     String key = entry.getKey();
-     *     SharedMap profile = entry.getValue();
-     *     System.out.println("Key: " + key + ", Name: " + profile.get("name"));
-     * }
-     * 
-     * @param <T> 값 타입
-     * @param typeHint 타입 힌트
-     * @param pattern 키 패턴 (*, ? 지원)
-     * @return 패턴에 매칭되는 키-값 Map
-     */
-    public static <T> Map<String, T> mgetByPatternAsMap(T typeHint, String pattern) {
-        List<String> matchingKeys = keys(pattern);
-        if (matchingKeys.isEmpty()) {
-            return new java.util.HashMap<>();
-        }
-        
-        return mgetAsMap(typeHint, matchingKeys.toArray(new String[0]));
-    }
-    
-    
-    
-
-    /**
-     * 키 존재 여부를 빠르게 확인 (EXISTS 사용)
+     * <p><b>활용 사례:</b></p>
+     * - 프로모션 종료 시각 설정
+     * - 일일/주간 데이터 자동 삭제
+     * - 이벤트 종료 시각 설정
      * 
      * @param key Redis 키
-     * @return 존재 여부
+     * @param timestamp Unix timestamp (초 단위)
+     * @return 성공 여부
      */
-    public static boolean keyExists(String key) {
-        return RedisUtils.exist(key) > 0;
+    public static boolean expireAt(String key, long timestamp) {
+        return Redis.sync().expireat(key, timestamp);
     }
 
     /**
-     * 키 만료까지 남은 시간 확인 후 조건부 작업
+     * 특정 시각에 만료 설정 (밀리초 단위) (PEXPIREAT)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 밀리초 단위 정확한 시각 설정
+     * long timestampMs = System.currentTimeMillis() + 5000;  // 5초 후
+     * RedisUtils.pexpireAt("temp:token", timestampMs);
+     * 
+     * // 특정 밀리초 단위 시각
+     * LocalDateTime expireTime = LocalDateTime.of(2025, 12, 31, 23, 59, 59, 999_000_000);
+     * long timestampMs = expireTime.toInstant(ZoneOffset.UTC).toEpochMilli();
+     * RedisUtils.pexpireAt("event:2025", timestampMs);
+     * 
+     * // Rate limiting 정확한 윈도우
+     * long windowEnd = System.currentTimeMillis() + 60000;  // 1분 윈도우
+     * RedisUtils.pexpireAt("rate:user123", windowEnd);
+     * </pre>
+     * 
+     * <p><b>활용 사례:</b></p>
+     * - 정확한 시각 제어 필요 시
+     * - Rate limiting 윈도우
+     * - 밀리초 단위 이벤트 관리
      * 
      * @param key Redis 키
-     * @param minTtl 최소 TTL (초)
-     * @param action TTL이 충분할 때 실행할 작업
-     * @return 작업 실행 여부
+     * @param timestampMs Unix timestamp (밀리초 단위)
+     * @return 성공 여부
      */
-    public static boolean executeIfTtlSufficient(String key, long minTtl, Runnable action) {
-        long ttl = RedisUtils.ttl(key);
-        
-        if (ttl >= minTtl) {
-            action.run();
-            return true;
-        }
-        
-        return false;
+    public static boolean pexpireAt(String key, long timestampMs) {
+        return Redis.sync().pexpireat(key, timestampMs);
     }
     
     
     
     
     
-    /**
-	 * 특정 섹션의 서버 정보 조회
-	 *
-	 * @param section 섹션명 (server, clients, memory, stats 등)
-	 * @return 서버 정보
-	 */
-	public static String info(String section) {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info(section));
-	}
-
-	/**
-	 * 서버 일반 정보 조회
-	 * Redis 서버 버전, 운영체제, 아키텍처, 업타임 등의 기본 정보
-	 * 
-	 * 예제:
-	 * String serverInfo = infoServer();
-	 * // redis_version:7.0.0
-	 * // redis_git_sha1:00000000
-	 * // os:Linux 5.4.0-74-generic x86_64
-	 * // uptime_in_seconds:3600
-	 * 
-	 * @return 서버 정보 문자열
-	 */
-	public static String infoServer() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("server"));
-	}
-
-	/**
-	 * 클라이언트 연결 정보 조회
-	 * 연결된 클라이언트 수, 차단된 클라이언트 수, 최대 클라이언트 수 등
-	 * 
-	 * 예제:
-	 * String clientInfo = infoClients();
-	 * // connected_clients:5
-	 * // client_recent_max_input_buffer:8
-	 * // client_recent_max_output_buffer:0
-	 * // blocked_clients:0
-	 * 
-	 * @return 클라이언트 정보 문자열
-	 */
-	public static String infoClients() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("clients"));
-	}
-
-	/**
-	 * 메모리 사용량 정보 조회
-	 * 사용 중인 메모리, 최대 메모리, 메모리 조각화 비율 등
-	 * 
-	 * 예제:
-	 * String memoryInfo = infoMemory();
-	 * // used_memory:1024000
-	 * // used_memory_human:1000.00K
-	 * // used_memory_rss:2048000
-	 * // maxmemory:0
-	 * 
-	 * @return 메모리 정보 문자열
-	 */
-	public static String infoMemory() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("memory"));
-	}
-
-	/**
-	 * 지속성(Persistence) 정보 조회
-	 * RDB 저장, AOF 로그, 마지막 저장 시간 등
-	 * 
-	 * 예제:
-	 * String persistenceInfo = infoPersistence();
-	 * // loading:0
-	 * // rdb_changes_since_last_save:0
-	 * // rdb_bgsave_in_progress:0
-	 * // rdb_last_save_time:1640995200
-	 * 
-	 * @return 지속성 정보 문자열
-	 */
-	public static String infoPersistence() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("persistence"));
-	}
-
-	/**
-	 * 통계 정보 조회
-	 * 총 명령어 처리 수, 초당 처리량, 히트/미스 비율 등
-	 * 
-	 * 예제:
-	 * String statsInfo = infoStats();
-	 * // total_connections_received:1000
-	 * // total_commands_processed:5000
-	 * // instantaneous_ops_per_sec:50
-	 * // keyspace_hits:800
-	 * // keyspace_misses:200
-	 * 
-	 * @return 통계 정보 문자열
-	 */
-	public static String infoStats() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("stats"));
-	}
-
-	/**
-	 * 복제(Replication) 정보 조회
-	 * 마스터/슬레이브 역할, 연결된 슬레이브 수, 복제 지연 등
-	 * 
-	 * 예제:
-	 * String replicationInfo = infoReplication();
-	 * // role:master
-	 * // connected_slaves:2
-	 * // slave0:ip=192.168.1.100,port=6379,state=online,offset=1024
-	 * 
-	 * @return 복제 정보 문자열
-	 */
-	public static String infoReplication() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("replication"));
-	}
-
-	/**
-	 * CPU 사용량 정보 조회
-	 * 사용자/시스템 CPU 시간, 자식 프로세스 CPU 시간 등
-	 * 
-	 * 예제:
-	 * String cpuInfo = infoCpu();
-	 * // used_cpu_sys:1.50
-	 * // used_cpu_user:2.30
-	 * // used_cpu_sys_children:0.10
-	 * // used_cpu_user_children:0.20
-	 * 
-	 * @return CPU 정보 문자열
-	 */
-	public static String infoCpu() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("cpu"));
-	}
-
-	/**
-	 * 명령어 통계 정보 조회
-	 * 각 명령어별 실행 횟수, 총 소요 시간, 평균 시간 등
-	 * 
-	 * 예제:
-	 * String commandStatsInfo = infoCommandStats();
-	 * // cmdstat_get:calls=1000,usec=5000,usec_per_call=5.00
-	 * // cmdstat_set:calls=500,usec=3000,usec_per_call=6.00
-	 * // cmdstat_incr:calls=200,usec=800,usec_per_call=4.00
-	 * 
-	 * @return 명령어 통계 정보 문자열
-	 */
-	public static String infoCommandStats() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("commandstats"));
-	}
-
-	/**
-	 * 클러스터 정보 조회
-	 * 클러스터 활성화 상태 등
-	 * 
-	 * 예제:
-	 * String clusterInfo = infoCluster();
-	 * // cluster_enabled:0
-	 * 
-	 * @return 클러스터 정보 문자열
-	 */
-	public static String infoCluster() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("cluster"));
-	}
-
-	/**
-	 * 키스페이스 정보 조회
-	 * 각 데이터베이스별 키 개수, 만료 키 개수, 평균 TTL 등
-	 * 
-	 * 예제:
-	 * String keyspaceInfo = infoKeyspace();
-	 * // db0:keys=1000,expires=100,avg_ttl=3600000
-	 * // db1:keys=500,expires=50,avg_ttl=7200000
-	 * 
-	 * @return 키스페이스 정보 문자열
-	 */
-	public static String infoKeyspace() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info("keyspace"));
-	}
-
-	/**
-	 * 모든 Redis 서버 정보 조회
-	 * 
-	 * 예제:
-	 * String allInfo = infoAll();
-	 * // 모든 섹션의 정보가 포함된 긴 문자열
-	 * 
-	 * @return 전체 서버 정보 문자열
-	 */
-	public static String infoAll() {
-	    return withRedis(Redis.getString(), conn ->
-	        conn.sync().info());
-	}
-
-	/**
-	 * 서버 정보를 Map으로 파싱하여 조회
-	 * 
-	 * 예제:
-	 * Map<String, String> serverInfo = infoAsMap("server");
-	 * String version = serverInfo.get("redis_version");
-	 * String os = serverInfo.get("os");
-	 * long uptime = Long.parseLong(serverInfo.get("uptime_in_seconds"));
-	 * 
-	 * @param section 섹션명
-	 * @return 키-값 쌍으로 파싱된 정보
-	 */
-	public static Map<String, String> infoAsMap(String section) {
-	    String info = info(section);
-	    Map<String, String> result = new java.util.HashMap<>();
-	    
-	    if (info != null && !info.trim().isEmpty()) {
-	        String[] lines = info.split("\r?\n");
-	        for (String line : lines) {
-	            line = line.trim();
-	            if (!line.isEmpty() && !line.startsWith("#") && line.contains(":")) {
-	                String[] parts = line.split(":", 2);
-	                if (parts.length == 2) {
-	                    result.put(parts[0].trim(), parts[1].trim());
-	                }
-	            }
-	        }
-	    }
-	    
-	    return result;
-	}
-
-	
-
-	/**
-	 * 서버 상태 요약 정보 조회 (편의 메서드)
-	 * 
-	 * 예제:
-	 * Map<String, Object> summary = getServerSummary();
-	 * System.out.println("Redis Version: " + summary.get("version"));
-	 * System.out.println("Used Memory: " + summary.get("used_memory_human"));
-	 * System.out.println("Connected Clients: " + summary.get("connected_clients"));
-	 * 
-	 * @return 주요 서버 정보 요약
-	 */
-	public static Map<String, Object> getServerSummary() {
-	    Map<String, Object> summary = new java.util.HashMap<>();
-	    
-	    // 서버 기본 정보
-	    Map<String, String> serverInfo = infoAsMap("server");
-	    summary.put("version", serverInfo.get("redis_version"));
-	    summary.put("uptime_seconds", serverInfo.get("uptime_in_seconds"));
-	    summary.put("os", serverInfo.get("os"));
-	    
-	    // 메모리 정보
-	    Map<String, String> memoryInfo = infoAsMap("memory");
-	    summary.put("used_memory", memoryInfo.get("used_memory"));
-	    summary.put("used_memory_human", memoryInfo.get("used_memory_human"));
-	    summary.put("maxmemory", memoryInfo.get("maxmemory"));
-	    
-	    // 클라이언트 정보
-	    Map<String, String> clientInfo = infoAsMap("clients");
-	    summary.put("connected_clients", clientInfo.get("connected_clients"));
-	    summary.put("blocked_clients", clientInfo.get("blocked_clients"));
-	    
-	    // 통계 정보
-	    Map<String, String> statsInfo = infoAsMap("stats");
-	    summary.put("total_commands_processed", statsInfo.get("total_commands_processed"));
-	    summary.put("instantaneous_ops_per_sec", statsInfo.get("instantaneous_ops_per_sec"));
-	    summary.put("keyspace_hits", statsInfo.get("keyspace_hits"));
-	    summary.put("keyspace_misses", statsInfo.get("keyspace_misses"));
-	    
-	    return summary;
-	}
+    
+    
+    
+    
+    
+    
     
 }
