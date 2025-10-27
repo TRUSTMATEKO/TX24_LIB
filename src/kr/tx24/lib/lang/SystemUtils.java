@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import kr.tx24.lib.conf.Configure;
+import kr.tx24.lib.mapper.JacksonUtils;
 
 /**
  * 시스템 초기화 유틸리티
@@ -77,11 +78,12 @@ public class SystemUtils {
         // Configure에서 설정 불러오기
         Configure configure 		= new Configure();
         Map<String, String> props 	= configure.load();
-
+        
         REDIS_CACHE_KEY 			= props.getOrDefault("REDIS_KEY", "");
         REDIS_LOG_KEY 				= props.getOrDefault("REDIS_LOG_KEY", REDIS_CACHE_KEY);
         KMS_KEY 					= props.getOrDefault("KMS_KEY", KMS_KEY);
         KMS_IV 						= props.getOrDefault("KMS_IV", KMS_IV);
+        
         
         Path path = Paths.get("../conf");
         if(!Files.isDirectory(path)) {
@@ -168,7 +170,8 @@ public class SystemUtils {
     public static String getRedisSystemUri() {
         if (System.getProperty(PROPERTY_REDIS) == null) {
             return REDIS_INITIAL;
-        } else if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
+        }
+        if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
             return String.format(REDIS_INITIAL, REDIS_CACHE_KEY + "@", System.getProperty(PROPERTY_REDIS));
         } else {
             return String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_REDIS));

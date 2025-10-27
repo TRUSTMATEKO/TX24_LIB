@@ -69,7 +69,7 @@ public class Configure {
 
         System.out.println("\n기본 암호키(32)를 설정하여 주시기 바랍니다.  : ");
         String kmsKey = scanner.nextLine().trim();
-        if (CommonUtils.isNotEmpty(kmsKey)) {
+        if (CommonUtils.isEmpty(kmsKey)) {
             kmsKey = KEY;
         }
         kmsKey = String.format("%-32s", kmsKey);
@@ -78,7 +78,7 @@ public class Configure {
 
         System.out.println("\n기본 암호 Vector 를 설정하여 주시기 바랍니다.  : ");
         String kmsIv = scanner.nextLine().trim();
-        if (CommonUtils.isNotEmpty(kmsIv)) {
+        if (CommonUtils.isEmpty(kmsIv)) {
             kmsIv = IV;
         }
         kmsIv = String.format("%-16s", kmsIv);
@@ -87,7 +87,7 @@ public class Configure {
 
         System.out.println("\nREDIS (로그용) 암호를 설정하시기 바랍니다.  : ");
         String redisLogKey = scanner.nextLine().trim();
-        if (CommonUtils.isNotEmpty(redisLogKey)) {
+        if (CommonUtils.isEmpty(redisLogKey)) {
             redisLogKey = "";
         }
         System.out.println("\n=> [" + redisLogKey + "]");
@@ -95,7 +95,7 @@ public class Configure {
 
         System.out.println("\nREDIS (캐쉬용) 암호를 설정하시기 바랍니다.  : ");
         String redisCacheKey = scanner.nextLine().trim();
-        if (CommonUtils.isNotEmpty(redisCacheKey)) {
+        if (CommonUtils.isEmpty(redisCacheKey)) {
             redisCacheKey = "";
         }
         System.out.println("\n=> [" + redisCacheKey + "]");
@@ -149,6 +149,7 @@ public class Configure {
             if (input != null) {
                 props.load(input);
                 for (Object o : props.keySet()) {
+                	
                     String k = (String) o;
                     String v = decrypt(props.getProperty(k, ""));
                     map.put(k, v);

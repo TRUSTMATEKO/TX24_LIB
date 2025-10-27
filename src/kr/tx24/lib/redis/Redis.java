@@ -525,4 +525,15 @@ public final class Redis {
     public static StatefulRedisPubSubConnection<String, ThreadSafeLinkedMap<String, String>> getPubSubThreadSafeLinkedMapString() {
         return getPubSub((Class<ThreadSafeLinkedMap<String, String>>) (Class<?>) ThreadSafeLinkedMap.class);
     }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 }
