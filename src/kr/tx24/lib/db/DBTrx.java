@@ -44,13 +44,33 @@ public class DBTrx{
 	 * begin() 은 connection 을 할당하며 autocommit(false) 로 처리한다.
 	 * @throws Exception
 	 */
-	public void begin() throws Exception{
+	public void begin() throws DBException{
 		if(conn == null) {
 			conn = DBFactory.get().getConnection();
-			conn.setAutoCommit(false);
+			try {
+				conn.setAutoCommit(false);
+			} catch (SQLException e) {
+				throw new DBException("Failed to set auto-commit mode", e);
+			}
 			if(SystemUtils.deepview()) logger.info("start transaction");
 		}
 	}
+	
+	/**
+	 * DBTrx 를 사용할 때 반드시 호출하여야 한다.
+	 * begin(Connection) 은 connection 을 할당하며 autocommit(false) 로 처리한다.
+	 * @throws Exception
+	 */
+	public void begin(Connection conn) throws DBException{
+		this.conn = conn;
+		try {
+			conn.setAutoCommit(false);
+		} catch (SQLException e) {
+			throw new DBException("Failed to set auto-commit mode", e);
+		}
+		if(SystemUtils.deepview()) logger.info("start transaction");
+	}
+	
 	
 	/**
 	 * Delete Object 에 의한 DELETE 처리  , Delete.init() 자동 실행됨.
@@ -58,13 +78,13 @@ public class DBTrx{
 	 * @return
 	 * @throws Exception
 	 */
-	public int delete(Delete delete) throws Exception{
+	public int delete(Delete delete) throws DBException{
 		int result = 0;
 		try {
 			result = update(delete.build());
 			delete.init();
-		}catch(Exception e) {
-			throw new Exception(e);
+		}catch(DBException e) {
+			throw e;
 		}
 		return result;
 	}
@@ -75,7 +95,7 @@ public class DBTrx{
 	 * @return
 	 * @throws Exception
 	 */
-	public int delete(String query) throws Exception{
+	public int delete(String query) throws DBException{
 		return update(query);
 	}
 	
@@ -86,7 +106,7 @@ public class DBTrx{
 	 * @return
 	 * @throws Exception
 	 */
-	public int update(Update update)throws Exception{
+	public int update(Update update)throws DBException{
 		
 		PreparedStatement pstmt = null;
 		String query			= update.buildPreparedQuery();
@@ -97,8 +117,8 @@ public class DBTrx{
 			pstmt		= conn.prepareStatement(query);			
 			DBUtils.setValues(pstmt,update.getRecord().values());
 			result  	= pstmt.executeUpdate();
-		}catch(Exception t){
-			throw new Exception(t);
+		}catch(SQLException t){
+			throw new DBException("Failed to execute update", query, t);
 		}finally {
 			close(pstmt);
 			if(deepview) {
@@ -118,7 +138,7 @@ public class DBTrx{
 	 * @return
 	 * @throws Exception
 	 */
-	public int update(String query) throws Exception{
+	public int update(String query) throws DBException{
 		PreparedStatement pstmt = null;
 		int result = 0;
 		
@@ -126,8 +146,8 @@ public class DBTrx{
 		try {
 			pstmt		= conn.prepareStatement(query);	
 			result  	= pstmt.executeUpdate();
-		}catch(Exception t){
-			throw new Exception(t);
+		}catch(SQLException t){
+			throw new DBException("Failed to execute update", query, t);
 		}finally {
 			close(pstmt);
 			if(deepview) {
@@ -145,7 +165,7 @@ public class DBTrx{
 	 * @return
 	 * @throws Exception
 	 */
-	public int insert(String query) throws Exception{
+	public int insert(String query) throws DBException{
 		return update(query);
 	}
 	
@@ -156,7 +176,7 @@ public class DBTrx{
 	 * @return
 	 * @throws Exception
 	 */
-	public int insert(Create create)throws Exception{
+	public int insert(Create create)throws DBException{
 		
 		PreparedStatement pstmt = null;
 		String query			= create.buildPreparedQuery();
@@ -167,8 +187,8 @@ public class DBTrx{
 			pstmt		= conn.prepareStatement(query);			
 			DBUtils.setValues(pstmt,create.getRecord().values());
 			result  	= pstmt.executeUpdate();
-		}catch(Exception t){
-			throw new Exception(t);
+		}catch(SQLException t){
+			throw new DBException("Failed to execute insert", query, t);
 		}finally {
 			close(pstmt);
 			if(deepview) {
@@ -189,7 +209,7 @@ public class DBTrx{
 	 * @return
 	 * @throws Exception
 	 */
-	public RecordSet select(Retrieve retrieve)throws Exception{
+	public RecordSet select(Retrieve retrieve)throws DBException{
 		RecordSet rset = select(retrieve.build());
 		retrieve.init();
 		return rset;
@@ -201,7 +221,7 @@ public class DBTrx{
 	 * @return
 	 * @throws Exception
 	 */
-	public RecordSet select(String query)throws Exception{
+	public RecordSet select(String query)throws DBException{
 		
 		Statement stmt 			= null;
 		ResultSet rset			= null;
@@ -217,8 +237,8 @@ public class DBTrx{
 				records = new RecordSet(rset);
 			}
 			
-		}catch(Exception t){
-			throw new Exception(t);
+		}catch(SQLException t){
+			throw new DBException("Failed to execute select", query, t);
 		}finally {
 			close(rset);
 			close(stmt);
@@ -241,7 +261,7 @@ public class DBTrx{
 	 * @param values
 	 * @return
 	 */
-	public RecordSet select(String query,Collection<Object> values)throws Exception{
+	public RecordSet select(String query,Collection<Object> values)throws DBException{
 
 		PreparedStatement pstmt = null;
 		ResultSet rset			= null;
@@ -256,8 +276,8 @@ public class DBTrx{
 				records = new RecordSet(rset);
 			}
 			
-		}catch(Exception t){
-			throw new Exception(t);
+		}catch(SQLException t){
+			throw new DBException("Failed to execute select", query, t);
 		}finally {
 			close(rset);
 			close(pstmt);

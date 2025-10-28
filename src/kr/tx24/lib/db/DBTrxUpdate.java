@@ -78,11 +78,15 @@ public class DBTrxUpdate{
 	}
 	
 	
-	public int[] executeWithResult() throws Exception{
+	public int[] executeWithResult() throws DBException{
 		
 		
 		conn = DBFactory.get().getConnection();
-		conn.setAutoCommit(false);
+		try {
+			conn.setAutoCommit(false);
+		} catch (SQLException e) {
+			throw new DBException("Failed to set auto-commit mode", e);
+		}
 		
 		logger.info("start transaction");
 		
@@ -100,7 +104,7 @@ public class DBTrxUpdate{
 			for(DBSet data : list) {
 				
 				if(data.query.toUpperCase().startsWith("SELECT ")) {
-					throw new Exception ("SELECT 구문은 허용하지 않습니다." +data.query);
+					throw new SQLException ("SELECT 구문은 허용하지 않습니다." +data.query);
 				}
 				
 				if(data.hasValue()) {
@@ -121,7 +125,7 @@ public class DBTrxUpdate{
 			
 			conn.commit();
 			logger.info("commit transaction");
-		}catch(Exception e) {
+		}catch(SQLException e) {
 			logger.warn("db transaction execute failed : ",CommonUtils.getExceptionMessage(e));
 			try {
                 conn.rollback();
@@ -129,7 +133,7 @@ public class DBTrxUpdate{
             } catch (SQLException rb) {
             	logger.warn("rollback failed : ",CommonUtils.getExceptionMessage(rb));
             }
-			throw e;
+			throw new DBException("Failed to execute update", "", e);
 		}finally {
 			
 			

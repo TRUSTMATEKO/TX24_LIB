@@ -292,11 +292,11 @@ public class DBUtils {
 	 * @return
 	 * @throws Exception
 	 */
-	public long insertBulk(String table,List<String> columns, List<List<Object>> datas,boolean sbsCommit) throws Exception{
+	public long insertBulk(String table,List<String> columns, List<List<Object>> datas,boolean sbsCommit) throws DBException{
 		return insertBulk(table, columns, datas, sbsCommit,1024*1024);
 	}
 	
-	public long insertBulk(String table,List<String> columns, List<List<Object>> datas,boolean sbsCommit, int insertMaxSize) throws Exception{
+	public long insertBulk(String table,List<String> columns, List<List<Object>> datas,boolean sbsCommit, int insertMaxSize) throws DBException{
 		
 		if(columns == null || datas == null || datas.get(0) == null){
 			throw new Exception("columns or datas is null");
@@ -450,8 +450,7 @@ public class DBUtils {
 			conn.commit();
 		}catch(Exception t){
 			conn.rollback();
-			logger.warn("DAO INSERT BULK ERROR : {}",t.getMessage());
-			throw t;
+			throw new DBException("Failed to execute update", "", t);
 		}finally {
 			db.close(stmt);
 			db.close(conn);
@@ -464,7 +463,7 @@ public class DBUtils {
 	}
 	
 	
-	public RecordSet preparedStatementExecute(String query,Object... record) throws Exception {
+	public RecordSet preparedStatementExecute(String query,Object... record) throws DBException {
 		PreparedStatement pstmt 	= null;
 		ResultSet rset	= null;
 		Connection conn = null;
@@ -487,8 +486,7 @@ public class DBUtils {
 			
 		}catch(SQLException e) {
 			try { conn.rollback();}catch(SQLException c) {}
-			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(e));
-			throw e;
+			throw new DBException("Failed to execute update", query, e);
 		}finally{
 			db.close(conn, pstmt, rset);
 			if(SystemUtils.deepview()) {
@@ -507,7 +505,7 @@ public class DBUtils {
 	}
 	
 	
-	public int preparedExecuteUpdate(String query,Object... record) throws Exception{
+	public int preparedExecuteUpdate(String query,Object... record) throws DBException{
 		PreparedStatement pstmt = null;
 		Connection 	conn			= null;
 		int result = 0;
@@ -524,8 +522,7 @@ public class DBUtils {
 			conn.commit();
 		}catch(SQLException t){
 			try { conn.rollback();}catch(SQLException c) {}
-			logger.info("sql error : {}",CommonUtils.getExceptionMessage(t));
-			throw t;
+			throw new DBException("Failed to execute update", query, t);
 		}finally {
 			db.close(pstmt);
 			db.close(conn);

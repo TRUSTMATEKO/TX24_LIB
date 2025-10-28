@@ -9,6 +9,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +31,7 @@ public class DBManager {
 	private String error					= "";
 	public static boolean injectionFilter	= false;
 	
-	
+	private static final AtomicBoolean shutdownHookRegistered = new AtomicBoolean(false);
 	
 	public DBManager() throws Exception {
 		init();
@@ -40,7 +41,9 @@ public class DBManager {
 	
 	
 	private synchronized void init() {
-		if(ds == null) {
+		if(ds != null) {
+			return;
+		}else {
 			try {
 				HikariConfig config = null;
 				
@@ -86,23 +89,28 @@ public class DBManager {
 				System.out.print("Jdbc        : Pool initialized");
 				
 				
+				registerShutdownHook();
 				
-				
-				Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-				    try {
-				        DBManager.shutdown(); 
-				        System.err.println("Jdbc         : connection shutdown ");
-				    } catch (SQLException e) {
-				    	System.err.println("ShutdownHook-DBManager failed to close datasource: "+CommonUtils.getExceptionMessage(e));
-				    }
-				}, "ShutdownHook-DBManager"));
-				
-								
+			
 				
 			}catch(Exception e) {
 				System.out.print("Jdbc        : initalize exception "+e.getMessage());
 				logger.warn("Failed to initialize HikariCP pool : {}",CommonUtils.getExceptionMessage(e));
 			}
+		}
+	}
+	
+	
+	private void registerShutdownHook() {
+		if (shutdownHookRegistered.compareAndSet(false, true)) {
+			Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+				try {
+					DBManager.shutdown(); 
+					 System.err.println("Jdbc         : connection shutdown ");
+				} catch (Exception e) {
+					logger.error("ShutdownHook - Failed to close datasource", e);
+				}
+			}, "ShutdownHook-DBManager"));
 		}
 	}
 	
@@ -135,19 +143,25 @@ public class DBManager {
 	
 	
 	
-	public Connection getConnection() throws SQLException{
-		if (ds == null) init();
-		return ds.getConnection();
+	public Connection getConnection() throws DBException{
+		if (ds == null) {
+			throw new DBException("DataSource not initialized");
+		}
+		try {
+			return ds.getConnection();
+		} catch (SQLException e) {
+			throw new DBException("Failed to get connection from pool", e);
+		}
 	} 
 	
-	public static void shutdown()throws SQLException {
+	public static void shutdown()throws DBException {
 		if (ds != null) {
             ds.close();
             ds = null;
 		}
 	}
 	
-	public static HikariDataSource getDataSource()throws SQLException{
+	public static HikariDataSource getDataSource()throws DBException{
 		return ds;
 	}
 	
@@ -224,7 +238,7 @@ public class DBManager {
 		return this.error;
 	}
 	
-	public int preparedExecuteUpdate(String query) throws SQLException{
+	public int preparedExecuteUpdate(String query) throws DBException{
 		PreparedStatement pstmt = null;
 		Connection 	conn			= null;
 		int result = 0;
@@ -237,9 +251,8 @@ public class DBManager {
 			conn.commit();
 		}catch(SQLException t){
 			try { conn.rollback();}catch(SQLException c) {}
-			error = CommonUtils.getExceptionMessage(t);
-			logger.warn("sql error : {}",error);
-			throw t;
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+			throw new DBException("Failed to execute update", query, t);
 		}finally {
 			close(pstmt);
 			close(conn);
@@ -252,7 +265,7 @@ public class DBManager {
 	}
 	
 	
-	public int preparedExecuteUpdate(String query,LinkedMap<String,Object> record) throws SQLException{
+	public int preparedExecuteUpdate(String query,LinkedMap<String,Object> record) throws DBException{
 		PreparedStatement pstmt = null;
 		Connection 	conn			= null;
 		int result = 0;
@@ -266,9 +279,8 @@ public class DBManager {
 			conn.commit();
 		}catch(SQLException t){
 			try { conn.rollback();}catch(SQLException c) {}
-			error = CommonUtils.getExceptionMessage(t);
-			logger.warn("sql error : {}",error);
-			throw t;
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+			throw new DBException("Failed to execute update", query, t);
 		}finally {
 			close(pstmt);
 			close(conn);
@@ -279,30 +291,34 @@ public class DBManager {
 		return result;
 	}
 	
-	public long preparedExecuteUpdateAndLastIdx(String query,LinkedMap<String,Object> record) throws SQLException{
+	public long preparedExecuteUpdateAndLastIdx(String query,LinkedMap<String,Object> record) throws DBException{
 		PreparedStatement pstmt = null;
-		Connection 	conn			= null;
+		Connection 	conn		= null;
 		ResultSet rset			= null;
+		ResultSet generatedKeys = null;
 		long result = 0;
 		long startTime = System.nanoTime();
 		
 		
 		try {
 			conn		= getConnection();
-			pstmt		= conn.prepareStatement(query);
+			pstmt = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
 			DBUtils.setValues(pstmt, record);
-			result  	= pstmt.executeUpdate();
-			rset		= pstmt.executeQuery("SELECT LAST_INSERT_ID() ");
 			
-			while(rset.next()){
-				result = rset.getLong(1);
+			int affectedRows = pstmt.executeUpdate();
+			if (affectedRows > 0) {
+				generatedKeys = pstmt.getGeneratedKeys();
+				if (generatedKeys.next()) {
+					result = generatedKeys.getLong(1);
+				}
 			}
+			
+			
 			conn.commit();
 		}catch(SQLException t){
 			try { conn.rollback();}catch(SQLException c) {}
-			error = CommonUtils.getExceptionMessage(t);
-			logger.warn("sql error : {}",error);
-			throw t;
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+			throw new DBException("Failed to execute update", query, t);
 		}finally {
 			close(rset);
 			close(pstmt);
@@ -313,7 +329,7 @@ public class DBManager {
 	}
 	
 
-	public int statementExecuteUpdate(String query)throws Exception{
+	public int statementExecuteUpdate(String query)throws DBException{
 		Statement stmt 	= null;
 		Connection conn = null;
 		int result = 0;
@@ -326,9 +342,8 @@ public class DBManager {
 			conn.commit();
 		}catch(SQLException t){
 			try { conn.rollback();}catch(SQLException c) {}
-			error = CommonUtils.getExceptionMessage(t);
-			logger.warn("sql error : {}",error);
-			throw t;
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+			throw new DBException("Failed to execute update", query, t);
 		}finally {
 			close(stmt);
 			close(conn);
@@ -343,14 +358,20 @@ public class DBManager {
 	
 	
 	
-	public void setAutoCommit(Connection conn,boolean autoCommit) throws SQLException{
-		conn.setAutoCommit(autoCommit);
+	public void setAutoCommit(Connection conn,boolean autoCommit) throws DBException{
+		if (conn != null) {
+			try {
+				conn.setAutoCommit(autoCommit);
+			} catch (SQLException e) {
+				throw new DBException("Failed to set auto-commit mode", e);
+			}
+		}
 	}
 
 	
 
 	
-	public RecordSet statementExecute(String query) throws Exception {
+	public RecordSet statementExecute(String query) throws DBException {
 		Statement stmt 	= null;
 		ResultSet rset	= null;
 		Connection conn = null;
@@ -369,11 +390,9 @@ public class DBManager {
 				records = new RecordSet(rset);
 			}
 			
-		}catch(SQLException e) {
-			e.printStackTrace();
-			error = CommonUtils.getExceptionMessage(e);
-			logger.warn("sql error : {}",error);
-			throw e;
+		}catch(SQLException t) {
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+			throw new DBException("Failed to execute update", query, t);
 		}finally{
 			close(conn, stmt, rset);
 			
@@ -384,7 +403,7 @@ public class DBManager {
 	}
 	
 	
-	public RecordSet preparedStatementExecute(String query) throws Exception {
+	public RecordSet preparedStatementExecute(String query) throws DBException {
 		PreparedStatement pstmt 	= null;
 		ResultSet rset	= null;
 		Connection conn = null;
@@ -402,10 +421,9 @@ public class DBManager {
 				records = new RecordSet(rset);
 			}
 			
-		}catch(SQLException e) {
-			error = CommonUtils.getExceptionMessage(e);
-			logger.warn("sql error : {}",error);
-			throw e;
+		}catch(SQLException t) {
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+			throw new DBException("Failed to execute update", query, t);
 		}finally{
 			close(conn, pstmt, rset);
 			log(query, 0, startTime, records);
@@ -416,7 +434,7 @@ public class DBManager {
 	}
 	
 	
-	public RecordSet preparedStatementExecute(String query,Object... args) throws Exception {
+	public RecordSet preparedStatementExecute(String query,Object... args) throws DBException {
 		PreparedStatement pstmt 	= null;
 		ResultSet rset	= null;
 		Connection conn = null;
@@ -435,9 +453,9 @@ public class DBManager {
 				records = new RecordSet(rset);
 			}
 			
-		}catch(SQLException e) {
-			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(e));
-			throw e;
+		}catch(SQLException t) {
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+			throw new DBException("Failed to execute update", query, t);
 		}finally{
 			close(conn, pstmt, rset);
 			log(query, 0, startTime, records);
@@ -448,7 +466,7 @@ public class DBManager {
 	}
 	
 	
-	public int preparedExecuteUpdate(String query,Object... record) throws Exception{
+	public int preparedExecuteUpdate(String query,Object... record) throws DBException{
 		PreparedStatement pstmt = null;
 		Connection 	conn			= null;
 		int result = 0;
@@ -465,7 +483,7 @@ public class DBManager {
 		}catch(SQLException t){
 			try { conn.rollback();}catch(SQLException c) {}
 			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
-			throw t;
+			throw new DBException("Failed to execute update", query, t);
 		}finally {
 			close(pstmt);
 			close(conn);
