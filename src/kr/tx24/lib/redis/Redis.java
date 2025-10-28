@@ -315,7 +315,7 @@ public final class Redis {
             }
         }
         
-        logger.info("✅ Redis shutdown completed");
+        logger.info("Redis shutdown completed");
     }
 
     // ==================== 유틸리티 ====================

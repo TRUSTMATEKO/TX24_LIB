@@ -8,8 +8,10 @@ import java.net.NetworkInterface;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -20,7 +22,6 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import kr.tx24.lib.conf.Configure;
-import kr.tx24.lib.mapper.JacksonUtils;
 
 /**
  * 시스템 초기화 유틸리티
@@ -31,13 +32,17 @@ public class SystemUtils {
     private static final String PROPERTY_NONE 		= "NONE";
     private static final String PROPERTY_CONFIG 	= "CONF";
     private static final String PROPERTY_PROCESS 	= "PROC";
-    private static final String PROPERTY_REDIS 		= "REDIS";
+    private static final String PROPERTY_REDIS		= "REDIS";
+    private static final String PROPERTY_REDIS1		= "REDIS1";
+    private static final String PROPERTY_REDIS2 	= "REDIS2";
     private static final String PROPERTY_LOADBALANCE= "NLB";
     private static final String PROPERTY_DBCONFIG 	= "DBSET";
     private static final String PROPERTY_LOG_DIR 	= "LOG_DIR";
     private static final String PROPERTY_LOG_MAX 	= "LOG_MAXDAY";
     private static final String PROPERTY_LOG_LEVEL 	= "LOG_LEVEL";
     private static final String PROPERTY_LOG_REDIS 	= "LOG_REDIS";
+    private static final String PROPERTY_LOG_REDIS1	= "LOG_REDIS1";
+    private static final String PROPERTY_LOG_REDIS2	= "LOG_REDIS2";
     private static final String PROPERTY_JVM_MONITOR= "JVM_MONITOR";
 
     private static final String CONFIG_LOADBALANCE 	= "nlb.json";
@@ -168,24 +173,80 @@ public class SystemUtils {
     }
 
     public static String getRedisSystemUri() {
-        if (System.getProperty(PROPERTY_REDIS) == null) {
-            return REDIS_INITIAL;
+        
+        List<String> rediss = new ArrayList<String>();
+        
+        if(CommonUtils.hasValue(PROPERTY_REDIS)) {
+        	if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
+                rediss.add(String.format(REDIS_INITIAL, REDIS_CACHE_KEY + "@", System.getProperty(PROPERTY_REDIS)));
+            } else {
+            	rediss.add(String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_REDIS)));
+            }
+        }else {
+        
+	        if(CommonUtils.hasValue(PROPERTY_REDIS1)) {
+	        	if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
+	                rediss.add(String.format(REDIS_INITIAL, REDIS_CACHE_KEY + "@", System.getProperty(PROPERTY_REDIS1)));
+	            } else {
+	            	rediss.add(String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_REDIS1)));
+	            }
+	        }
+	        
+	        if(CommonUtils.hasValue(PROPERTY_REDIS2)) {
+	        	if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
+	        		rediss.add(String.format(REDIS_INITIAL, REDIS_CACHE_KEY + "@", System.getProperty(PROPERTY_REDIS2)));
+	            } else {
+	            	rediss.add(String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_REDIS2)));
+	            }
+	        }
         }
-        if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
-            return String.format(REDIS_INITIAL, REDIS_CACHE_KEY + "@", System.getProperty(PROPERTY_REDIS));
-        } else {
-            return String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_REDIS));
+        
+        if(rediss.isEmpty()) {
+        	return "System properties '-DREDIS , -DREDIS1, -DREDIS2' not found "; 
         }
+        
+        return String.join(",", rediss);
+        
     }
 
     public static String getRedisLogUri() {
-        if (System.getProperty(PROPERTY_LOG_REDIS) == null) {
-            return getRedisSystemUri();
-        } else if (CommonUtils.hasValue(REDIS_LOG_KEY)) {
-            return String.format(REDIS_INITIAL, REDIS_LOG_KEY + "@", System.getProperty(PROPERTY_LOG_REDIS));
-        } else {
-            return String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_REDIS));
+    	
+    	List<String> rediss = new ArrayList<String>();
+    	
+    	
+    	if(CommonUtils.hasValue(PROPERTY_LOG_REDIS)) {
+        	if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
+                rediss.add(String.format(REDIS_INITIAL, REDIS_CACHE_KEY + "@", System.getProperty(PROPERTY_LOG_REDIS)));
+            } else {
+            	rediss.add(String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_LOG_REDIS)));
+            }
+        }else {
+        
+	        if(CommonUtils.hasValue(PROPERTY_LOG_REDIS1)) {
+	        	if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
+	                rediss.add(String.format(REDIS_INITIAL, REDIS_CACHE_KEY + "@", System.getProperty(PROPERTY_LOG_REDIS1)));
+	            } else {
+	            	rediss.add(String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_LOG_REDIS1)));
+	            }
+	        }
+	        
+	        if(CommonUtils.hasValue(PROPERTY_LOG_REDIS2)) {
+	        	if (CommonUtils.hasValue(REDIS_CACHE_KEY)) {
+	        		rediss.add(String.format(REDIS_INITIAL, REDIS_CACHE_KEY + "@", System.getProperty(PROPERTY_LOG_REDIS2)));
+	            } else {
+	            	rediss.add(String.format(REDIS_INITIAL, "", System.getProperty(PROPERTY_LOG_REDIS2)));
+	            }
+	        }
         }
+        
+        if(rediss.isEmpty()) {
+        	System.out.println("log redis using defaut redis");
+        	return getRedisSystemUri(); 
+        }
+        
+        return String.join(",", rediss);
+    	
+    	
     }
 
     public static String getLocalProcessName() {

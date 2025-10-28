@@ -1,7 +1,4 @@
 package kr.tx24.test.lib.redis;
-
-
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -14,7 +11,6 @@ import io.lettuce.core.TransactionResult;
 import kr.tx24.lib.map.SharedMap;
 import kr.tx24.lib.redis.RedisUtils;
 import kr.tx24.lib.redis.TypeRegistry;
-import kr.tx24.lib.redis.RedisUtils.TypeReference;
 
 /**
  * Redis 사용 예제 - Transaction + Async 포함
