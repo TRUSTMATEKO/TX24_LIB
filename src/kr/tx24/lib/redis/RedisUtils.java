@@ -664,19 +664,7 @@ public final class RedisUtils {
      * @return 매칭되는 모든 키 리스트
      */
     public static List<String> scan(String pattern) {
-    	List<String> result = new ArrayList<>();
-        ScanCursor cursor = ScanCursor.INITIAL;
-        
-     
-        ScanArgs args = ScanArgs.Builder.matches(pattern);
-
-        do {
-            KeyScanCursor<String> scanResult = Redis.sync().scan(cursor, args);
-            result.addAll(scanResult.getKeys());
-            cursor = ScanCursor.of(scanResult.getCursor());
-        } while (!cursor.isFinished());
-
-        return result;
+    	return scan(pattern, 0);
     }
     
     /**
@@ -703,13 +691,19 @@ public final class RedisUtils {
     public static List<String> scan(String pattern, long count) {
         List<String> result = new ArrayList<>();
         ScanCursor cursor = ScanCursor.INITIAL;
-        ScanArgs args = ScanArgs.Builder.matches(pattern).limit(count);
+        
+        ScanArgs args;
+        if (count <= 0) {
+            args = ScanArgs.Builder.matches(pattern);  // ✅ limit() 없음
+        } else {
+            args = ScanArgs.Builder.matches(pattern).limit(count);
+        }
         
         do {
             KeyScanCursor<String> scanResult = Redis.sync().scan(cursor, args);
             result.addAll(scanResult.getKeys());
             cursor = ScanCursor.of(scanResult.getCursor());
-        } while (!cursor.isFinished());
+        } while (!cursor.isFinished());  // ✅ 여기서 자동으로 전체 검색
         
         return result;
     }
