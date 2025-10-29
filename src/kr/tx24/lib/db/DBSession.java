@@ -2,18 +2,31 @@ package kr.tx24.lib.db;
 
 import java.sql.CallableStatement;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.SQLWarning;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Properties;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import kr.tx24.lib.db.scheme.Catalog;
+import kr.tx24.lib.db.scheme.Column;
+import kr.tx24.lib.db.scheme.SqlResult;
+import kr.tx24.lib.db.scheme.Table;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
+import kr.tx24.lib.map.LinkedMap;
 
 /**
  * DBSession - 데이터베이스 연결 및 쿼리 실행 유틸리티 클래스
@@ -123,6 +136,9 @@ public class DBSession implements AutoCloseable{
 	
 
 	private static Logger logger = LoggerFactory.getLogger(DBSession.class);
+	
+	private static List<String> DEFAULT_SCHEME = Arrays.asList("information_schema", "mysql", "performance_schema");
+	
 	
 	/** 데이터베이스 연결 객체 */
     private Connection connection;
@@ -961,6 +977,529 @@ public class DBSession implements AutoCloseable{
 				}
 			}
 		}
+		return result;
+	}
+    
+    
+ // ========== 메타데이터 조회 기능 ==========
+	
+ 	/**
+ 	 * 데이터베이스 목록 조회
+ 	 * 
+ 	 * <p>시스템 데이터베이스를 제외한 사용자 데이터베이스 목록을 조회합니다.</p>
+ 	 * 
+ 	 * @return 데이터베이스 정보 맵
+ 	 * 
+ 	 * <pre>{@code
+ 	 * try (DBSession session = new DBSession()
+ 	 *         .database(DBType.MARIADB)
+ 	 *         .host("localhost:3306")
+ 	 *         .username("root")
+ 	 *         .password("password")
+ 	 *         .autoClose(false)) {
+ 	 *     
+ 	 *     LinkedMap<String, Object> dbInfo = session.getDatabases();
+ 	 *     System.out.println("Product: " + dbInfo.getString("product"));
+ 	 *     System.out.println("JDBC Driver: " + dbInfo.getString("jdbcdriver"));
+ 	 *     
+ 	 *     List<String> catalogs = (List<String>) dbInfo.get("catalogs");
+ 	 *     for (String catalog : catalogs) {
+ 	 *         System.out.println("Database: " + catalog);
+ 	 *     }
+ 	 * }
+ 	 * }</pre>
+ 	 */
+ 	public LinkedMap<String, Object> getDatabases() {
+ 		LinkedMap<String, Object> map = new LinkedMap<String, Object>();
+ 		ResultSet rset = null;
+ 		
+ 		try {
+ 			Connection conn = getConnection();
+ 			DatabaseMetaData md = conn.getMetaData();
+ 			
+ 			map.put("product", md.getDatabaseProductName() + " " + md.getDatabaseProductVersion());
+ 			map.put("jdbcdriver", md.getDriverName() + " " + md.getDriverVersion());
+ 			
+ 			rset = md.getCatalogs();
+ 			List<String> catalogs = new ArrayList<String>();
+ 			
+ 			while (rset.next()) {
+ 				String catalog = CommonUtils.nToB(rset.getString(1));
+ 				if (!CommonUtils.isNullOrSpace(catalog) && !DEFAULT_SCHEME.contains(catalog)) {
+ 					catalogs.add(rset.getString(1));
+ 				}
+ 			}
+ 			
+ 			Collections.sort(catalogs);
+ 			map.put("catalogs", catalogs);
+ 			
+ 		} catch (Exception e) {
+ 			logger.error("Failed to get databases: {}", CommonUtils.getExceptionMessage(e));
+ 		} finally {
+ 			close(rset);
+ 		}
+ 		
+ 		return map;
+ 	}
+ 	
+ 	/**
+ 	 * 전체 데이터베이스 정보 조회
+ 	 * 
+ 	 * <p>모든 데이터베이스의 상세 정보(테이블, 뷰, 시퀀스, 함수, 프로시저)를 조회합니다.</p>
+ 	 * 
+ 	 * @return 전체 데이터베이스 정보 맵
+ 	 * 
+ 	 * <pre>{@code
+ 	 * LinkedMap<String, Object> info = session.getInfo();
+ 	 * 
+ 	 * List<String> catalogs = (List<String>) info.get("catalogs");
+ 	 * for (String catalog : catalogs) {
+ 	 *     Catalog catalogInfo = (Catalog) info.get("DB." + catalog);
+ 	 *     System.out.println("Database: " + catalogInfo.name);
+ 	 *     System.out.println("Tables: " + catalogInfo.tables.size());
+ 	 *     System.out.println("Views: " + catalogInfo.views.size());
+ 	 * }
+ 	 * }</pre>
+ 	 */
+ 	public LinkedMap<String, Object> getInfo() {
+ 		LinkedMap<String, Object> map = new LinkedMap<String, Object>();
+ 		ResultSet rset = null;
+ 		
+ 		try {
+ 			Connection conn = getConnection();
+ 			DatabaseMetaData md = conn.getMetaData();
+ 			
+ 			map.put("product", md.getDatabaseProductName() + " " + md.getDatabaseProductVersion());
+ 			map.put("jdbcdriver", md.getDriverName() + " " + md.getDriverVersion());
+ 			
+ 			rset = md.getCatalogs();
+ 			List<String> catalogs = new ArrayList<String>();
+ 			
+ 			while (rset.next()) {
+ 				String catalog = CommonUtils.nToB(rset.getString(1));
+ 				if (!CommonUtils.isNullOrSpace(catalog) && !DEFAULT_SCHEME.contains(catalog)) {
+ 					catalogs.add(rset.getString(1));
+ 				}
+ 			}
+ 			
+ 			Collections.sort(catalogs);
+ 			map.put("catalogs", catalogs);
+ 			rset.close();
+ 			
+ 			// 각 카탈로그 상세 정보 조회
+ 			for (String catalog : catalogs) {
+ 				map.put("DB." + catalog, getCatalog(md, catalog));
+ 			}
+ 			
+ 		} catch (Exception e) {
+ 			logger.error("Failed to get database info: {}", CommonUtils.getExceptionMessage(e));
+ 		} finally {
+ 			close(rset);
+ 		}
+ 		
+ 		return map;
+ 	}
+ 	
+ 	/**
+ 	 * 특정 데이터베이스 정보 조회
+ 	 * 
+ 	 * <p>지정한 데이터베이스의 상세 정보를 조회합니다.</p>
+ 	 * 
+ 	 * @param catalogName 데이터베이스(카탈로그) 이름
+ 	 * @return 데이터베이스 상세 정보
+ 	 * 
+ 	 * <pre>{@code
+ 	 * Catalog catalog = session.getDatabase("mydb");
+ 	 * 
+ 	 * System.out.println("Database: " + catalog.name);
+ 	 * System.out.println("Tables: " + catalog.tables.size());
+ 	 * 
+ 	 * for (Table table : catalog.tables) {
+ 	 *     System.out.println("  Table: " + table.n);
+ 	 *     System.out.println("  Remarks: " + table.r);
+ 	 *     
+ 	 *     for (Column column : table.c) {
+ 	 *         System.out.println("    Column: " + column.n + " - " + column.t);
+ 	 *     }
+ 	 * }
+ 	 * }</pre>
+ 	 */
+ 	public Catalog getDatabase(String catalogName) {
+ 		Catalog catalog = null;
+ 		ResultSet rset = null;
+ 		
+ 		try {
+ 			Connection conn = getConnection();
+ 			DatabaseMetaData md = conn.getMetaData();
+ 			catalog = getCatalog(md, catalogName);
+ 		} catch (Exception e) {
+ 			logger.error("Failed to get database '{}': {}", catalogName, CommonUtils.getExceptionMessage(e));
+ 		} finally {
+ 			close(rset);
+ 		}
+ 		
+ 		return catalog;
+ 	}
+ 	
+ 	/**
+ 	 * 카탈로그(데이터베이스) 메타데이터 조회 (내부용)
+ 	 * 
+ 	 * @param md DatabaseMetaData 객체
+ 	 * @param catalogName 카탈로그 이름
+ 	 * @return 카탈로그 정보
+ 	 */
+ 	private Catalog getCatalog(DatabaseMetaData md, String catalogName) {
+ 		Catalog catalog = new Catalog();
+ 		catalog.name = catalogName;
+ 		ResultSet rset = null;
+ 		
+ 		try {
+ 			rset = md.getTables(catalogName, null, "%", null);
+ 			
+ 			catalog.tables = new ArrayList<Table>();
+ 			catalog.views = new ArrayList<Table>();
+ 			catalog.seqs = new ArrayList<Table>();
+ 			
+ 			while (rset.next()) {
+ 				Table table = new Table();
+ 				table.n = rset.getString("TABLE_NAME");
+ 				String type = rset.getString("TABLE_TYPE");
+ 				table.r = rset.getString("REMARKS");
+ 				
+ 				if ("TABLE".equals(type)) {
+ 					catalog.tables.add(table);
+ 				} else if ("VIEW".equals(type)) {
+ 					catalog.views.add(table);
+ 				} else if ("SEQUENCE".equals(type)) {
+ 					catalog.seqs.add(table);
+ 				}
+ 				
+ 				table.c = getColumns(md, catalogName, table.n);
+ 			}
+ 			
+ 			rset.close();
+ 			
+ 			// Functions 조회
+ 			rset = md.getFunctions(catalogName, null, "%");
+ 			while (rset.next()) {
+ 				if (catalog.functions == null) {
+ 					catalog.functions = new ArrayList<Table>();
+ 				}
+ 				Table table = new Table();
+ 				table.n = rset.getString("FUNCTION_NAME");
+ 				table.r = rset.getString("REMARKS");
+ 				catalog.functions.add(table);
+ 			}
+ 			
+ 			rset.close();
+ 			
+ 			// Procedures 조회
+ 			rset = md.getProcedures(catalogName, null, "%");
+ 			while (rset.next()) {
+ 				if (catalog.procedures == null) {
+ 					catalog.procedures = new ArrayList<Table>();
+ 				}
+ 				Table table = new Table();
+ 				table.n = rset.getString("PROCEDURE_NAME");
+ 				table.r = rset.getString("REMARKS");
+ 				catalog.procedures.add(table);
+ 			}
+ 			
+ 			// 정렬
+ 			sortTables(catalog);
+ 			
+ 		} catch (Exception e) {
+ 			logger.error("Failed to get catalog '{}': {}", catalogName, CommonUtils.getExceptionMessage(e));
+ 		} finally {
+ 			try {
+ 				if (rset != null) rset.close();
+ 			} catch (Exception e) {
+ 			}
+ 		}
+ 		
+ 		return catalog;
+ 	}
+ 	
+ 	/**
+ 	 * 테이블 목록 정렬
+ 	 */
+ 	private void sortTables(Catalog catalog) {
+ 		Comparator<Table> comparator = new Comparator<Table>() {
+ 			@Override
+ 			public int compare(Table o1, Table o2) {
+ 				return o1.n.compareTo(o2.n);
+ 			}
+ 		};
+ 		
+ 		Collections.sort(catalog.tables, comparator);
+ 		Collections.sort(catalog.views, comparator);
+ 		Collections.sort(catalog.seqs, comparator);
+ 		
+ 		if (catalog.functions != null) {
+ 			Collections.sort(catalog.functions, comparator);
+ 		}
+ 		if (catalog.procedures != null) {
+ 			Collections.sort(catalog.procedures, comparator);
+ 		}
+ 	}
+ 	
+ 	/**
+ 	 * 테이블 컬럼 정보 조회
+ 	 * 
+ 	 * <p>지정한 테이블의 컬럼 정보를 조회합니다.</p>
+ 	 * 
+ 	 * @param catalogName 데이터베이스(카탈로그) 이름
+ 	 * @param tableName 테이블 이름
+ 	 * @return 컬럼 정보 리스트
+ 	 * 
+ 	 * <pre>{@code
+ 	 * List<Column> columns = session.getColumns("mydb", "users");
+ 	 * 
+ 	 * for (Column column : columns) {
+ 	 *     System.out.println("Position: " + column.p);
+ 	 *     System.out.println("Name: " + column.n);
+ 	 *     System.out.println("Type: " + column.t);
+ 	 *     System.out.println("Remarks: " + column.r);
+ 	 * }
+ 	 * }</pre>
+ 	 */
+ 	public List<Column> getColumns(String catalogName, String tableName) {
+ 		List<Column> columns = new ArrayList<Column>();
+ 		
+ 		try {
+ 			Connection conn = getConnection();
+ 			DatabaseMetaData md = conn.getMetaData();
+ 			columns = getColumns(md, catalogName, tableName);
+ 		} catch (Exception e) {
+ 			logger.error("Failed to get columns for '{}.{}': {}", 
+ 				catalogName, tableName, CommonUtils.getExceptionMessage(e));
+ 		}
+ 		
+ 		return columns;
+ 	}
+ 	
+ 	/**
+ 	 * 테이블 컬럼 정보 조회 (내부용)
+ 	 * 
+ 	 * @param md DatabaseMetaData 객체
+ 	 * @param catalogName 카탈로그 이름
+ 	 * @param tableName 테이블 이름
+ 	 * @return 컬럼 정보 리스트
+ 	 */
+ 	private List<Column> getColumns(DatabaseMetaData md, String catalogName, String tableName) {
+ 		List<Column> list = new ArrayList<Column>();
+ 		ResultSet rset = null;
+ 		
+ 		try {
+ 			// Primary Key 조회
+ 			List<String> pks = new ArrayList<String>();
+ 			rset = md.getPrimaryKeys(catalogName, null, tableName);
+ 			while (rset.next()) {
+ 				pks.add(rset.getString("COLUMN_NAME"));
+ 			}
+ 			rset.close();
+ 			
+ 			// 컬럼 정보 조회
+ 			rset = md.getColumns(catalogName, null, tableName, "%");
+ 			
+ 			while (rset.next()) {
+ 				Column column = new Column();
+ 				column.p = rset.getInt("ORDINAL_POSITION");
+ 				column.n = rset.getString("COLUMN_NAME");
+ 				String typeName = rset.getString("TYPE_NAME").toLowerCase();
+ 				int size = rset.getInt("COLUMN_SIZE");
+ 				int decimal = rset.getInt("DECIMAL_DIGITS");
+ 				boolean nullable = rset.getInt("NULLABLE") == 1;
+ 				int dt = rset.getInt("DATA_TYPE");
+ 				boolean ai = "YES".equals(rset.getString("IS_AUTOINCREMENT"));
+ 				column.r = CommonUtils.nToB(rset.getString("REMARKS"));
+ 				
+ 				// 타입 정보 포맷팅
+ 				StringBuilder sb = new StringBuilder()
+ 					.append(String.format("-%20s", column.n));
+ 				
+ 				if (typeName.indexOf("char") > -1) {
+ 					sb.append(typeName).append("(").append(size).append(") ");
+ 				} else if (typeName.indexOf("decimal") > -1) {
+ 					sb.append(typeName).append("(").append(size).append(",").append(decimal).append(") ");
+ 				} else if (typeName.indexOf("int") > -1) {
+ 					if (typeName.indexOf("bigint") > -1) {
+ 						dt = 18;
+ 					}
+ 					typeName = typeName.toLowerCase().replaceAll("unsigned", "UN");
+ 					String[] ar = typeName.split(" ");
+ 					if (ar.length == 1) {
+ 						sb.append(ar[0]).append("(").append(dt).append(") ");
+ 					} else if (ar.length == 2) {
+ 						sb.append(ar[0]).append("(").append(dt).append(") ").append(ar[1]).append(" ");
+ 					} else {
+ 						sb.append(typeName);
+ 					}
+ 				} else {
+ 					sb.append(typeName).append(" ");
+ 				}
+ 				
+ 				if (nullable) {
+ 					sb.append("N ");
+ 				}
+ 				if (ai) {
+ 					sb.append("AI ");
+ 				}
+ 				if (pks.contains(column.n)) {
+ 					sb.append("PK ");
+ 				}
+ 				
+ 				column.t = sb.toString();
+ 				list.add(column);
+ 			}
+ 			
+ 			// 위치 순으로 정렬
+ 			Collections.sort(list, new Comparator<Column>() {
+ 				@Override
+ 				public int compare(Column o1, Column o2) {
+ 					return o1.p - o2.p;
+ 				}
+ 			});
+ 			
+ 		} catch (Exception e) {
+ 			logger.error("Failed to get columns: {}", CommonUtils.getExceptionMessage(e));
+ 		} finally {
+ 			try {
+ 				if (rset != null) rset.close();
+ 			} catch (Exception e) {
+ 			}
+ 		}
+ 		
+ 		return list;
+ 	}
+ 	
+ 	
+ 	
+ 	/**
+	 * SQL 쿼리 실행 (결과 포함)
+	 * 
+	 * <p>SELECT, UPDATE, DELETE, CREATE, DROP 등 모든 SQL 쿼리를 실행하고
+	 * 실행 결과를 SqlResult 객체로 반환합니다.</p>
+	 * 
+	 * @param sql 실행할 SQL 쿼리
+	 * @return SQL 실행 결과
+	 * 
+	 * <pre>{@code
+	 * SqlResult result = session.executeSql("SELECT * FROM users LIMIT 10");
+	 * 
+	 * if (result.ret > 0) {
+	 *     System.out.println("Message: " + result.msg);
+	 *     System.out.println("Duration: " + result.duration);
+	 *     
+	 *     // SELECT 결과
+	 *     if (result.columns != null) {
+	 *         System.out.println("Columns: " + result.columns);
+	 *         for (List<Object> row : result.datas) {
+	 *             System.out.println(row);
+	 *         }
+	 *     }
+	 * }
+	 * }</pre>
+	 */
+	public SqlResult executeSql(String sql) {
+		return executeSql(sql, null);
+	}
+	
+	/**
+	 * SQL 쿼리 실행 (데이터베이스 지정)
+	 * 
+	 * @param sql 실행할 SQL 쿼리
+	 * @param database 사용할 데이터베이스 이름 (null 가능)
+	 * @return SQL 실행 결과
+	 */
+	public SqlResult executeSql(String sql, String database) {
+		String tmp = CommonUtils.ltrim(sql);
+		
+		// SELECT 쿼리에 LIMIT 자동 추가
+		if (tmp.startsWith("SELECT") && tmp.indexOf(" LIMIT ") == -1) {
+			sql = sql + " LIMIT 0,500";
+		}
+		
+		SqlResult result = new SqlResult();
+		Statement stmt = null;
+		ResultSet rset = null;
+		
+		try {
+			Connection conn = getConnection();
+			stmt = conn.createStatement();
+			stmt.setQueryTimeout(120);
+			
+			double start = System.currentTimeMillis();
+			
+			// 데이터베이스 선택
+			if (!CommonUtils.isNullOrSpace(database)) {
+				stmt.execute("USE " + database);
+			}
+			
+			boolean hasResult = stmt.execute(sql);
+			double duration = System.currentTimeMillis() - start;
+			
+			// 경고 메시지 수집
+			StringBuilder sbw = new StringBuilder();
+			SQLWarning warning = stmt.getWarnings();
+			while (warning != null) {
+				sbw.append(" ,Warning Code:").append(warning.getErrorCode())
+					.append(", State:").append(warning.getSQLState())
+					.append(", Message:").append(warning.getMessage())
+					.append("\n");
+				warning = warning.getNextWarning();
+			}
+			
+			if (hasResult) {
+				// SELECT 결과 처리
+				rset = stmt.getResultSet();
+				ResultSetMetaData meta = rset.getMetaData();
+				int cnt = meta.getColumnCount() + 1;
+				
+				result.columns = new ArrayList<String>(cnt);
+				for (int i = 1; i < cnt; i++) {
+					result.columns.add(meta.getColumnName(i));
+				}
+				
+				result.datas = new ArrayList<List<Object>>();
+				while (rset.next()) {
+					List<Object> data = new ArrayList<Object>(cnt);
+					for (int i = 1; i < cnt; i++) {
+						Object obj = rset.getObject(i);
+						data.add(obj == null ? "null" : obj);
+					}
+					result.datas.add(data);
+				}
+				
+				result.msg = String.format("OK, %d row(s) returned", result.datas.size());
+				result.ret = result.datas.size();
+				
+			} else {
+				// UPDATE, DELETE, CREATE, DROP 처리
+				result.ret = stmt.getUpdateCount();
+				if (result.ret > 0 && autoCommit) {
+					conn.commit();
+				}
+				result.msg = String.format("OK, %d row(s) affected", result.ret);
+			}
+			
+			result.duration = String.format("%.3f sec", (duration / 1000));
+			if (sbw.length() > 0) {
+				result.msg = result.msg + sbw.toString();
+			}
+			
+		} catch (Exception e) {
+			if (e instanceof SQLException) {
+				SQLException ex = (SQLException) e;
+				result.msg = "Error Code:" + ex.getErrorCode() + ". " + e.getMessage();
+			} else {
+				result.msg = e.getMessage();
+			}
+		} finally {
+			close(rset);
+			close(stmt);
+		}
+		
 		return result;
 	}
     

@@ -299,12 +299,12 @@ public class DBUtils {
 	public long insertBulk(String table,List<String> columns, List<List<Object>> datas,boolean sbsCommit, int insertMaxSize) throws DBException{
 		
 		if(columns == null || datas == null || datas.get(0) == null){
-			throw new Exception("columns or datas is null");
+			throw new DBException("columns or datas is null");
 		}
 		
 		
 		if(columns.size() != datas.get(0).size()){
-			throw new Exception("columns & data 의 사이즈가 일치하지 않습니다.");
+			throw new DBException("columns & data 의 사이즈가 일치하지 않습니다.");
 		}
 		
 		
@@ -448,9 +448,9 @@ public class DBUtils {
 			}
 			
 			conn.commit();
-		}catch(Exception t){
-			conn.rollback();
-			throw new DBException("Failed to execute update", "", t);
+		}catch(SQLException t){
+			try { conn.rollback();}catch(SQLException c) {}
+			throw new DBException("Failed to execute insert", q, t);
 		}finally {
 			db.close(stmt);
 			db.close(conn);

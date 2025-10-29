@@ -8,8 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
+import kr.tx24.lib.enums.TypeRegistry;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.IDUtils;
 import kr.tx24.lib.lang.SystemUtils;
@@ -68,12 +68,8 @@ public class SessionUtils {
 		data.put(SESSION_DATE	, System.currentTimeMillis());
 		data.put(SESSION_PROC	, SystemUtils.getLocalProcessName());
 		
+		RedisUtils.set(REDIS_SESSION_STORE+sessionId, data, Was.SESSION_EXPIRE);
 		
-		StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
-		RedisCommands<String, SharedMap<String, Object>> cmd = conn.sync();
-		cmd.set(REDIS_SESSION_STORE+sessionId	,data);
-		cmd.expire(REDIS_SESSION_STORE+sessionId ,Was.SESSION_EXPIRE);
-		conn.close();
 		
 		if(SystemUtils.deepview()) {
 			logger.info("session created : {}",REDIS_SESSION_STORE+sessionId);
@@ -98,14 +94,11 @@ public class SessionUtils {
 	 * @param sessionId
 	 */
 	public static void save(String sessionId) {
-		StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
+		String redisKey = REDIS_SESSION_STORE + sessionId;
+		RedisUtils.expire(redisKey, Was.SESSION_EXPIRE);
 		
-		RedisAsyncCommands<String, SharedMap<String, Object>> cmd = conn.async();
-		cmd.expire(REDIS_SESSION_STORE+sessionId,Was.SESSION_EXPIRE);
-		conn.close();
-		
-		if(SystemUtils.deepview()) {
-			logger.info("session save : {}",REDIS_SESSION_STORE+sessionId);
+		if (SystemUtils.deepview()) {
+			logger.info("session save : {}", redisKey);
 		}
 	}
 	
@@ -121,17 +114,17 @@ public class SessionUtils {
 	        return;
 	    }
 
-	    try (StatefulRedisConnection<String, SharedMap<String, Object>> conn = Redis.getSharedMap()) {
-	        RedisAsyncCommands<String, SharedMap<String, Object>> cmd = conn.async();
-
-	        cmd.set(REDIS_SESSION_STORE + sessionId, data).thenCompose(v ->
-	            cmd.expire(REDIS_SESSION_STORE + sessionId, Was.SESSION_EXPIRE)
-	        ).toCompletableFuture().join();
-
-	        if (SystemUtils.deepview()) {
-	            logger.info("Session saved: {}", REDIS_SESSION_STORE + sessionId);
-	        }
-	    }
+	    String redisKey = REDIS_SESSION_STORE + sessionId;
+		
+		// 비동기 저장 (원자적 SETEX)
+		Redis.async().setex(redisKey, Was.SESSION_EXPIRE, data)
+			.whenComplete((result, error) -> {
+				if (error != null) {
+					logger.warn("Failed to save session: {}", redisKey, error);
+				} else if (SystemUtils.deepview()) {
+					logger.info("Session saved (async): {}", redisKey);
+				}
+			});
 	}
 	
 	/**
@@ -140,17 +133,21 @@ public class SessionUtils {
 	 * @return
 	 */
 	public static SharedMap<String,Object> getBySessionId(String sessionId){
-		SharedMap<String,Object> result = null;
-		StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
-		RedisCommands<String, SharedMap<String, Object>> cmd = conn.sync();
-		
-		result = cmd.get(REDIS_SESSION_STORE+sessionId);
-		if(result != null) {
-			cmd.expire(REDIS_SESSION_STORE+sessionId,Was.SESSION_EXPIRE);
+		if (CommonUtils.isEmpty(sessionId)) {
+			return null;
 		}
 		
-		conn.close();
+		String redisKey = REDIS_SESSION_STORE + sessionId;
+		
+		// RedisUtils.get()으로 조회 (타입 안전)
+		SharedMap<String, Object> result = RedisUtils.get(redisKey, TypeRegistry.MAP_SHAREDMAP_OBJECT);
+		
+		// 세션이 존재하면 TTL 갱신
+		if (result != null) {
+			RedisUtils.expire(redisKey, Was.SESSION_EXPIRE);
+		}
 		return result;
+		
 	}
 	
 	
@@ -160,21 +157,19 @@ public class SessionUtils {
 	 * @return
 	 */
 	public static String getUserIdBySessionId(String sessionId){
-		SharedMap<String,Object> result = null;
-		StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
-		RedisCommands<String, SharedMap<String, Object>> cmd = conn.sync();
 		
-		result = cmd.get(REDIS_SESSION_STORE+sessionId);
-		if(result != null) {
-			cmd.expire(REDIS_SESSION_STORE+sessionId,Was.SESSION_EXPIRE);
+		if (CommonUtils.isEmpty(sessionId)) {
+			return "";
 		}
 		
-		conn.close();
-		if(result == null) {
+		SharedMap<String, Object> result = getBySessionId(sessionId);
+		
+		if (result == null) {
 			return "";
-		}else {
+		} else {
 			return result.getString(SESSION_USERID);
 		}
+		
 	}
 	
 	
@@ -184,25 +179,28 @@ public class SessionUtils {
 	 * @return
 	 */
 	public static boolean exists(String sessionId){
-		long count = 0;
-		StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
-		RedisCommands<String, SharedMap<String, Object>> cmd = conn.sync();
-		
-		count = cmd.exists(REDIS_SESSION_STORE+sessionId);
-		if(count > 0) {
-			return true;
-		}else {
+		if (CommonUtils.isEmpty(sessionId)) {
 			return false;
 		}
+		
+		String redisKey = REDIS_SESSION_STORE + sessionId;
+		return RedisUtils.exists(redisKey);
 	}
 	
 	/**
 	 * 현재 세션의 만료 시간 리턴 / 초 
+	 * 
+	 * <p><b>변경:</b> RedisUtils.ttl() 사용</p>
+	 * 
 	 * @param sessionId
-	 * @return
+	 * @return TTL (초 단위), 키가 없으면 -2, TTL 없으면 -1
 	 */
-	public static long getExpire(String sessionId){
-		return RedisUtils.ttl(REDIS_SESSION_STORE+sessionId);
+	public static long getExpire(String sessionId) {
+		if (CommonUtils.isEmpty(sessionId)) {
+			return -2;
+		}
+		
+		return RedisUtils.ttl(REDIS_SESSION_STORE + sessionId);
 	}
 	
 	
@@ -210,31 +208,38 @@ public class SessionUtils {
 	
 	/**
 	 * 현재 동일한 userId 로 접속해 있는 동접 정보 
+	 * 
+	 * <p><b>변경:</b> RedisUtils.scan() 및 Redis.sync() 사용, close() 제거</p>
+	 * 
 	 * @param userId
 	 * @return
 	 */
-	public static List<SharedMap<String,Object>> getConCurrent(String userId){
-		List<SharedMap<String,Object>> list = new ArrayList<SharedMap<String,Object>>();
-		List<String> keys = RedisUtils.scan(REDIS_SESSION_STORE+KEYS_ALL);
+	
+	public static List<SharedMap<String, Object>> getConCurrent(String userId) {
+		List<SharedMap<String, Object>> list = new ArrayList<>();
 		
-		if(!CommonUtils.isEmpty(keys)) {
-			
-			StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
-			RedisCommands<String, SharedMap<String, Object>> cmd = conn.sync();
-			
-			for(String key: keys) {
-				SharedMap<String,Object> result = cmd.get(key);
-				if(result != null && result.isEquals(SESSION_USERID, userId)) {
+		if (CommonUtils.isEmpty(userId)) {
+			return list;
+		}
+		
+		// RedisUtils.scan()으로 패턴 매칭
+		List<String> keys = RedisUtils.scan(REDIS_SESSION_STORE + KEYS_ALL);
+		
+		if (!CommonUtils.isEmpty(keys)) {
+			// Redis.sync()를 직접 사용 (connection 재사용)
+			for (String key : keys) {
+				SharedMap<String, Object> result = RedisUtils.get(key, TypeRegistry.MAP_SHAREDMAP_OBJECT);
+				if (result != null && result.isEquals(SESSION_USERID, userId)) {
 					list.add(result);
 				}
 			}
 		}
 		
-		if(SystemUtils.deepview()) {
-			if(keys == null) {
-				logger.info("current session count  : 0");
-			}else {
-				logger.info("current session count  : {}",keys.size());
+		if (SystemUtils.deepview()) {
+			if (keys == null) {
+				logger.info("current session count : 0");
+			} else {
+				logger.info("current session count : {}", keys.size());
 			}
 		}
 		
@@ -245,88 +250,99 @@ public class SessionUtils {
 	
 	/**
 	 * 현재 시스템에 접속한 모든 세션 정보 
+	 * 
+	 * <p><b>변경:</b> RedisUtils 활용, close() 제거</p>
+	 * 
 	 * @return
 	 */
-	public static List<SharedMap<String,Object>> getSessions(){
-		List<SharedMap<String,Object>> list = new ArrayList<SharedMap<String,Object>>();
-		List<String> keys = RedisUtils.scan(REDIS_SESSION_STORE+KEYS_ALL);
+
+	public static List<SharedMap<String, Object>> getSessions() {
+		List<SharedMap<String, Object>> list = new ArrayList<>();
 		
-		if(!CommonUtils.isEmpty(keys)) {
-			
-			StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
-			RedisCommands<String, SharedMap<String, Object>> cmd = conn.sync();
-			
-			for(String key: keys) {
-				SharedMap<String,Object> result = cmd.get(key);
-				if(result != null) {
+		// RedisUtils.scan()으로 패턴 매칭
+		List<String> keys = RedisUtils.scan(REDIS_SESSION_STORE + KEYS_ALL);
+		
+		if (!CommonUtils.isEmpty(keys)) {
+			// Redis.sync()를 직접 사용하여 세션 정보 조회
+			for (String key : keys) {
+				SharedMap<String, Object> result = RedisUtils.get(key, TypeRegistry.MAP_SHAREDMAP_OBJECT);
+				if (result != null) {
 					list.add(result);
 				}
 			}
 			
-			 list = list.stream().sorted((o1, o2) ->  
-			 		o1.getString(SESSION_DATE).compareTo(o2.getString(SESSION_DATE)) 
-			 		).collect(Collectors.toList());
+			// 생성 시간 순으로 정렬
+			list = list.stream()
+					.sorted((o1, o2) -> o1.getString(SESSION_DATE).compareTo(o2.getString(SESSION_DATE)))
+					.collect(Collectors.toList());
 		}
 		
-		//logger.info("session ==?> {}", new JacksonUtils().toPrettyJson(list));
-		
-		if(SystemUtils.deepview()) {
-			if(keys == null) {
-				logger.info("current session count  : 0");
-			}else {
-				logger.info("current session count  : {}",keys.size());
+		if (SystemUtils.deepview()) {
+			if (keys == null) {
+				logger.info("current session count : 0");
+			} else {
+				logger.info("current session count : {}", keys.size());
 			}
 		}
-		
 		
 		return list;
 	}
 	
-	
 	/**
 	 * 현재 세션 삭제 
+	 * 
+	 * <p><b>변경:</b> RedisUtils.del() 사용, close() 제거</p>
+	 * 
 	 * @param sessionId
 	 */
 	public static void destory(String sessionId) {
-		
-		
-		StatefulRedisConnection<String, SharedMap<String,Object>> conn = Redis.getSharedMap();
-		RedisCommands<String, SharedMap<String, Object>> cmd = conn.sync();
-		
-		SharedMap<String,Object> sessionMap = cmd.get(REDIS_SESSION_STORE+sessionId);
-		if(sessionMap != null) {
-			if(SystemUtils.deepview()) {
-				logger.info("session destory : {},{}",sessionMap.getString(SessionUtils.SESSION_USERID),REDIS_SESSION_STORE+sessionId);
-			}
-			
+		if (CommonUtils.isEmpty(sessionId)) {
+			return;
 		}
-		cmd.del(REDIS_SESSION_STORE+sessionId);
 		
-		conn.close();	
+		String redisKey = REDIS_SESSION_STORE + sessionId;
+		
+		// 삭제 전 세션 정보 조회 (로깅용)
+		SharedMap<String, Object> sessionMap = RedisUtils.get(redisKey, TypeRegistry.MAP_SHAREDMAP_OBJECT);
+		if (sessionMap != null) {
+			if (SystemUtils.deepview()) {
+				logger.info("session destory : {}, {}", 
+						sessionMap.getString(SESSION_USERID), redisKey);
+			}
+		}
+		
+		// RedisUtils.del()로 삭제
+		RedisUtils.del(redisKey);
 	}
-	
 	
 	/**
 	 * 나를 제외한 세션 삭제
+	 * 
+	 * <p><b>변경:</b> RedisUtils.del() 사용</p>
+	 * 
 	 * @param sessionId
 	 * @param userId
 	 */
 	public static void destoryExcludeMe(String sessionId, String userId) {
-		List<SharedMap<String,Object>> list = getConCurrent(userId);
+		if (CommonUtils.isEmpty(sessionId) || CommonUtils.isEmpty(userId)) {
+			return;
+		}
 		
-		if(!CommonUtils.isEmpty(list) && list.size() > 1) {
-			for(SharedMap<String,Object> map : list) {
-				if(!map.isEquals(SESSION_ID, sessionId)) {
-					RedisUtils.del(REDIS_SESSION_STORE+map.getString(SESSION_ID));
-					if(SystemUtils.deepview()) {
-						logger.info("session destory : {}",REDIS_SESSION_STORE+map.getString(SESSION_ID));
-					}	
+		List<SharedMap<String, Object>> list = getConCurrent(userId);
+		
+		if (!CommonUtils.isEmpty(list) && list.size() > 1) {
+			for (SharedMap<String, Object> map : list) {
+				if (!map.isEquals(SESSION_ID, sessionId)) {
+					String targetKey = REDIS_SESSION_STORE + map.getString(SESSION_ID);
+					RedisUtils.del(targetKey);
+					
+					if (SystemUtils.deepview()) {
+						logger.info("session destory : {}", targetKey);
+					}
 				}
 			}
-		}	
+		}
 	}
-	
-	
 	
 	
 

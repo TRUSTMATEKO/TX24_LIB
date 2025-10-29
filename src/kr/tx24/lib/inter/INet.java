@@ -31,14 +31,20 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import kr.tx24.lib.enums.TypeRegistry;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lb.LoadBalancer;
+import kr.tx24.lib.map.LinkedMap;
+import kr.tx24.lib.map.SharedMap;
+import kr.tx24.lib.map.ThreadSafeLinkedMap;
 
 /**
  *  INet 은 Internetwork 를 의미하며 내부 시스템간의 통신을 정의하기 위하서 만들어졌다.
@@ -269,6 +275,42 @@ public class INet implements java.io.Serializable{
 	        return map;
 	    } catch (Exception e) {
 	        throw new RuntimeException(e);
+	    }
+	}
+	
+	@SuppressWarnings("unchecked")
+	public <T extends Map<String,Object>> T head(TypeRegistry typeRegistry) {
+	    T map = createMapFromRegistry(typeRegistry);
+	    map.putAll(this.message.head);
+	    return map;
+	}
+
+	@SuppressWarnings("unchecked")
+	public <T extends Map<String,Object>> T data(TypeRegistry typeRegistry) {
+	    T map = createMapFromRegistry(typeRegistry);
+	    map.putAll(this.message.data);
+	    return map;
+	}
+
+	@SuppressWarnings("unchecked")
+	private <T extends Map<String,Object>> T createMapFromRegistry(TypeRegistry typeRegistry) {
+	    switch (typeRegistry) {
+	        case MAP_OBJECT:
+	            return (T) new java.util.HashMap<String, Object>();
+	        case MAP_SHAREDMAP_OBJECT:
+	            return (T) new SharedMap<String, Object>();
+	        case MAP_LINKEDMAP_OBJECT:
+	            return (T) new LinkedMap<String, Object>();
+	        case MAP_THREADSAFE_LINKEDMAP_OBJECT:
+	            return (T) new ThreadSafeLinkedMap<String, Object>();
+	        case MAP_LINKEDHASHMAP_OBJECT:
+	            return (T) new LinkedHashMap<String, Object>();
+	        case MAP_CONCURRENTHASHMAP_OBJECT:
+	            return (T) new ConcurrentHashMap<String, Object>();
+	        case MAP_TREEMAP_OBJECT:
+	            return (T) new TreeMap<String, Object>();
+	        default:
+	            throw new IllegalArgumentException("Unsupported TypeRegistry: " + typeRegistry);
 	    }
 	}
 

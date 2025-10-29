@@ -8,9 +8,9 @@ import java.util.concurrent.CompletableFuture;
 
 import io.lettuce.core.RedisFuture;
 import io.lettuce.core.TransactionResult;
+import kr.tx24.lib.enums.TypeRegistry;
 import kr.tx24.lib.map.SharedMap;
 import kr.tx24.lib.redis.RedisUtils;
-import kr.tx24.lib.redis.TypeRegistry;
 
 /**
  * Redis 사용 예제 - Transaction + Async 포함

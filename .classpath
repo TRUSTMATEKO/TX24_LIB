@@ -9,7 +9,6 @@
 	<classpathentry kind="src" path="test"/>
 	<classpathentry kind="lib" path="lib/attoparser-2.0.7.RELEASE.jar"/>
 	<classpathentry kind="lib" path="lib/browscap-java-1.5.1.jar"/>
-	<classpathentry kind="lib" path="lib/caffeine-3.2.2.jar"/>
 	<classpathentry kind="lib" path="lib/commons-codec-1.19.0.jar"/>
 	<classpathentry kind="lib" path="lib/commons-collections4-4.5.0.jar"/>
 	<classpathentry kind="lib" path="lib/commons-compress-1.28.0.jar"/>

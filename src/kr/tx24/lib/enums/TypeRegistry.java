@@ -1,8 +1,11 @@
-package kr.tx24.lib.redis;
+package kr.tx24.lib.enums;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.SharedMap;
@@ -35,8 +38,14 @@ public enum TypeRegistry {
 	MAP_SHAREDMAP_STRING(new TypeReference<SharedMap<String,String>>(){}),
 	MAP_LINKEDMAP_OBJECT(new TypeReference<LinkedMap<String,Object>>(){}),
 	MAP_LINKEDMAP_STRING(new TypeReference<LinkedMap<String,String>>(){}),
+	MAP_LINKEDHASHMAP_OBJECT(new TypeReference<LinkedHashMap<String,Object>>(){}),
+	MAP_LINKEDHASHMAP_STRING(new TypeReference<LinkedHashMap<String,String>>(){}),
+	MAP_CONCURRENTHASHMAP_OBJECT(new TypeReference<ConcurrentHashMap<String,Object>>(){}),
+	MAP_CONCURRENTHASHMAP_STRING(new TypeReference<ConcurrentHashMap<String,String>>(){}),
 	MAP_THREADSAFE_LINKEDMAP_OBJECT(new TypeReference<ThreadSafeLinkedMap<String,Object>>(){}),
 	MAP_THREADSAFE_LINKEDMAP_STRING(new TypeReference<ThreadSafeLinkedMap<String,String>>(){}),
+	MAP_TREEMAP_OBJECT(new TypeReference<TreeMap<String,Object>>(){}),
+	MAP_TREEMAP_STRING(new TypeReference<TreeMap<String,String>>(){}),
 	
 	
 	LIST_STRING(new TypeReference<List<String>>(){}),
@@ -52,8 +61,14 @@ public enum TypeRegistry {
 	LIST_SHAREDMAP_STRING(new TypeReference<List<SharedMap<String,String>>>(){}),
 	LIST_LINKEDMAP_OBJECT(new TypeReference<List<LinkedMap<String,Object>>>(){}),
 	LIST_LINKEDMAP_STRING(new TypeReference<List<LinkedMap<String,String>>>(){}),
+	LIST_LINKEDHASHMAP_OBJECT(new TypeReference<List<LinkedHashMap<String,Object>>>(){}),
+	LIST_LINKEDHASHMAP_STRING(new TypeReference<List<LinkedHashMap<String,String>>>(){}),
+	LIST_CONCURRENTHASHMAP_OBJECT(new TypeReference<List<ConcurrentHashMap<String,Object>>>(){}),
+	LIST_CONCURRENTHASHMAP_STRING(new TypeReference<List<ConcurrentHashMap<String,String>>>(){}),
 	LIST_THREADSAFE_LINKEDMAP_OBJECT(new TypeReference<List<ThreadSafeLinkedMap<String,Object>>>(){}),
 	LIST_THREADSAFE_LINKEDMAP_STRING(new TypeReference<List<ThreadSafeLinkedMap<String,String>>>(){}),
+	LIST_TREEMAP_OBJECT(new TypeReference<List<TreeMap<String,Object>>>(){}),
+	LIST_TREEMAP_STRING(new TypeReference<List<TreeMap<String,String>>>(){}),
 	
 	LIST_LIST_STRING(new TypeReference<List<List<String>>>(){}),
 	LIST_LIST_OBJECT(new TypeReference<List<List<Object>>>(){}),
@@ -71,8 +86,14 @@ public enum TypeRegistry {
 	SET_SHAREDMAP_STRING(new TypeReference<Set<SharedMap<String,String>>>(){}),
 	SET_LINKEDMAP_OBJECT(new TypeReference<Set<LinkedMap<String,Object>>>(){}),
 	SET_LINKEDMAP_STRING(new TypeReference<Set<LinkedMap<String,String>>>(){}),
+	SET_LINKEDHASHMAP_OBJECT(new TypeReference<Set<LinkedHashMap<String,Object>>>(){}),
+	SET_LINKEDHASHMAP_STRING(new TypeReference<Set<LinkedHashMap<String,String>>>(){}),
+	SET_CONCURRENTHASHMAP_OBJECT(new TypeReference<Set<ConcurrentHashMap<String,Object>>>(){}),
+	SET_CONCURRENTHASHMAP_STRING(new TypeReference<Set<ConcurrentHashMap<String,String>>>(){}),
 	SET_THREADSAFE_LINKEDMAP_OBJECT(new TypeReference<Set<ThreadSafeLinkedMap<String,Object>>>(){}),
-	SET_THREADSAFE_LINKEDMAP_STRING(new TypeReference<Set<ThreadSafeLinkedMap<String,String>>>(){});
+	SET_THREADSAFE_LINKEDMAP_STRING(new TypeReference<Set<ThreadSafeLinkedMap<String,String>>>(){}),
+	SET_TREEMAP_OBJECT(new TypeReference<Set<TreeMap<String,Object>>>(){}),
+	SET_TREEMAP_STRING(new TypeReference<Set<TreeMap<String,String>>>(){});
 	
 	
 

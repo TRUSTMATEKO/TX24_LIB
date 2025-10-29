@@ -24,6 +24,7 @@ import io.lettuce.core.TransactionResult;
 import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
 import kr.tx24.lib.db.Retrieve;
+import kr.tx24.lib.enums.TypeRegistry;
 import kr.tx24.lib.map.SharedMap;
 
 /**
@@ -641,6 +642,43 @@ public final class RedisUtils {
         return Redis.sync().keys(pattern);
     }
 
+    
+    /**
+     * ⭐ 패턴에 매칭되는 키 조회 (SCAN - 프로덕션 권장)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 대용량 데이터에서도 안전
+     * List<String> userKeys = RedisUtils.scan("user:*");
+     * 
+     * // 캐시 키 조회
+     * List<String> cacheKeys = RedisUtils.scan("cache:*");
+     * </pre>
+     * 
+     * <p><b>장점:</b></p>
+     * - Non-blocking (서버 블로킹 없음)
+     * - 커서 기반 순회 (메모리 효율적)
+     * - 대용량 데이터에 적합
+     * 
+     * @param pattern 패턴 (예: "user:*")
+     * @return 매칭되는 모든 키 리스트
+     */
+    public static List<String> scan(String pattern) {
+    	List<String> result = new ArrayList<>();
+        ScanCursor cursor = ScanCursor.INITIAL;
+        
+     
+        ScanArgs args = ScanArgs.Builder.matches(pattern);
+
+        do {
+            KeyScanCursor<String> scanResult = Redis.sync().scan(cursor, args);
+            result.addAll(scanResult.getKeys());
+            cursor = ScanCursor.of(scanResult.getCursor());
+        } while (!cursor.isFinished());
+
+        return result;
+    }
+    
     /**
      * ⭐ 패턴에 매칭되는 키 조회 (SCAN - 프로덕션 권장)
      * 
