@@ -1,8 +1,6 @@
 package kr.tx24.lib.mapper;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.nio.file.Path;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,200 +10,513 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 
-import kr.tx24.lib.map.LinkedMap;
-import kr.tx24.lib.map.SharedMap;
+import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.map.TypeRegistry;
+
+/**
+ * XML 전용 Jackson Utility
+ * 
+ * <p><b>주요 기능:</b></p>
+ * <ul>
+ *   <li>XML ↔ Object 변환</li>
+ *   <li>TypeReference, TypeRegistry 지원</li>
+ *   <li>Pretty/Compact 포맷 지원</li>
+ *   <li>파일 입출력 지원 (Path)</li>
+ *   <li>XML 유효성 검사</li>
+ *   <li>객체 복사 (JacksonAbstract 상속)</li>
+ * </ul>
+ * 
+ * <p><b>필수 의존성:</b></p>
+ * <pre>
+ * {@code
+ * <dependency>
+ *     <groupId>com.fasterxml.jackson.dataformat</groupId>
+ *     <artifactId>jackson-dataformat-xml</artifactId>
+ *     <version>2.15.0</version>
+ * </dependency>
+ * }
+ * </pre>
+ * 
+ * <p><b>사용 예:</b></p>
+ * <pre>
+ * JacksonXmlUtils xml = new JacksonXmlUtils();
+ * 
+ * // Serialize
+ * String xmlString = xml.toXml(object);
+ * 
+ * // Deserialize - 세 가지 방법
+ * User user = xml.fromXml(xmlString, User.class);
+ * List<String> list = xml.fromXml(xmlString, new TypeReference<List<String>>(){});
+ * Map<String, Object> map = xml.fromXml(xmlString, TypeRegistry.MAP_OBJECT);
+ * 
+ * // 파일 처리
+ * Path xmlFile = Paths.get("data.xml");
+ * Map<String, Object> data = xml.fromXml(xmlFile, TypeRegistry.MAP_OBJECT);
+ * 
+ * // Pretty/Compact
+ * String pretty = xml.pretty().toXml(object);
+ * String compact = xml.compact().toXml(object);
+ * </pre>
+ * 
+ * @author TX24
+ * @see JacksonAbstract
+ * @see JacksonUtils
+ * @see JacksonYamlUtils
+ */
+public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
+    private static final Logger logger = LoggerFactory.getLogger(JacksonXmlUtils.class);
 
     /**
-     * XML 전용 Jackson Utility + JSON Map/List 변환 지원
+     * 기본 생성자 - Pretty 포맷으로 초기화
      */
-    public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
-        private static final Logger logger = LoggerFactory.getLogger(JacksonXmlUtils.class);
+    public JacksonXmlUtils() {
+        super(createDefaultMapper());
+    }
 
-        /** 기본 생성자 */
-        public JacksonXmlUtils() {
-            super(createDefaultMapper());
-        }
+    /**
+     * 내부용 생성자 - 커스텀 XmlMapper 사용
+     * 
+     * @param mapper 사용할 XmlMapper
+     */
+    private JacksonXmlUtils(XmlMapper mapper) {
+        super(mapper);
+    }
 
-        /** 내부용 생성자 */
-        private JacksonXmlUtils(XmlMapper mapper) {
-            super(mapper);
-        }
+    /**
+     * 기본 XmlMapper 생성
+     * 
+     * <p>기본 설정:</p>
+     * <ul>
+     *   <li>null 값 제외 (NON_NULL)</li>
+     *   <li>Pretty 포맷 활성화 (INDENT_OUTPUT)</li>
+     * </ul>
+     * 
+     * @return 기본 설정이 적용된 XmlMapper
+     */
+    private static XmlMapper createDefaultMapper() {
+        XmlMapper xmlMapper = new XmlMapper();
+        xmlMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
+        xmlMapper.enable(SerializationFeature.INDENT_OUTPUT);
+        return xmlMapper;
+    }
 
-        /** 기본 XmlMapper 생성 */
-        private static XmlMapper createDefaultMapper() {
-            XmlMapper xmlMapper = new XmlMapper();
-            xmlMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
-            xmlMapper.enable(SerializationFeature.INDENT_OUTPUT);
-            return xmlMapper;
-        }
-
-        @Override
-        public JacksonXmlUtils pretty() {
+    /**
+     * Pretty 포맷 인스턴스 반환 (들여쓰기 O)
+     * 
+     * <p>이미 Pretty 포맷이면 this 반환, 아니면 새 인스턴스 생성</p>
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * JacksonXmlUtils pretty = new JacksonXmlUtils().pretty();
+     * String xml = pretty.toXml(object);
+     * // {@code
+     * // <User>
+     * //   <n>John</n>
+     * //   <age>30</age>
+     * // </User>
+     * // }
+     * </pre>
+     * 
+     * @return Pretty 포맷 JacksonXmlUtils 인스턴스
+     */
+    @Override
+    public JacksonXmlUtils pretty() {
+        if (mapper.isEnabled(SerializationFeature.INDENT_OUTPUT)) {
             return this;
         }
+        XmlMapper newMapper = mapper.copy();
+        newMapper.enable(SerializationFeature.INDENT_OUTPUT);
+        return new JacksonXmlUtils(newMapper);
+    }
 
-        @Override
-        public JacksonXmlUtils compact() {
-        	XmlMapper newMapper = mapper.copy();
-            newMapper.configure(SerializationFeature.INDENT_OUTPUT, false);
-            return new JacksonXmlUtils(newMapper);
+    /**
+     * Compact 포맷 인스턴스 반환 (들여쓰기 X)
+     * 
+     * <p>이미 Compact 포맷이면 this 반환, 아니면 새 인스턴스 생성</p>
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * JacksonXmlUtils compact = new JacksonXmlUtils().compact();
+     * String xml = compact.toXml(object);
+     * // {@code <User><n>John</n><age>30</age></User>}
+     * </pre>
+     * 
+     * @return Compact 포맷 JacksonXmlUtils 인스턴스
+     */
+    @Override
+    public JacksonXmlUtils compact() {
+        if (!mapper.isEnabled(SerializationFeature.INDENT_OUTPUT)) {
+            return this;
         }
+        XmlMapper newMapper = mapper.copy();
+        newMapper.disable(SerializationFeature.INDENT_OUTPUT);
+        return new JacksonXmlUtils(newMapper);
+    }
 
-        @Override
-        protected JacksonXmlUtils createNewInstance(XmlMapper mapper) {
-            return new JacksonXmlUtils(mapper);
-        }
-        
-        
-        public boolean isValid(String xml) {
-            if (xml == null || xml.isEmpty()) return false;
-            try {
-                mapper.readTree(xml);
-                return true;
-            } catch (Exception e) {
-                return false;
-            }
-        }
-        
-        
-        public boolean isValid(String xml, Class<?> valueType) {
-            if (xml == null || xml.isEmpty()) return false;
-            try {
-                mapper.readValue(xml, valueType);
-                return true;
-            } catch (Exception e) {
-                return false;
-            }
-        }
-        
-        
-        
-        
-
-        // ---------------- XML 직렬화 / 역직렬화 ----------------
-        public String toXml(Object value) {
-            if (value == null) return "";
-            try {
-                return mapper.writeValueAsString(value);
-            } catch (Exception e) {
-                logger.error("XML 직렬화 실패", e);
-                throw new RuntimeException("XML 직렬화 실패", e);
-            }
-        }
-
-        public <V> V fromXml(String xml, Class<V> type) {
-            if (xml == null || xml.isEmpty()) return null;
-            try {
-                return mapper.readValue(xml, type);
-            } catch (Exception e) {
-                logger.error("XML 역직렬화 실패", e);
-                throw new RuntimeException("XML 역직렬화 실패", e);
-            }
-        }
-        
-
-
-        // ---------------- Map 변환 ----------------
-        public <V> Map<String, V> fromMap(String json, Class<V> valueClass) {
-            return deserialize(json, new TypeReference<Map<String, V>>() {});
-        }
-
-        public Map<String, String> fromMap(String json) {
-            return deserialize(json, new TypeReference<Map<String, String>>() {});
-        }
-
-        public Map<String, Object> fromMapObject(String json) {
-            return deserialize(json, new TypeReference<Map<String, Object>>() {});
-        }
-
-        public <V> List<Map<String, V>> fromMapList(String json, Class<V> valueClass) {
-            return deserialize(json, new TypeReference<List<Map<String, V>>>() {});
-        }
-
-        public List<Map<String, String>> fromMapList(String json) {
-            return deserialize(json, new TypeReference<List<Map<String, String>>>() {});
-        }
-
-        public List<Map<String, Object>> fromMapListObject(String json) {
-            return deserialize(json, new TypeReference<List<Map<String, Object>>>() {});
-        }
-
-        // ---------------- SharedMap 변환 ----------------
-        public <V> SharedMap<String, V> fromSharedMap(String json, Class<V> valueClass) {
-            return deserialize(json, new TypeReference<SharedMap<String, V>>() {});
-        }
-
-        public SharedMap<String, String> fromSharedMap(String json) {
-            return deserialize(json, new TypeReference<SharedMap<String, String>>() {});
-        }
-
-        public SharedMap<String, Object> fromSharedMapObject(String json) {
-            return deserialize(json, new TypeReference<SharedMap<String, Object>>() {});
-        }
-
-        public <V> List<SharedMap<String, V>> fromSharedMapList(String json, Class<V> valueClass) {
-            return deserialize(json, new TypeReference<List<SharedMap<String, V>>>() {});
-        }
-
-        public List<SharedMap<String, String>> fromSharedMapList(String json) {
-            return deserialize(json, new TypeReference<List<SharedMap<String, String>>>() {});
-        }
-
-        public List<SharedMap<String, Object>> fromSharedMapListObject(String json) {
-            return deserialize(json, new TypeReference<List<SharedMap<String, Object>>>() {});
-        }
-
-        // ---------------- LinkedMap 변환 ----------------
-        public <V> LinkedMap<String, V> fromLinkedMap(String json, Class<V> valueClass) {
-            return deserialize(json, new TypeReference<LinkedMap<String, V>>() {});
-        }
-
-        public LinkedMap<String, String> fromLinkedMap(String json) {
-            return deserialize(json, new TypeReference<LinkedMap<String, String>>() {});
-        }
-
-        public LinkedMap<String, Object> fromLinkedMapObject(String json) {
-            return deserialize(json, new TypeReference<LinkedMap<String, Object>>() {});
-        }
-
-        public <V> List<LinkedMap<String, V>> fromLinkedMapList(String json, Class<V> valueClass) {
-            return deserialize(json, new TypeReference<List<LinkedMap<String, V>>>() {});
-        }
-
-        public List<LinkedMap<String, String>> fromLinkedMapList(String json) {
-            return deserialize(json, new TypeReference<List<LinkedMap<String, String>>>() {});
-        }
-
-        public List<LinkedMap<String, Object>> fromLinkedMapListObject(String json) {
-            return deserialize(json, new TypeReference<List<LinkedMap<String, Object>>>() {});
-        }
-
-        // ---------------- LinkedHashMap 변환 ----------------
-        public <V> LinkedHashMap<String, V> fromLinkedHashMap(String json, Class<V> valueClass) {
-            return deserialize(json, new TypeReference<LinkedHashMap<String, V>>() {});
-        }
-
-        public LinkedHashMap<String, String> fromLinkedHashMap(String json) {
-            return deserialize(json, new TypeReference<LinkedHashMap<String, String>>() {});
-        }
-
-        public LinkedHashMap<String, Object> fromLinkedHashMapObject(String json) {
-            return deserialize(json, new TypeReference<LinkedHashMap<String, Object>>() {});
-        }
-
-        public <V> List<LinkedHashMap<String, V>> fromLinkedHashMapList(String json, Class<V> valueClass) {
-            return deserialize(json, new TypeReference<List<LinkedHashMap<String, V>>>() {});
-        }
-
-        public List<LinkedHashMap<String, String>> fromLinkedHashMapList(String json) {
-            return deserialize(json, new TypeReference<List<LinkedHashMap<String, String>>>() {});
-        }
-
-        public List<LinkedHashMap<String, Object>> fromLinkedHashMapListObject(String json) {
-            return deserialize(json, new TypeReference<List<LinkedHashMap<String, Object>>>() {});
-        }
+    /**
+     * 새로운 JacksonXmlUtils 인스턴스 생성 (Factory 패턴)
+     * 
+     * @param mapper 사용할 XmlMapper
+     * @return 새 JacksonXmlUtils 인스턴스
+     */
+    @Override
+    protected JacksonXmlUtils createNewInstance(XmlMapper mapper) {
+        return new JacksonXmlUtils(mapper);
+    }
     
     
+    // ==================== Validation ====================
     
+    /**
+     * XML 문자열 유효성 검사
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String xml = "{@code <root><n>John</n></root>}";
+     * boolean valid = xml.isValid(xml);  // true
+     * 
+     * String invalid = "{@code <invalid}";
+     * boolean result = xml.isValid(invalid);  // false
+     * </pre>
+     * 
+     * @param xml XML 문자열
+     * @return 유효하면 true, 아니면 false
+     */
+    public boolean isValid(String xml) {
+        if (xml == null || xml.isEmpty()) return false;
+        try {
+            mapper.readTree(xml);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    /**
+     * XML 문자열을 특정 타입으로 변환 가능한지 검사
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String xml = "{@code <User><n>John</n><age>30</age></User>}";
+     * boolean valid = xml.isValid(xml, User.class);  // true
+     * </pre>
+     * 
+     * @param xml XML 문자열
+     * @param valueType 대상 타입
+     * @return 변환 가능하면 true, 아니면 false
+     */
+    public boolean isValid(String xml, Class<?> valueType) {
+        if (xml == null || xml.isEmpty()) return false;
+        try {
+            mapper.readValue(xml, valueType);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    /**
+     * XML 문자열을 TypeReference로 변환 가능한지 검사
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String xml = "{@code <list><item>1</item><item>2</item></list>}";
+     * boolean valid = xml.isValid(xml, new TypeReference<List<Integer>>(){});
+     * </pre>
+     * 
+     * @param xml XML 문자열
+     * @param typeRef TypeReference
+     * @return 변환 가능하면 true, 아니면 false
+     */
+    public boolean isValid(String xml, TypeReference<?> typeRef) {
+        if (xml == null || xml.isEmpty()) return false;
+        try {
+            mapper.readValue(xml, typeRef);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    
+    // ==================== Serialization ====================
+    
+    /**
+     * 객체를 XML 문자열로 변환
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * User user = new User("John", 30);
+     * String xml = xml.toXml(user);
+     * // {@code
+     * // <User>
+     * //   <n>John</n>
+     * //   <age>30</age>
+     * // </User>
+     * // }
+     * </pre>
+     * 
+     * @param value 변환할 객체
+     * @return XML 문자열
+     */
+    public String toXml(Object value) {
+        if (value == null) return "";
+        try {
+            return mapper.writeValueAsString(value);
+        } catch (Exception e) {
+        	logger.warn("XML 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return "";
+        }
+    }
+    
+    /**
+     * 객체를 XML byte[] 로 변환
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * User user = new User("John", 30);
+     * byte[] xmlBytes = xml.toXmlBytes(user);
+     * </pre>
+     * 
+     * @param value 변환할 객체
+     * @return XML byte 배열
+     */
+    public byte[] toXmlBytes(Object value) {
+        if (value == null) return null;
+        try {
+            return mapper.writeValueAsBytes(value);
+        } catch (Exception e) {
+        	logger.warn("XML 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+
+    // ==================== String XML → Object ====================
+    
+    /**
+     * XML 문자열을 객체로 변환 (Class 타입)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String xml = "{@code <User><n>John</n><age>30</age></User>}";
+     * User user = xml.fromXml(xml, User.class);
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param xml XML 문자열
+     * @param type 대상 클래스
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(String xml, Class<V> type) {
+        if (xml == null || xml.isEmpty()) return null;
+        try {
+            return mapper.readValue(xml, type);
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    /**
+     * XML 문자열을 객체로 변환 (TypeReference)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String xml = "{@code <list><item>Apple</item><item>Banana</item></list>}";
+     * List<String> fruits = xml.fromXml(xml, 
+     *     new TypeReference<List<String>>(){});
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param xml XML 문자열
+     * @param typeRef TypeReference
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(String xml, TypeReference<V> typeRef) {
+        if (xml == null || xml.isEmpty()) return null;
+        try {
+            return mapper.readValue(xml, typeRef);
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    /**
+     * XML 문자열을 객체로 변환 (TypeRegistry)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String xml = "{@code <root><n>Product A</n><price>10000</price></root>}";
+     * Map<String, Object> product = xml.fromXml(xml, 
+     *     TypeRegistry.MAP_OBJECT);
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param xml XML 문자열
+     * @param typeRegistry TypeRegistry
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(String xml, TypeRegistry typeRegistry) {
+        if (xml == null || xml.isEmpty()) return null;
+        try {
+            return mapper.readValue(xml, typeRegistry.get());
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    // ==================== byte[] XML → Object ====================
+    
+    /**
+     * byte[] XML을 객체로 변환 (Class 타입)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * byte[] xmlBytes = "{@code <User><n>John</n></User>}".getBytes();
+     * User user = xml.fromXml(xmlBytes, User.class);
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param xml XML byte 배열
+     * @param type 대상 클래스
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(byte[] xml, Class<V> type) {
+        if (xml == null || xml.length == 0) return null;
+        try {
+            return mapper.readValue(xml, type);
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    /**
+     * byte[] XML을 객체로 변환 (TypeReference)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * byte[] xmlBytes = "{@code <list><item>1</item><item>2</item></list>}".getBytes();
+     * List<Integer> numbers = xml.fromXml(xmlBytes, 
+     *     new TypeReference<List<Integer>>(){});
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param xml XML byte 배열
+     * @param typeRef TypeReference
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(byte[] xml, TypeReference<V> typeRef) {
+        if (xml == null || xml.length == 0) return null;
+        try {
+            return mapper.readValue(xml, typeRef);
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    /**
+     * byte[] XML을 객체로 변환 (TypeRegistry)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * byte[] xmlBytes = "{@code <root><id>1</id></root>}".getBytes();
+     * Map<String, Object> data = xml.fromXml(xmlBytes, 
+     *     TypeRegistry.MAP_OBJECT);
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param xml XML byte 배열
+     * @param typeRegistry TypeRegistry
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(byte[] xml, TypeRegistry typeRegistry) {
+        if (xml == null || xml.length == 0) return null;
+        try {
+            return mapper.readValue(xml, typeRegistry.get());
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    // ==================== Path (파일) XML → Object ====================
+    
+    /**
+     * 파일에서 XML을 읽어 객체로 변환 (Class 타입)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Path xmlFile = Paths.get("config.xml");
+     * Config config = xml.fromXml(xmlFile, Config.class);
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param path 파일 경로
+     * @param type 대상 클래스
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(Path path, Class<V> type) {
+        if (path == null) return null;
+        try {
+            return mapper.readValue(path.toFile(), type);
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    /**
+     * 파일에서 XML을 읽어 객체로 변환 (TypeReference)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Path xmlFile = Paths.get("users.xml");
+     * List<User> users = xml.fromXml(xmlFile, 
+     *     new TypeReference<List<User>>(){});
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param path 파일 경로
+     * @param typeRef TypeReference
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(Path path, TypeReference<V> typeRef) {
+        if (path == null) return null;
+        try {
+            return mapper.readValue(path.toFile(), typeRef);
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    /**
+     * 파일에서 XML을 읽어 객체로 변환 (TypeRegistry)
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * Path xmlFile = Paths.get("data.xml");
+     * Map<String, Object> data = xml.fromXml(xmlFile, 
+     *     TypeRegistry.MAP_OBJECT);
+     * </pre>
+     * 
+     * @param <V> 반환 타입
+     * @param path 파일 경로
+     * @param typeRegistry TypeRegistry
+     * @return 변환된 객체
+     */
+    public <V> V fromXml(Path path, TypeRegistry typeRegistry) {
+        if (path == null) return null;
+        try {
+            return mapper.readValue(path.toFile(), typeRegistry.get());
+        } catch (Exception e) {
+            logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
     
 }

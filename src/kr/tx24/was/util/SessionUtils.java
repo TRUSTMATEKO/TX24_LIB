@@ -9,11 +9,11 @@ import org.slf4j.LoggerFactory;
 
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
-import kr.tx24.lib.enums.TypeRegistry;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.IDUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.SharedMap;
+import kr.tx24.lib.map.TypeRegistry;
 import kr.tx24.lib.redis.Redis;
 import kr.tx24.lib.redis.RedisUtils;
 

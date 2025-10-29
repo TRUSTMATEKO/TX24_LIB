@@ -1,10 +1,8 @@
 package kr.tx24.lib.mapper;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.DateFormat;
-import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
@@ -14,6 +12,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
+import kr.tx24.lib.map.TypeRegistry;
 
 /**
  * Abstract Jackson Utility with Factory pattern
@@ -64,6 +64,16 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
             throw new RuntimeException("Serialization failed", e);
         }
     }
+    
+    
+    public byte[] serializeBytes(Object value) {
+        if (value == null) return null;
+        try {
+            return mapper.writeValueAsBytes(value);
+        } catch (Exception e) {
+            throw new RuntimeException("Serialization failed", e);
+        }
+    }
 
     public <V> V deserialize(String str, Class<V> type) {
         try {
@@ -76,6 +86,14 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
     public <V> V deserialize(String str, TypeReference<V> typeRef) {
         try {
             return mapper.readValue(str, typeRef);
+        } catch (Exception e) {
+            throw new RuntimeException("Deserialization failed", e);
+        }
+    }
+    
+    public <V> V deserialize(String str, TypeRegistry typeRegistry) {
+        try {
+            return mapper.readValue(str, typeRegistry.get());
         } catch (Exception e) {
             throw new RuntimeException("Deserialization failed", e);
         }
@@ -99,6 +117,15 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
     }
     
     
+    public <V> V deserialize(byte[] str, TypeRegistry typeRegistry) {
+        try {
+            return mapper.readValue(str, typeRegistry.get());
+        } catch (Exception e) {
+            throw new RuntimeException("Deserialization failed", e);
+        }
+    }
+    
+    
     public <V> V deserialize(Path path, Class<V> type) {
         try {
         	return mapper.readValue(Files.readAllBytes(path),type);
@@ -115,36 +142,16 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
         }
     }
     
+    public <V> V deserialize(Path path, TypeRegistry typeRegistry) {
+        try {
+            return mapper.readValue(Files.readAllBytes(path), typeRegistry.get());
+        } catch (Exception e) {
+            throw new RuntimeException("Deserialization failed", e);
+        }
+    }
     
     
-
-    // ---------------- Map/List 변환 ----------------
-
-    public <V> Map<String, V> fromMapString(String str, Class<V> valueClass) {
-        return deserialize(str, new TypeReference<Map<String, V>>() {});
-    }
-
-    public Map<String, String> fromMapString(String str) {
-        return deserialize(str, new TypeReference<Map<String, String>>() {});
-    }
-
-    public Map<String, Object> fromMapStringObject(String str) {
-        return deserialize(str, new TypeReference<Map<String, Object>>() {});
-    }
-
-    public <V> List<Map<String, V>> fromMapListString(String str, Class<V> valueClass) {
-        return deserialize(str, new TypeReference<List<Map<String, V>>>() {});
-    }
-
-    public List<Map<String, String>> fromMapListString(String str) {
-        return deserialize(str, new TypeReference<List<Map<String, String>>>() {});
-    }
-
-    public List<Map<String, Object>> fromMapListObject(String str) {
-        return deserialize(str, new TypeReference<List<Map<String, Object>>>() {});
-    }
-
-    // ---------------- Object Copy ----------------
+    
 
     public <V> V copyObject(V source, Class<V> type) {
         if (source == null) return null;

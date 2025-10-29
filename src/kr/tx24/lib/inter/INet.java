@@ -39,12 +39,12 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import kr.tx24.lib.enums.TypeRegistry;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.SharedMap;
 import kr.tx24.lib.map.ThreadSafeLinkedMap;
+import kr.tx24.lib.map.TypeRegistry;
 
 /**
  *  INet 은 Internetwork 를 의미하며 내부 시스템간의 통신을 정의하기 위하서 만들어졌다.

@@ -14,6 +14,8 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+
 import io.lettuce.core.KeyScanCursor;
 import io.lettuce.core.KeyValue;
 import io.lettuce.core.RedisFuture;
@@ -24,8 +26,8 @@ import io.lettuce.core.TransactionResult;
 import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
 import kr.tx24.lib.db.Retrieve;
-import kr.tx24.lib.enums.TypeRegistry;
 import kr.tx24.lib.map.SharedMap;
+import kr.tx24.lib.map.TypeRegistry;
 
 /**
  * Redis 유틸리티 클래스 (Lettuce 6.2.x, Redis 7.x)
@@ -83,9 +85,10 @@ public final class RedisUtils {
         throw new UnsupportedOperationException("Utility class");
     }
     
-    
     /**
-     * ⭐⭐⭐ TypeReference - 제네릭 타입 정보 보존
+     * ⭐⭐⭐ TypeReference 사용법
+     * 
+     * <p>Jackson의 TypeReference를 사용하여 제네릭 타입 정보를 보존합니다.</p>
      * 
      * <p><b>사용 예:</b></p>
      * <pre>
@@ -100,54 +103,15 @@ public final class RedisUtils {
      * // 복잡한 중첩 타입
      * Map<String, List<User>> userGroups = RedisUtils.get("groups", 
      *     new TypeReference<Map<String, List<User>>>(){});
+     * 
+     * // TypeRegistry 사용 (더 간편)
+     * List<String> names = RedisUtils.get("users:names", TypeRegistry.LIST_STRING);
+     * Map<String, Object> data = RedisUtils.get("data", TypeRegistry.MAP_OBJECT);
      * </pre>
      * 
      * <p><b>작동 원리:</b></p>
      * 익명 내부 클래스를 사용하여 제네릭 타입 정보를 런타임에 보존합니다.
-     * 
-     * @param <T> 대상 타입
      */
-    public abstract static class TypeReference<T> {
-        private final Type type;
-
-        protected TypeReference() {
-            Type superclass = getClass().getGenericSuperclass();
-            if (superclass instanceof ParameterizedType) {
-                this.type = ((ParameterizedType) superclass).getActualTypeArguments()[0];
-            } else {
-                throw new IllegalArgumentException("TypeReference must be parameterized");
-            }
-        }
-
-        /**
-         * 타입 정보 반환
-         * 
-         * @return Type 객체
-         */
-        public Type getType() {
-            return type;
-        }
-
-        /**
-         * Raw 클래스 반환
-         * 
-         * @return Class 객체
-         */
-        @SuppressWarnings("unchecked")
-        public Class<T> getRawType() {
-            if (type instanceof Class) {
-                return (Class<T>) type;
-            } else if (type instanceof ParameterizedType) {
-                return (Class<T>) ((ParameterizedType) type).getRawType();
-            }
-            throw new IllegalStateException("Unable to determine raw type");
-        }
-
-        @Override
-        public String toString() {
-            return "TypeReference<" + type + ">";
-        }
-    }
     
 
     // ==================== 기본 Operations ====================
@@ -360,7 +324,7 @@ public final class RedisUtils {
         if (value == null) return null;
         
         // Raw 타입으로 먼저 확인
-        Class<T> rawType = typeRef.getRawType();
+        Class<T> rawType = getRawType(typeRef);
         
         if (rawType.isInstance(value)) {
             // 타입이 맞으면 캐스팅
@@ -908,7 +872,7 @@ public final class RedisUtils {
         Object value = hget(key, field);
         if (value == null) return null;
         
-        Class<T> rawType = typeRef.getRawType();
+        Class<T> rawType = getRawType(typeRef);
         if (rawType.isInstance(value)) {
             return (T) value;
         }
@@ -1136,7 +1100,7 @@ public final class RedisUtils {
             return (T) values;
         }
         
-        Class<T> rawType = typeRef.getRawType();
+        Class<T> rawType = getRawType(typeRef);
         if (rawType.isInstance(values)) {
             return (T) values;
         }
@@ -1256,7 +1220,7 @@ public final class RedisUtils {
     public static <T> T smembers(String key, TypeReference<T> typeRef) {
         Set<Object> values = smembers(key);
         
-        Class<T> rawType = typeRef.getRawType();
+        Class<T> rawType = getRawType(typeRef);
         if (rawType.isInstance(values)) {
             return (T) values;
         }
@@ -2145,7 +2109,27 @@ public final class RedisUtils {
     
     
     
-    
+    /**
+     * TypeReference에서 Raw Class 추출 헬퍼 메서드
+     * 
+     * @param typeRef TypeReference 객체
+     * @return Raw Class
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> Class<T> getRawType(TypeReference<T> typeRef) {
+        Type type = typeRef.getType();
+        
+        if (type instanceof Class) {
+            // 단순 클래스 타입 (예: String.class, Integer.class)
+            return (Class<T>) type;
+        } else if (type instanceof ParameterizedType) {
+            // 제네릭 타입 (예: List<String>, Map<String, Object>)
+            return (Class<T>) ((ParameterizedType) type).getRawType();
+        }
+        
+        // 기타 타입은 Object로 처리
+        return (Class<T>) Object.class;
+    }
     
     
     

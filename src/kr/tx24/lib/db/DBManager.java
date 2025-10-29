@@ -2,7 +2,6 @@ package kr.tx24.lib.db;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -22,6 +21,7 @@ import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.SharedMap;
+import kr.tx24.lib.map.TypeRegistry;
 import kr.tx24.lib.mapper.JacksonUtils;
 
 public class DBManager {
@@ -115,7 +115,7 @@ public class DBManager {
 	}
 	
 	private static SharedMap<String,Object> loadConfig() throws Exception{
-		Path configPath = Paths.get(SystemUtils.getDatabaseConfig());
+		Path configPath = SystemUtils.getDatabaseConfigPath();
 		
 		if (!Files.exists(configPath)) {
 	        throw new Exception(configPath.toAbsolutePath() + " not found");
@@ -126,7 +126,7 @@ public class DBManager {
 	    if (json.isEmpty()) {
 	        throw new Exception("Config file is empty: " + configPath.toAbsolutePath());
 	    }
-	    SharedMap<String, Object> map = new JacksonUtils().fromJsonSharedMapObject(json);
+	    SharedMap<String, Object> map = new JacksonUtils().fromJson(json, TypeRegistry.MAP_SHAREDMAP_OBJECT);
 
 	    if (map != null && map.containsKey("password")) {
 	        String password = map.getString("password");

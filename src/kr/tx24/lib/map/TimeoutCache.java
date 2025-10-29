@@ -12,8 +12,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.StampedLock;
 
-import kr.tx24.lib.enums.TypeRegistry;
-
 /**
  * Caffeine 최적화 기법을 적용한 고성능 Pure Java TimeoutCache
  * 

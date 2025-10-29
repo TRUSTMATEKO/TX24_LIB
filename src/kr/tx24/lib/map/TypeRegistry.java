@@ -1,4 +1,4 @@
-package kr.tx24.lib.enums;
+package kr.tx24.lib.map;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -7,10 +7,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 
-import kr.tx24.lib.map.LinkedMap;
-import kr.tx24.lib.map.SharedMap;
-import kr.tx24.lib.map.ThreadSafeLinkedMap;
-import kr.tx24.lib.redis.RedisUtils.TypeReference;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 public enum TypeRegistry {
 	
