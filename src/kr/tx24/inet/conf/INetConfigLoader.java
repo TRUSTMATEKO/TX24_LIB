@@ -1,6 +1,5 @@
 package kr.tx24.inet.conf;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -11,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.SharedMap;
+import kr.tx24.lib.map.TypeRegistry;
 import kr.tx24.lib.mapper.JacksonUtils;
 
 public class INetConfigLoader {
@@ -113,7 +113,7 @@ public class INetConfigLoader {
 				try {
 					
 					if(configMap == null) {
-						configMap = new JacksonUtils().fromJsonSharedMapObject(CommonUtils.toString(Files.readAllBytes(CONFIG_PATH),StandardCharsets.UTF_8));
+						configMap = new JacksonUtils().fromJson(CONFIG_PATH, TypeRegistry.MAP_SHAREDMAP_OBJECT);
 					}
 				
 					if(CommonUtils.isEmpty(configMap)) {

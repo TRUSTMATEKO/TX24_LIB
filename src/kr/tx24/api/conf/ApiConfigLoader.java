@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
+import kr.tx24.lib.map.TypeRegistry;
 import kr.tx24.lib.mapper.JacksonUtils;
 
 public class ApiConfigLoader {
@@ -50,7 +51,7 @@ public class ApiConfigLoader {
 			try {
 				
 				if(configBean == null) {
-					configBean = new JacksonUtils().fromJson(CommonUtils.toString(Files.readAllBytes(CONFIG_PATH),StandardCharsets.UTF_8),ApiConfig.class);
+					configBean = new JacksonUtils().fromJson(CONFIG_PATH, TypeRegistry.MAP_SHAREDMAP_OBJECT);
 				}
 			
 				if(CommonUtils.isEmpty(configBean)) {
