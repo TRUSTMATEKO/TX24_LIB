@@ -1,6 +1,7 @@
 package kr.tx24.was.conf;
 
 import java.io.File;
+import java.nio.file.Path;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,14 +14,14 @@ import kr.tx24.lib.mapper.JacksonUtils;
 public class TomcatConfigLoader {
 
 	private static Logger logger 				= LoggerFactory.getLogger(TomcatConfigLoader.class );
-	private static final String CONFIG_PATH		= SystemUtils.getConfigDirectory()+File.separator+"server.json";
+	private static final Path CONFIG_PATH		= SystemUtils.getWasConfigPath();
 	private static TomcatConfig tomcatConfig = null; 
 	
 	
 	public static TomcatConfig load() {
 		if(tomcatConfig == null) {
 			try {
-				tomcatConfig 	= new JacksonUtils().deserialize(new File(CONFIG_PATH).toPath(), TomcatConfig.class);
+				tomcatConfig 	= new JacksonUtils().deserialize(CONFIG_PATH, TomcatConfig.class);
 				
 				if(tomcatConfig == null || CommonUtils.isEmpty(tomcatConfig)) {
 					throw new Exception(CONFIG_PATH + " config is emtpy");

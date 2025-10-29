@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import kr.tx24.lib.conf.Configure;
+import kr.tx24.lib.lb.LoadBalancer;
 
 /**
  * 시스템 초기화 유틸리티
@@ -47,6 +48,9 @@ public class SystemUtils {
 
     private static final String CONFIG_LOADBALANCE 	= "nlb.json";
     private static final String CONFIG_DATABASE 	= "db.json";
+    private static final String CONFIG_INET			= "inet.json";
+    private static final String CONFIG_API			= "api.json";
+    private static final String CONFIG_SERVER		= "server.json";
     private static final String CONFIG_DEEPVIEW 	= "deep.view";
 
     public static final String LOG_ENV_DEFAULT 		= "true,false,false";
@@ -129,6 +133,10 @@ public class SystemUtils {
         // deep.view 감시
         scheduler.scheduleAtFixedRate(SystemUtils::checkDeepView, 100, 10*1000, TimeUnit.MILLISECONDS);
         
+        if(Files.exists(getLoadBalanceConfigPath())) {
+        	LoadBalancer.start();
+        }
+        
         //System.err.println("SystemUtils initialized"); 
 
     }
@@ -166,6 +174,12 @@ public class SystemUtils {
     public static String getConfigDirectory() {
         return System.getProperty(PROPERTY_CONFIG, getRootDirectory() + File.separator + "conf");
     }
+    
+    
+    public static Path getConfigPath(String configFile) {
+    	return Paths.get(getConfigDirectory(),configFile);
+    }
+    
 
     public static String getRootDirectory() {
         String dir = System.getProperty("user.dir");
@@ -286,17 +300,33 @@ public class SystemUtils {
         return PROPERTY_NONE;
     }
 
-    public static String getLoadBalanceConfig() {
-        return System.getProperty(PROPERTY_LOADBALANCE, getConfigDirectory() + File.separator + CONFIG_LOADBALANCE);
+    
+    public static Path getLoadBalanceConfigPath() {
+    	return getSystemPathProperty(PROPERTY_LOADBALANCE, Paths.get(getConfigDirectory(), CONFIG_LOADBALANCE));
     }
 
-    public static String getDatabaseConfig() {
-        return System.getProperty(PROPERTY_DBCONFIG, getConfigDirectory() + File.separator + CONFIG_DATABASE);
+    public static Path getDatabaseConfigPath() {
+    	return getSystemPathProperty(PROPERTY_DBCONFIG, Paths.get(getConfigDirectory(), CONFIG_DATABASE));
+    }
+    
+    public static Path getWasConfigPath() {
+    	return Paths.get(getConfigDirectory(), CONFIG_SERVER);
+    }
+    
+    public static Path getApiConfigPath() {
+    	return Paths.get(getConfigDirectory(), CONFIG_API);
+    }
+    
+    public static Path getINetConfigPath() {
+    	return Paths.get(getConfigDirectory(), CONFIG_INET);
+    }
+    
+    
+
+    public static Path getLogDirectory() {
+    	return getSystemPathProperty(PROPERTY_LOG_DIR, Paths.get(getRootDirectory(), "logs"));
     }
 
-    public static String getLogDirectory() {
-        return System.getProperty(PROPERTY_LOG_DIR, getRootDirectory() + File.separator + "logs");
-    }
 
     public static int getLogMaxDay() {
         try { return Integer.parseInt(System.getProperty(PROPERTY_LOG_MAX, "60")); } catch (Exception e) { return 60; }
@@ -345,6 +375,21 @@ public class SystemUtils {
         }
 
         return String.join(".", Arrays.copyOf(parts, depth));
+    }
+    
+    
+    public static String getSystemProperty(String key, String def) {
+    	return System.getProperty(key, def);
+    }
+    
+    
+    public static Path getSystemPathProperty(String key, Path path) {
+    	if(CommonUtils.isEmpty(System.getProperty(key))){
+    		return path;
+    	}else {
+    		return Paths.get(System.getProperty(key));
+    	}
+    	
     }
     
     

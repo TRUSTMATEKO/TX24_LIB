@@ -3,7 +3,6 @@ package kr.tx24.inet.conf;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 
 import org.slf4j.Logger;
@@ -17,7 +16,7 @@ import kr.tx24.lib.mapper.JacksonUtils;
 public class INetConfigLoader {
 	
 	private static final Logger logger = LoggerFactory.getLogger(INetConfigLoader.class);
-	private static Path CONFIG_PATH		= Paths.get(SystemUtils.getConfigDirectory(),"inet.json");
+	private static Path CONFIG_PATH	   = SystemUtils.getINetConfigPath();
 	private static volatile SharedMap<String,Object> configMap = null;
 	
 	private static final Object LOCK = new Object();

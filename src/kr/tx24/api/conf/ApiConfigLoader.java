@@ -15,7 +15,7 @@ import kr.tx24.lib.mapper.JacksonUtils;
 public class ApiConfigLoader {
 
 	private static final Logger logger = LoggerFactory.getLogger(ApiConfigLoader.class);
-	private static Path CONFIG_PATH		= Paths.get(SystemUtils.getConfigDirectory(),"api.json");
+	private static Path CONFIG_PATH	   = SystemUtils.getApiConfigPath();
 	private static volatile ApiConfig configBean = null;
 	
 	private static final Object LOCK = new Object();
