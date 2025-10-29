@@ -4,6 +4,7 @@ import java.io.File;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -30,17 +31,19 @@ public class LoadBalancer {
 
     private static final Logger logger = LoggerFactory.getLogger(LoadBalancer.class);
 
-    private static final String LB_CONF = SystemUtils.getLoadBalanceConfig();
+    private static final Path LB_CONF = SystemUtils.getLoadBalanceConfigPath();
     private static final ConcurrentHashMap<String, ConcurrentHashMap<String, Integer>> SERVER_POOLS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, List<String>> SERVER_LIST = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, AtomicInteger> SERVER_POSITION = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Set<String>> SERVER_BROKEN_LIST = new ConcurrentHashMap<>();
     private static volatile boolean enabled = false;
+    private static volatile boolean started = false;
     private static volatile long lastConfigModified = 0;
     
     
-    private static final int DEFAULT_INTERVAL = 5;
+    private static final int DEFAULT_INTERVAL = 10;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private static final Object START_LOCK = new Object();
 
     public static boolean isEnabled() {
         return enabled;
@@ -53,23 +56,45 @@ public class LoadBalancer {
     
 
     public static void start(int intervalSeconds) {
-        File configFile = new File(LB_CONF);
-        if (!configFile.exists()) {
-            logger.error("LoadBalancer config not found: {}", LB_CONF);
-            return;
-        }
-
-        logger.info("LoadBalancer config: {}", LB_CONF);
-        logger.info("LoadBalancer started, interval {} sec", intervalSeconds);
-
-        scheduler.scheduleAtFixedRate(() -> {
-            try {
-                reloadBrokenServers();
-                reloadConfigIfModified(configFile);
-            } catch (Exception e) {
-                logger.error("LoadBalancer scheduler error", e);
+        synchronized (START_LOCK) {
+            if (started) {
+                logger.warn("LoadBalancer is already started. Ignoring duplicate start() call.");
+                return;
             }
-        }, 0, intervalSeconds, TimeUnit.SECONDS);
+            
+            File configFile = LB_CONF.toFile();
+            if(!Files.exists(LB_CONF)) {
+                logger.error("LoadBalancer config not found: {}", LB_CONF);
+                return;
+            }
+
+            logger.info("LoadBalancer config: {}", LB_CONF);
+            
+            // 즉시 초기 설정 로드   
+            reloadConfigIfModified(configFile);
+            if (!enabled) {
+            	System.err.println("NLB 활성화 실패로 자동 종료합니다. 자동 시작을 없애려면 -DNLB 또는 nlb.json 파일을 삭제하시기 바랍니다.");
+            	System.exit(1);
+            }
+        
+            
+            logger.info("LoadBalancer started, interval {} sec", intervalSeconds);
+
+            scheduler.scheduleAtFixedRate(() -> {
+                try {
+                    reloadBrokenServers();
+                    reloadConfigIfModified(configFile);
+                } catch (Exception e) {
+                    logger.error("LoadBalancer scheduler error", e);
+                }
+            }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
+            
+            Runtime.getRuntime().addShutdownHook(
+                new Thread(LoadBalancer::shutdown, "ShutdownHook-LoadBalancer")
+            );
+            
+            started = true;
+        }
     }
 
     private static void reloadBrokenServers() {
@@ -89,19 +114,13 @@ public class LoadBalancer {
                 return; // 변경 없음 → 리턴
             }
 
-            byte[] bytes = Files.readAllBytes(configFile.toPath());
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.setDefaultPropertyInclusion(Include.NON_NULL);
-            mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-            Map<String, Map<String, Integer>> pools = mapper.readValue(
-                    bytes,
-                    new TypeReference<Map<String, Map<String, Integer>>>() {}
-            );
-
+            
+            Map<String, Map<String, Integer>> pools = 
+            		new JacksonUtils().fromJson(Files.readAllBytes(configFile.toPath()), new TypeReference<Map<String, Map<String, Integer>>>() {});
+            
             pools.forEach((key, serverMap) -> {
                 List<String> weightedList = serverMap.entrySet().stream()
-                        .flatMap(e -> Collections.nCopies(Math.min(e.getValue(), 5), e.getKey()).stream())
+                        .flatMap(e -> Collections.nCopies(Math.min(e.getValue(), 100), e.getKey()).stream())
                         .collect(Collectors.toList());
                 Collections.shuffle(weightedList);
 
@@ -123,7 +142,7 @@ public class LoadBalancer {
         String[] parts = server.split(":");
         if (parts.length != 2) return false;
         try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(parts[0], Integer.parseInt(parts[1])), 300);
+            socket.connect(new InetSocketAddress(parts[0], Integer.parseInt(parts[1])), 500);
             return true;
         } catch (Exception e) {
             return false;
@@ -162,5 +181,34 @@ public class LoadBalancer {
     public static void setBrokenServer(String key, String server) {
         SERVER_BROKEN_LIST.computeIfAbsent(key, k -> ConcurrentHashMap.newKeySet()).add(server);
         logger.info("Added broken server: {}", server);
+    }
+    
+    
+    
+    public static synchronized void shutdown() {
+        if (scheduler.isShutdown()) {
+            return;
+        }
+        
+        logger.info("LoadBalancer shutting down...");
+        
+        try {
+            //즉시 강제 종료
+            scheduler.shutdownNow();
+            
+            // 종료 확인만 (1초)
+            if (!scheduler.awaitTermination(1, TimeUnit.SECONDS)) {
+                logger.warn("LoadBalancer scheduler could not be terminated within 1 second");
+            } else {
+                logger.info("LoadBalancer scheduler shutdown completed");
+            }
+            
+            started = false;
+            enabled = false;
+            
+        } catch (InterruptedException e) {
+            logger.warn("LoadBalancer shutdown interrupted");
+            Thread.currentThread().interrupt();
+        }
     }
 }
