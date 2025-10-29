@@ -187,6 +187,23 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
         }
     }
     
+    /**
+     * Map을 TypeRegistry 타입으로 변환
+     * 
+     * @param <V> 반환 타입
+     * @param map 변환할 Map
+     * @param typeRegistry TypeRegistry
+     * @return 변환된 객체 또는 null
+     */
+    public <T> T convertValue(Map<?, ?> map, TypeRegistry typeRegistry) {
+        try {
+        	return mapper.convertValue(map, typeRegistry.get());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    
+    
     
     public JsonNode toJsonNode(String value) {
         try {
@@ -196,6 +213,8 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
             return null;
         }
     }
+    
+    
     
     
     

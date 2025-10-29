@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -70,17 +71,105 @@ public class SharedMap<K, V> extends ConcurrentHashMap<K, V> {
         return CommonUtils.parseDouble(val);
     }
 
+    
+    /**
+     * TypeRegistry로 Map 타입 반환
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * LinkedMap<String, Object> map = new LinkedMap<>();
+     * 
+     * // SharedMap 가져오기
+     * SharedMap<String, Object> sharedMap = map.getMap("data", TypeRegistry.MAP_SHAREDMAP_OBJECT);
+     * 
+     * // LinkedMap 가져오기
+     * LinkedMap<String, Object> linkedMap = map.getMap("data", TypeRegistry.MAP_LINKEDMAP_OBJECT);
+     * 
+     * // ConcurrentHashMap 가져오기
+     * ConcurrentHashMap<String, Object> concurrent = map.getMap("data", TypeRegistry.MAP_CONCURRENTHASHMAP_OBJECT);
+     * 
+     * // TreeMap 가져오기
+     * TreeMap<String, Object> treeMap = map.getMap("data", TypeRegistry.MAP_TREEMAP_OBJECT);
+     * </pre>
+     * 
+     * @param <T> Map 타입
+     * @param key 키
+     * @param typeRegistry TypeRegistry
+     * @return 변환된 Map 또는 null
+     */
     @SuppressWarnings("unchecked")
-    public SharedMap<String, Object> getSharedMap(String key) {
+    public <T extends Map<?, ?>> T getMap(String key, TypeRegistry typeRegistry) {
         V val = super.get(key);
-        if (val instanceof SharedMap) return (SharedMap<String, Object>) val;
-        return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    public LinkedHashMap<String, Object> getLinkedHashMap(String key) {
-        V val = super.get(key);
-        if (val instanceof LinkedHashMap) return (LinkedHashMap<String, Object>) val;
+        if (val == null) {
+            return null;
+        }
+        
+        // 이미 해당 타입인 경우
+        try {
+            // TypeRegistry에서 기대하는 타입 확인
+            switch (typeRegistry) {
+                case MAP_SHAREDMAP_OBJECT:
+                case MAP_SHAREDMAP_STRING:
+                    if (val instanceof SharedMap) {
+                        return (T) val;
+                    }
+                    break;
+                    
+                case MAP_LINKEDMAP_OBJECT:
+                case MAP_LINKEDMAP_STRING:
+                    if (val instanceof LinkedMap) {
+                        return (T) val;
+                    }
+                    break;
+                    
+                case MAP_LINKEDHASHMAP_OBJECT:
+                case MAP_LINKEDHASHMAP_STRING:
+                    if (val instanceof LinkedHashMap) {
+                        return (T) val;
+                    }
+                    break;
+                    
+                case MAP_CONCURRENTHASHMAP_OBJECT:
+                case MAP_CONCURRENTHASHMAP_STRING:
+                    if (val instanceof ConcurrentHashMap) {
+                        return (T) val;
+                    }
+                    break;
+                    
+                case MAP_THREADSAFE_LINKEDMAP_OBJECT:
+                case MAP_THREADSAFE_LINKEDMAP_STRING:
+                    if (val instanceof ThreadSafeLinkedMap) {
+                        return (T) val;
+                    }
+                    break;
+                    
+                case MAP_TREEMAP_OBJECT:
+                case MAP_TREEMAP_STRING:
+                    if (val instanceof TreeMap) {
+                        return (T) val;
+                    }
+                    break;
+                    
+                case MAP_OBJECT:
+                case MAP_STRING:
+                    if (val instanceof Map) {
+                        return (T) val;
+                    }
+                    break;
+                    
+                default:
+                    break;
+            }
+            
+            // 타입이 다른 경우 Jackson으로 변환 시도
+            if (val instanceof Map) {
+                return new JacksonUtils().getMapper().convertValue(val, typeRegistry.get());
+            }
+            
+        } catch (Exception e) {
+            // 변환 실패시 null 반환
+        }
+        
         return null;
     }
 

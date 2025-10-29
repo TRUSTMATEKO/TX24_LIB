@@ -70,7 +70,7 @@ public class RequestWrapper extends HttpServletRequestWrapper {
             
             @Override
             public void setReadListener(ReadListener readListener) {
-                // 💡 비동기 처리(Async)를 지원하지 않으므로 구현하지 않음.
+                // 비동기 처리(Async)를 지원하지 않으므로 구현하지 않음.
                 // 이 클래스는 비동기 I/O를 지원하지 않습니다.
             }
             
