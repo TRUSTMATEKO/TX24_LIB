@@ -17,12 +17,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import kr.tx24.lib.conf.Configure;
 import kr.tx24.lib.lb.LoadBalancer;
+import kr.tx24.lib.logback.LogBackConfigure;
 
 /**
  * 시스템 초기화 유틸리티
@@ -30,6 +32,7 @@ import kr.tx24.lib.lb.LoadBalancer;
  */
 public class SystemUtils {
 
+	
     private static final String PROPERTY_NONE 		= "N/A";
     private static final String PROPERTY_CONFIG 	= "CONF";
     private static final String PROPERTY_PROCESS 	= "PROC";
@@ -111,14 +114,7 @@ public class SystemUtils {
         
         System.setProperty("SystemUtils.INITIALIZED", "true");
         
-        
-        
-        if (Boolean.getBoolean(PROPERTY_JVM_MONITOR)) {
-        	JvmStatusUtils.start();
-        }
-
-       
-
+    
         // 초기 정보 출력
         System.err.println("__________________________");
         String art = """
@@ -131,10 +127,12 @@ public class SystemUtils {
         System.err.println("JDK     " + getJavaVersion());
         System.err.println("CONFIG  " + getConfigDirectory());
         System.err.println("PROC    " + getLocalProcessName() +",H:"+getLocalHostname()+",I:"+getLocalAddress()+",P:"+getLocalProcessId());
-        // deep.view 감시
         
-        checkDeepView();
-        scheduler.scheduleAtFixedRate(SystemUtils::checkDeepView, 10*1000, 10*1000, TimeUnit.MILLISECONDS);
+        scheduler.scheduleAtFixedRate(SystemUtils::checkDeepView, 0, 10*1000, TimeUnit.MILLISECONDS);
+        
+        if (Boolean.getBoolean(PROPERTY_JVM_MONITOR)) {
+        	JvmStatusUtils.start();
+        }
         
         if(Files.exists(getLoadBalanceConfigPath())) {
         	LoadBalancer.start();
@@ -147,6 +145,7 @@ public class SystemUtils {
 
 
     private static void checkDeepView() {
+    	
     	try {
             Path deepViewPath = Paths.get(getConfigDirectory(), CONFIG_DEEPVIEW);
             boolean fileExists = Files.exists(deepViewPath);

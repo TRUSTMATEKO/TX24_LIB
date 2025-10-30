@@ -2,8 +2,6 @@ package kr.tx24.lib.logback;
 
 import java.io.File;
 import java.util.Arrays;
-import java.util.List;
-import java.util.regex.Pattern;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -34,8 +32,11 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
     static {
         // Logback 내부 상태 메시지를 OFF로 설정
         System.setProperty("logback.statusListener", "ch.qos.logback.core.status.NopStatusListener");
+        
         // 또는, 콘솔 메시지 레벨 자체를 조정
         // System.setProperty("logback.status.level", "OFF");
+        //아래는 짜증나는 SLF4J(W): A number (3) of logging calls during the initialization phase 를 없애려고
+        System.setProperty("slf4j.internal.verbosity", "ERROR");
     }
     
 
@@ -138,7 +139,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         setExternalLogLevel(ctx);
 
         if(SystemUtils.deepview()) {
-        	System.err.println(MsgUtils.format("LOG   : console={}, local={}, remote={}", LOG_APPENDER[0], LOG_APPENDER[1], LOG_APPENDER[2]));
+        	System.err.println(MsgUtils.format("LOG     console={}, local={}, remote={}", LOG_APPENDER[0], LOG_APPENDER[1], LOG_APPENDER[2]));
         }
         
 

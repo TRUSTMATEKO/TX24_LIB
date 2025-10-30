@@ -246,29 +246,61 @@ public final class MapFactory {
         return new LinkedMap<>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
     }
     
-    @SuppressWarnings("unchecked")
+    
+    /**
+     * TypeRegistry를 기반으로 초기 용량을 지정하여 Map&lt;String, Object&gt; 인스턴스 생성
+     * 
+     * @param <T> Map&lt;String, Object&gt;를 상속하는 타입
+     * @param typeRegistry Map 타입 레지스트리
+     * @return 생성된 Map&lt;String, Object&gt; 인스턴스
+     */
 	public static <T extends Map<String,Object>> T createObjectMap(TypeRegistry typeRegistry) {
+	    return createObjectMap(typeRegistry,DEFAULT_INITIAL_CAPACITY);
+	}
+    
+    /**
+     * TypeRegistry를 기반으로 초기 용량을 지정하여 Map&lt;String, Object&gt; 인스턴스 생성
+     * 
+     * @param <T> Map&lt;String, Object&gt;를 상속하는 타입
+     * @param typeRegistry Map 타입 레지스트리
+     * @param initialCapacity 초기 용량
+     * @return 생성된 Map&lt;String, Object&gt; 인스턴스
+     */
+    @SuppressWarnings("unchecked")
+	public static <T extends Map<String,Object>> T createObjectMap(TypeRegistry typeRegistry, int initialCapacity) {
 	    switch (typeRegistry) {
 	        case MAP_OBJECT:
-	            return (T) new java.util.HashMap<String, Object>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+	            return (T) new java.util.HashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_SHAREDMAP_OBJECT:
-	            return (T) new SharedMap<String, Object>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+	            return (T) new SharedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_LINKEDMAP_OBJECT:
-	            return (T) new LinkedMap<String, Object>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+	            return (T) new LinkedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_THREADSAFE_LINKEDMAP_OBJECT:
-	            return (T) new ThreadSafeLinkedMap<String, Object>();
+	            return (T) new ThreadSafeLinkedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_LINKEDHASHMAP_OBJECT:
-	            return (T) new LinkedHashMap<String, Object>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+	            return (T) new LinkedHashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_CONCURRENTHASHMAP_OBJECT:
-	            return (T) new ConcurrentHashMap<String, Object>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+	            return (T) new ConcurrentHashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_TREEMAP_OBJECT:
 	            return (T) new TreeMap<String, Object>();
+	        case MAP_STRING:
+	            return (T) new java.util.HashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	        case MAP_LINKEDHASHMAP_STRING:
+	            return (T) new LinkedHashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	        case MAP_CONCURRENTHASHMAP_STRING:
+	            return (T) new ConcurrentHashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	        case MAP_TREEMAP_STRING:
+	            return (T) new TreeMap<String, Object>();
+	        case MAP_SHAREDMAP_STRING:
+	            return (T) new SharedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	        case MAP_LINKEDMAP_STRING:
+	            return (T) new LinkedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	        case MAP_THREADSAFE_LINKEDMAP_STRING:
+	            return (T) new ThreadSafeLinkedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        default:
 	            throw new IllegalArgumentException("Unsupported TypeRegistry: " + typeRegistry);
 	    }
 	}
-    
-    
     
     public static <T extends Map<String, Object>> T createObjectMap(Class<T> clazz) {
         return createObjectMap(clazz, DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);

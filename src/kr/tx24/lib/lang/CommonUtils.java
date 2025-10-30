@@ -507,7 +507,7 @@ public class CommonUtils {
 	 * @return
 	 */
 	public static String getExceptionMessage(Exception e){
-		return getExceptionMessage(e, 20);
+		return getExceptionMessage(e, 100);
 	}
 	
 	/**
@@ -538,7 +538,7 @@ public class CommonUtils {
 	}
 	
 	public static String getExceptionMessage(Throwable cause) {
-		return getExceptionMessage(cause,20);
+		return getExceptionMessage(cause,100);
 	}
 	
 	
@@ -814,6 +814,7 @@ public class CommonUtils {
 
 	    // 5. 예외 및 그 외
 	    if (o instanceof Throwable t) return getExceptionMessage(t);
+	    if (o instanceof Exception e) return getExceptionMessage(e);
 
 	    // Default
 	    return o.toString();
@@ -1295,23 +1296,26 @@ public class CommonUtils {
 	
 	
 	
-	public static byte[] getBytes(String str) {
-	    return getBytes(str, Charset.defaultCharset());
+	public static byte[] getBytes(Object obj) {
+	    return getBytes(obj, Charset.defaultCharset());
 	}
 
-	public static byte[] getBytes(String str, Charset charset) {
-	    if (str == null) return new byte[0];
-	    return str.getBytes(charset);
-	}
-
-	public static byte[] getBytes(String str, String charsetName) {
-	    if (str == null) return new byte[0];
-	    try {
-	        return str.getBytes(charsetName);
-	    } catch (UnsupportedEncodingException e) {
-	        // 필요시 로깅
-	        return new byte[0];
+	public static byte[] getBytes(Object obj, Charset charset) {
+	    if (obj == null) return new byte[0];
+	    
+	    if (obj instanceof String) {
+	        return ((String) obj).getBytes(charset);
 	    }
+	    
+	    if (obj instanceof byte[]) {
+	        return (byte[]) obj;
+	    }
+	    
+	    return toString(obj).getBytes(charset);
+	}
+
+	public static byte[] getBytes(Object obj, String charsetName) {
+	    return getBytes(obj, Charset.forName(charsetName));
 	}
 	
 	
@@ -1334,40 +1338,93 @@ public class CommonUtils {
 	
 	
 	/**
-	 * 문자열 길이를 반환합니다. null이면 0.
-	 * @param cs 문자열
-	 * @return 문자 개수
-	 */
-	public static int length(CharSequence cs) {
-	    return cs == null ? 0 : cs.length();
-	}
-
-	/**
-	 * 문자열의 바이트 길이를 반환합니다. null이면 0.
-	 * @param cs 문자열
-	 * @param charset 바이트 변환에 사용할 Charset
+	 * Object의 바이트 길이를 반환합니다.
+	 * - byte[] : 배열 길이
+	 * - Byte : 1
+	 * - Collection (List, Set 등) : size()
+	 * - Map : size()
+	 * - Number (Integer, Long 등) : 자릿수 (음수 부호 포함)
+	 * - 나머지 Object : toString() 후 기본 Charset으로 변환한 바이트 길이
+	 * - null : 0
+	 * 
+	 * @param obj 객체
 	 * @return 바이트 길이
 	 */
-	public static int byteLength(CharSequence cs, Charset charset) {
-	    if (cs == null) return 0;
-	    return cs.toString().getBytes(charset).length;
+	public static int length(Object obj) {
+	    return length(obj, Charset.defaultCharset());
 	}
-
+	
 	/**
-	 * 문자열의 바이트 길이를 반환합니다. null이면 0.
-	 * @param cs 문자열
+	 * Object의 바이트 길이를 반환합니다.
+	 * - byte[] : 배열 길이
+	 * - Byte : 1
+	 * - Collection (List, Set 등) : size()
+	 * - Map : size()
+	 * - Number (Integer, Long 등) : 자릿수 (음수 부호 포함)
+	 * - 나머지 Object : toString() 후 지정된 Charset으로 변환한 바이트 길이
+	 * - null : 0
+	 * 
+	 * @param obj 객체
 	 * @param charsetName 바이트 변환에 사용할 Charset 이름
 	 * @return 바이트 길이
 	 */
-	public static int byteLength(CharSequence cs, String charsetName) {
-	    if (cs == null) return 0;
+	public static int length(Object obj, String charsetName) {
 	    try {
-	        return cs.toString().getBytes(charsetName).length;
-	    } catch (UnsupportedEncodingException e) {
+	        Charset charset = Charset.forName(charsetName);
+	        return length(obj, charset);
+	    } catch (Exception e) {
 	        // 필요 시 로깅
 	        return 0;
 	    }
 	}
+
+	/**
+	 * Object의 바이트 길이를 반환합니다.
+	 * - byte[] : 배열 길이
+	 * - Byte : 1
+	 * - Collection (List, Set 등) : size()
+	 * - Map : size()
+	 * - Number (Integer, Long 등) : 자릿수 (음수 부호 포함)
+	 * - 나머지 Object : toString() 후 지정된 Charset으로 변환한 바이트 길이
+	 * - null : 0
+	 * 
+	 * @param obj 객체
+	 * @param charset 바이트 변환에 사용할 Charset
+	 * @return 바이트 길이
+	 */
+	public static int length(Object obj, Charset charset) {
+	    if (obj == null) return 0;
+	    
+	    // byte[] 처리
+	    if (obj instanceof byte[]) {
+	        return ((byte[]) obj).length;
+	    }
+	    
+	    // Byte 처리
+	    if (obj instanceof Byte) {
+	        return 1;
+	    }
+	    
+	    // Collection 처리 (List, Set, Queue 등)
+	    if (obj instanceof Collection) {
+	        return ((Collection<?>) obj).size();
+	    }
+	    
+	    // Map 처리
+	    if (obj instanceof Map) {
+	        return ((Map<?, ?>) obj).size();
+	    }
+	    
+	    // Number 처리 (Integer, Long, Double, Float, BigInteger 등)
+	    // 자릿수를 반환 (음수 부호, 소수점 포함)
+	    if (obj instanceof Number) {
+	        return obj.toString().length();
+	    }
+	    
+	    // 나머지는 toString() -> getBytes()
+	    return toString(obj).getBytes(charset).length;
+	}
+
 	
 	
 	
@@ -1397,127 +1454,187 @@ public class CommonUtils {
 	    return new String(newCodePoints, 0, outOffset);
 	}
 
-	/**
-	 * 문자열에서 모든 이모지 제거.
-	 */
-	public static String removeEmoji(String str) {
-	    if (isEmpty(str)) return "";
-
-	    // 이모지 및 특수 유니코드 블록 제거 (emoticons, symbols, pictographs 등)
-	    return str.replaceAll("[\\p{So}\\p{Cn}\\p{Cs}]", "");
-	}
-	
-	
 	
 	
 	/**
-	 * keys 중 map에 없는 키 목록 반환
+	 * UTF8MB4(4바이트) 문자를 UTF8(3바이트)로 변환합니다.
+	 * 4바이트 문자(이모지, 일부 한자 등)는 제거됩니다.
+	 * 
+	 * @param str 원본 문자열
+	 * @return 3바이트 이하 문자만 포함된 문자열
+	 * 
+	 * @example
+	 * <pre>
+	 * toUtf8("Hello 😀 World")   // "Hello  World"
+	 * toUtf8("안녕하세요 🎉")      // "안녕하세요 "
+	 * toUtf8("안녕하세요")         // "안녕하세요"
+	 * toUtf8(null)               // null
+	 * </pre>
 	 */
-	public static <K, V> List<K> findEmptyKeys(Map<K, V> map, List<K> keys) {
-	    List<K> emptyKeys = new ArrayList<>();
-	    if (map == null || map.isEmpty() || keys == null || keys.isEmpty()) {
-	        return emptyKeys;
+	public static String toUtf8(String str) {
+	    if (str == null || str.isEmpty()) {
+	        return str;
 	    }
-	    for (K key : keys) {
-	        if (!map.containsKey(key)) {
-	            emptyKeys.add(key);
+	    
+	    StringBuilder result = new StringBuilder();
+	    
+	    for (int i = 0; i < str.length(); i++) {
+	        int codePoint = str.codePointAt(i);
+	        int charCount = Character.charCount(codePoint);
+	        
+	        // U+FFFF 이하(3바이트 이하)만 추가
+	        if (codePoint <= 0xFFFF) {
+	            result.appendCodePoint(codePoint);
 	        }
+	        
+	        i += charCount - 1;
 	    }
-	    return emptyKeys;
+	    
+	    return result.toString();
 	}
-
-	/**
-	 * keys 중 map에 없는 첫 번째 키 반환 (없으면 null)
-	 */
-	public static <K, V> K findEmptyKey(Map<K, V> map, List<K> keys) {
-	    List<K> emptyKeys = findEmptyKeys(map, keys);
-	    return emptyKeys.isEmpty() ? null : emptyKeys.get(0);
-	}
-	
-	
-	
 	
 	
 	/**
-	 * keys 중 map에서 값이 없거나 null/빈 문자열인 항목 반환
-	 */
-	public static <K, V> List<K> findEmptyValues(Map<K, V> map, List<K> keys) {
-	    List<K> emptyKeys = new ArrayList<>();
-	    if (map == null || map.isEmpty() || keys == null || keys.isEmpty()) {
-	        return emptyKeys;
-	    }
-
-	    for (K key : keys) {
-	        if (!map.containsKey(key)) {
-	            emptyKeys.add(key);
-	        } else {
-	            Object value = map.get(key);
-	            if (value == null || (value instanceof CharSequence cs && cs.toString().trim().isEmpty())) {
-	                emptyKeys.add(key);
-	            }
-	        }
-	    }
-	    return emptyKeys;
-	}
-
+     * map에 존재하지 않는 키들을 반환합니다.
+     * 
+     * @param map 검사할 맵
+     * @param keys 확인할 키 목록
+     * @return 맵에 없는 키 목록
+     * 
+     * @example
+     * <pre>
+     * Map<String, String> map = Map.of("name", "홍길동");
+     * List<String> missing = findMissingKeys(map, List.of("name", "age"));
+     * // 결과: ["age"]
+     * </pre>
+     */
+    public static <K, V> List<K> findMissingKeys(Map<K, V> map, List<K> keys) {
+        if (isEmpty(map) || isEmpty(keys)) return Collections.emptyList();
+        
+        return keys.stream()
+            .filter(key -> !map.containsKey(key))
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * map에 존재하지 않는 첫 번째 키를 반환합니다.
+     * 
+     * @param map 검사할 맵
+     * @param keys 확인할 키 목록
+     * @return 맵에 없는 첫 번째 키 (모두 존재하면 null)
+     */
+    public static <K, V> K findMissingKey(Map<K, V> map, List<K> keys) {
+        if (isEmpty(map) || isEmpty(keys)) return null;
+        
+        return keys.stream()
+            .filter(key -> !map.containsKey(key))
+            .findFirst()
+            .orElse(null);
+    }
+    
+    /**
+     * map에서 값이 비어있는 키들을 반환합니다.
+     * (키가 없거나, 값이 null이거나, 빈 문자열인 경우)
+     * 
+     * @param map 검사할 맵
+     * @param keys 확인할 키 목록
+     * @return 값이 비어있는 키 목록
+     * 
+     * @example
+     * <pre>
+     * Map<String, String> map = new HashMap<>();
+     * map.put("name", "홍길동");
+     * map.put("age", "");
+     * map.put("email", null);
+     * 
+     * List<String> empty = findEmptyValues(map, List.of("name", "age", "email", "phone"));
+     * // 결과: ["age", "email", "phone"]
+     * </pre>
+     */
+    public static <K, V> List<K> findEmptyValues(Map<K, V> map, List<K> keys) {
+        if (isEmpty(map) || isEmpty(keys)) return Collections.emptyList();
+        
+        return keys.stream()
+            .filter(key -> !map.containsKey(key) || isEmptyValue(map.get(key)))
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * map에서 값이 비어있는 첫 번째 키를 반환합니다.
+     * 
+     * @param map 검사할 맵
+     * @param keys 확인할 키 목록
+     * @return 값이 비어있는 첫 번째 키 (모두 값이 있으면 null)
+     */
+    public static <K, V> K findEmptyValue(Map<K, V> map, List<K> keys) {
+        if (isEmpty(map) || isEmpty(keys)) return null;
+        
+        return keys.stream()
+            .filter(key -> !map.containsKey(key) || isEmptyValue(map.get(key)))
+            .findFirst()
+            .orElse(null);
+    }
+    
+    /**
+     * map에서 하나라도 값이 비어있는지 확인합니다.
+     * 
+     * @param map 검사할 맵
+     * @param keys 확인할 키 목록
+     * @return 하나라도 비어있으면 true
+     */
+    public static <K, V> boolean hasEmptyValue(Map<K, V> map, List<K> keys) {
+        return findEmptyValue(map, keys) != null;
+    }
+    
+    /**
+     * map의 모든 값이 비어있지 않은지 확인합니다.
+     * 
+     * @param map 검사할 맵
+     * @param keys 확인할 키 목록
+     * @return 모두 값이 있으면 true
+     */
+    public static <K, V> boolean hasNoEmptyValue(Map<K, V> map, List<K> keys) {
+        return findEmptyValue(map, keys) == null;
+    }
+    
+    
+    
 	/**
-	 * keys 중 map에서 값이 없거나 null/빈 문자열인 항목이 하나라도 있으면 true
-	 */
-	public static <K, V> boolean isEmptyValues(Map<K, V> map, List<K> keys) {
-	    return !findEmptyValues(map, keys).isEmpty();
-	}
+     * 필드 값이 비어있는지 확인합니다.
+     */
+    public static <T> boolean isFieldEmpty(T obj, String fieldName) {
+        try {
+            Field field = getFieldRecursive(obj.getClass(), fieldName);
+            if (field == null) return true;
+            
+            field.setAccessible(true);
+            Object value = field.get(obj);
+            
+            return isEmptyValue(value);
+            
+        } catch (Exception e) {
+            // 접근 불가능한 필드는 비어있는 것으로 간주
+            return true;
+        }
+    }
+    
 
-	/**
-	 * keys 중 map에서 값이 없거나 null/빈 문자열인 항목이 없으면 true
-	 */
-	public static <K, V> boolean isNotEmptyValues(Map<K, V> map, List<K> keys) {
-	    return findEmptyValues(map, keys).isEmpty();
-	}
-
+    
+    /**
+     * 클래스 계층 구조에서 필드를 재귀적으로 찾습니다.
+     */
+    public static Field getFieldRecursive(Class<?> clazz, String fieldName) {
+        Class<?> current = clazz;
+        while (current != null) {
+            try {
+                return current.getDeclaredField(fieldName);
+            } catch (NoSuchFieldException e) {
+                current = current.getSuperclass();
+            }
+        }
+        return null;
+    }
 	
-	
-	public static <T> String getEmptyField(T obj, List<String> keys) {
-	    List<String> emptyFields = getEmptyFields(obj, keys);
-	    return emptyFields.isEmpty() ? null : emptyFields.get(0);
-	}
-
-	public static <T> List<String> getEmptyFields(T obj, List<String> keys) {
-	    List<String> emptyFields = new ArrayList<>();
-	    if (obj == null || keys == null || keys.isEmpty()) return emptyFields;
-
-	    Class<?> clazz = obj.getClass();
-	    for (String key : keys) {
-	        try {
-	            Field field = getFieldRecursive(clazz, key);
-	            if (field == null) continue;
-
-	            field.setAccessible(true);
-	            Object value = field.get(obj);
-
-	            if (value == null || isEmptyValue(value)) {
-	                emptyFields.add(key);
-	            }
-	        } catch (Exception e) {
-	            // 필드별 예외는 로그만 남기고 계속 진행
-	            logger.info("Reflect error for field '{}': {}", key, getExceptionMessage(e));
-	        }
-	    }
-	    return emptyFields;
-	}
-
-	/**
-	 * 상위 클래스까지 포함해서 필드 탐색
-	 */
-	private static Field getFieldRecursive(Class<?> clazz, String fieldName) {
-	    while (clazz != null) {
-	        try {
-	            return clazz.getDeclaredField(fieldName);
-	        } catch (NoSuchFieldException e) {
-	            clazz = clazz.getSuperclass();
-	        }
-	    }
-	    return null;
-	}
 
 	/**
 	 * 값이 비어있는지 확인

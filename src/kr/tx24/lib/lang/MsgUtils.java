@@ -40,7 +40,7 @@ public class MsgUtils {
     private static void deeplyAppendParameter(StringBuilder sb, Object o, Map<Object[], Object> seen) {
         if (o == null) { sb.append("null"); return; }
         Class<?> cls = o.getClass();
-        if (!cls.isArray()) { sb.append(o); return; }
+        if (!cls.isArray()) { sb.append(CommonUtils.toString(o)); return; }
 
         if (cls == boolean[].class || cls == byte[].class || cls == char[].class ||
             cls == short[].class || cls == int[].class || cls == long[].class ||
