@@ -34,15 +34,15 @@ import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.AttributeKey;
 import io.netty.util.CharsetUtil;
-import mik.lib.inter.INet;
-import mik.lib.json.JacksonUtils;
-import mik.lib.lang.CommonUtils;
-import mik.lib.lang.MsgUtils;
-import mik.lib.lang.SystemUtils;
-import mik.lib.lang.URIUtils;
-import mik.lib.map.LinkedMap;
+import kr.tx24.api.conf.ApiConfigLoader;
+import kr.tx24.lib.inter.INet;
+import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.lang.MsgUtils;
+import kr.tx24.lib.lang.SystemUtils;
+import kr.tx24.lib.lang.URIUtils;
+import kr.tx24.lib.map.LinkedMap;
+import kr.tx24.lib.mapper.JacksonUtils;
 import mik.proc.http.bean.RequestObject;
-import mik.proc.http.config.HttpConfig;
 
 public class Response {
 	private static Logger logger = LoggerFactory.getLogger(Response.class);
@@ -212,7 +212,7 @@ public class Response {
 
 
 	public static void response(RequestObject Request, INet inet) {
-		if (inet.data().isNullOrSpace(CHARSET)) {
+		if (inet.data().isEmpty(CHARSET)) {
 			inet.data().put(CHARSET, CharsetUtil.UTF_8.toString());
 		}
 
@@ -409,7 +409,7 @@ public class Response {
 
 		String ifModifiedSince = CommonUtils.nToB(request.headers().get(HttpHeaderNames.IF_MODIFIED_SINCE));
 
-		if (!CommonUtils.isNullOrSpace(ifModifiedSince)) {
+		if (!CommonUtils.isBlank(ifModifiedSince)) {
 			try {
 				SimpleDateFormat dateFormatter = new SimpleDateFormat(Response.HTTP_DATE_FORMAT, Locale.US);
 				Date since = dateFormatter.parse(ifModifiedSince);

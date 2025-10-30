@@ -149,13 +149,13 @@ public class DBUtils {
 	public static String where(String column,Object value,String operator,String logicalOperator){
 		
 		//안전한 쿼리 형성을 위하여 데이터의 속성 등을 검증한다.
-		if(CommonUtils.isEmpty(column)) {
+		if(CommonUtils.isNull(column)) {
 			return "";
 		}
-		if(CommonUtils.isEmpty(operator)) {
+		if(CommonUtils.isNull(operator)) {
 			operator = eq;
 		}
-		if(CommonUtils.isEmpty(logicalOperator)) {
+		if(CommonUtils.isNull(logicalOperator)) {
 			operator = AND ;
 		}
 		

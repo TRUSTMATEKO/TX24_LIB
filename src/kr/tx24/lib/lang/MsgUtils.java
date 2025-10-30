@@ -9,7 +9,7 @@ public class MsgUtils {
     private static final char ESCAPE_CHAR = '\\';
 
     public static String format(String messagePattern, Object... argArray) {
-        if (CommonUtils.isNullOrSpace(messagePattern)) return "";
+        if (CommonUtils.isEmpty(messagePattern)) return "";
         if (argArray == null || argArray.length == 0) return messagePattern;
 
         StringBuilder sb = new StringBuilder(messagePattern.length() + 50);

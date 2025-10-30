@@ -109,7 +109,7 @@ public class SessionUtils {
 	 * @param data
 	 */
 	public static void save(String sessionId, SharedMap<String, Object> data) {
-	    if (CommonUtils.isEmpty(sessionId)) {
+	    if (CommonUtils.isBlank(sessionId)) {
 	        logger.warn("SessionId is empty, cannot save session");
 	        return;
 	    }
@@ -133,7 +133,7 @@ public class SessionUtils {
 	 * @return
 	 */
 	public static SharedMap<String,Object> getBySessionId(String sessionId){
-		if (CommonUtils.isEmpty(sessionId)) {
+		if (CommonUtils.isBlank(sessionId)) {
 			return null;
 		}
 		
@@ -158,7 +158,7 @@ public class SessionUtils {
 	 */
 	public static String getUserIdBySessionId(String sessionId){
 		
-		if (CommonUtils.isEmpty(sessionId)) {
+		if (CommonUtils.isBlank(sessionId)) {
 			return "";
 		}
 		
@@ -179,7 +179,7 @@ public class SessionUtils {
 	 * @return
 	 */
 	public static boolean exists(String sessionId){
-		if (CommonUtils.isEmpty(sessionId)) {
+		if (CommonUtils.isBlank(sessionId)) {
 			return false;
 		}
 		
@@ -196,7 +196,7 @@ public class SessionUtils {
 	 * @return TTL (초 단위), 키가 없으면 -2, TTL 없으면 -1
 	 */
 	public static long getExpire(String sessionId) {
-		if (CommonUtils.isEmpty(sessionId)) {
+		if (CommonUtils.isBlank(sessionId)) {
 			return -2;
 		}
 		
@@ -218,7 +218,7 @@ public class SessionUtils {
 	public static List<SharedMap<String, Object>> getConCurrent(String userId) {
 		List<SharedMap<String, Object>> list = new ArrayList<>();
 		
-		if (CommonUtils.isEmpty(userId)) {
+		if (CommonUtils.isBlank(userId)) {
 			return list;
 		}
 		
@@ -296,7 +296,7 @@ public class SessionUtils {
 	 * @param sessionId
 	 */
 	public static void destory(String sessionId) {
-		if (CommonUtils.isEmpty(sessionId)) {
+		if (CommonUtils.isBlank(sessionId)) {
 			return;
 		}
 		
@@ -324,7 +324,7 @@ public class SessionUtils {
 	 * @param userId
 	 */
 	public static void destoryExcludeMe(String sessionId, String userId) {
-		if (CommonUtils.isEmpty(sessionId) || CommonUtils.isEmpty(userId)) {
+		if (CommonUtils.isBlank(sessionId) || CommonUtils.isBlank(userId)) {
 			return;
 		}
 		

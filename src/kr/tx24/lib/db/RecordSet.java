@@ -1,31 +1,49 @@
 package kr.tx24.lib.db;
 
+import java.sql.Blob;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.map.MapFactory;
 import kr.tx24.lib.map.SharedMap;
+import kr.tx24.lib.map.TypeRegistry;
 
 public class RecordSet {
-
-	private final List<SharedMap<String, Object>> rows = new ArrayList<>();
-    private String[] columns = null;
-    private int idx = -1; 		// 커서 인덱스
-    private long count = 0;		// 전체의 갯수를 가져가기 위하여 
+	private static Logger logger 	= LoggerFactory.getLogger(RecordSet.class);
+	private static final int MAX_BLOB_SIZE = 20 * 1024 * 1024;
+	private static final int DEFAULT_CAPACITY = 50;
+	
+	private final List<SharedMap<String, Object>> rows;
+	private final String[] columns;
+	private final AtomicInteger idx = new AtomicInteger(-1);
+    private long count;		 
     
     public RecordSet() {
+    	this.rows = new ArrayList<>(0);
+        this.columns = new String[0];
+        this.count = 0;
     }
 
 
     public RecordSet(ResultSet rs) throws SQLException {
         if (rs == null) {
-        	this.columns = new String[0];
-        	return;
+        	this.rows = new ArrayList<>(0);
+            this.columns = new String[0];
+            this.count = 0;
+            return;
         }
 
+        
+        
         ResultSetMetaData meta = rs.getMetaData();
         int columnCount = meta.getColumnCount();
         this.columns = new String[columnCount];
@@ -34,9 +52,13 @@ public class RecordSet {
         for (int i = 0; i < columnCount; i++) {
         	columns[i] = meta.getColumnLabel(i + 1);
         }
+        
+        
+        this.rows = new ArrayList<>(DEFAULT_CAPACITY);
 
+        
         while (rs.next()) {
-            SharedMap<String, Object> map = new SharedMap<>();
+            SharedMap<String, Object> map = MapFactory.createObjectMap(TypeRegistry.MAP_SHAREDMAP_OBJECT);
 
             for (int i = 1; i <= columnCount; i++) {
                 Object value;
@@ -59,15 +81,25 @@ public class RecordSet {
                              java.sql.Types.VARBINARY,
                              java.sql.Types.LONGVARBINARY,
                              java.sql.Types.BLOB -> {
-                            java.io.InputStream input = rs.getBinaryStream(i);
-                            if (input != null) {
-                                try (input) {
-                                    value = input.readAllBytes();
-                                }
-                            } else {
-                                value = null;
-                            }
-                        }
+                            	try {
+									Blob blob = rs.getBlob(i);
+									if (blob != null) {
+									    long length = blob.length();
+									    int readSize = (int) Math.min(length, MAX_BLOB_SIZE);
+									    value = blob.getBytes(1, readSize);
+									    blob.free();
+									}else {
+										value = null;
+									}
+                        		} catch (SQLException | AbstractMethodError e) {
+                        		    byte[] bytes = rs.getBytes(i);
+                        		    if (bytes != null && bytes.length > MAX_BLOB_SIZE) {
+                        		        value = Arrays.copyOf(bytes, MAX_BLOB_SIZE);
+                        		    } else {
+                        		        value = bytes;
+                        		    }
+                        		}
+							}
 
                         // 숫자 계열
                         case java.sql.Types.TINYINT,
@@ -97,45 +129,50 @@ public class RecordSet {
                         default -> value = rs.getObject(i);
                     }
                 } catch (Exception e) {
+                	logger.warn("error : {}",CommonUtils.getExceptionMessage(e));
                     value = null;
                 }
 
                 map.put(columns[i - 1], value != null ? value : "");
             }
-
+            
             rows.add(map);
+            this.count++;
         }
+        
+        
     }
     
     public boolean next() {
-        if (idx + 1 < rows.size()) {
-            idx++;
-            return true;
+        int current = idx.get();
+        if (current + 1 < rows.size()) {
+            return idx.compareAndSet(current, current + 1);
         }
         return false;
     }
 
     public boolean prev() {
-        if (idx - 1 >= 0) {
-            idx--;
-            return true;
+        int current = idx.get();
+        if (current - 1 >= 0) {
+            return idx.compareAndSet(current, current - 1);
         }
         return false;
     }
 
     public SharedMap<String, Object> getCurrent() {
-        if (idx >= 0 && idx < rows.size()) {
-            return rows.get(idx);
+        int current = idx.get();
+        if (current >= 0 && current < rows.size()) {
+            return rows.get(current);
         }
         return new SharedMap<>();
     }
 
     public void reset() {
-        idx = -1;
+        idx.set(-1);
     }
 
     public int getCurrentIndex() {
-        return idx;
+        return idx.get();
     }
     
     public int size() {

@@ -40,7 +40,7 @@ public class Router {
         }
         
         try {
-            if (CommonUtils.isEmpty(packageNames)) {
+            if (CommonUtils.isBlank(packageNames)) {
                 throw new IllegalArgumentException("Package name cannot be empty");
             }
             
@@ -146,7 +146,7 @@ public class Router {
     }
     
     private static String normalizeTarget(String target) {
-        if (target == null || target.isEmpty()) {
+        if (CommonUtils.isEmpty(target)) {
             return "";
         }
         
@@ -167,7 +167,7 @@ public class Router {
             throw new IllegalStateException("Router not initialized");
         }
         
-        if (target == null || target.isEmpty()) {
+        if (CommonUtils.isBlank(target)) {
             return null;
         }
         

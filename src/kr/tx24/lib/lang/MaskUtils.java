@@ -35,7 +35,7 @@ public class MaskUtils {
 	 * @return
 	 */
 	public static String maskPhoneNo(String phone){
-		if(CommonUtils.isNullOrSpace(phone)) {
+		if(CommonUtils.isBlank(phone)) {
 			return "";
 		}
 		phone = phone.replaceAll(" ", "");
@@ -68,7 +68,7 @@ public class MaskUtils {
 	 * @return
 	 */
 	public static String maskPhoneNoWithHyphen(String phone) {
-		if(CommonUtils.isNullOrSpace(phone)) {
+		if(CommonUtils.isBlank(phone)) {
 			return "";
 		}
 		
@@ -106,7 +106,7 @@ public class MaskUtils {
 	 * @return
 	 */
 	public static String maskEmail(String email,int start) {
-		if(CommonUtils.isNullOrSpace(email)) {
+		if(CommonUtils.isBlank(email)) {
 			return "";
 		}
 		
@@ -131,7 +131,7 @@ public class MaskUtils {
 	 * @throws Exception
 	 */
 	public static String maskAccount(String accountNo) {
-		if(CommonUtils.isNullOrSpace(accountNo)) {
+		if(CommonUtils.isBlank(accountNo)) {
 			return "";
 		}
 		try {
@@ -161,7 +161,7 @@ public class MaskUtils {
 	 * @throws Exception
 	 */
 	public static String maskDob(String dob) {
-		if(CommonUtils.isNullOrSpace(dob)) {
+		if(CommonUtils.isBlank(dob)) {
 			return "";
 		}
 		try {
@@ -180,7 +180,7 @@ public class MaskUtils {
 	 * @return
 	 */
 	public static String maskSSN(String ssn) {
-		if(CommonUtils.isNullOrSpace(ssn)) {
+		if(CommonUtils.isBlank(ssn)) {
 			return "";
 		}
 		try {
@@ -198,7 +198,7 @@ public class MaskUtils {
 	 * @return
 	 */
 	public static String maskPassport(String passport) {
-		if(CommonUtils.isNullOrSpace(passport)) {
+		if(CommonUtils.isBlank(passport)) {
 			return "";
 		}
 		try {
@@ -217,7 +217,7 @@ public class MaskUtils {
 	 * @return
 	 */
 	public static String maskDriverLicense(String passport) {
-		if(CommonUtils.isNullOrSpace(passport)) {
+		if(CommonUtils.isBlank(passport)) {
 			return "";
 		}
 		try {
@@ -239,7 +239,7 @@ public class MaskUtils {
 	 * @throws Exception
 	 */
 	public static String maskAddress(String address) {
-		if(CommonUtils.isNullOrSpace(address)) {
+		if(CommonUtils.isBlank(address)) {
 			return "";
 		}
 		
@@ -260,7 +260,7 @@ public class MaskUtils {
 	
 	
 	public static String maskCardNumber(String cardNo) {
-		if(CommonUtils.isNullOrSpace(cardNo)) {
+		if(CommonUtils.isBlank(cardNo)) {
 			return "";
 		}
 		
@@ -288,7 +288,7 @@ public class MaskUtils {
 	
 	
 	public static String maskName(String name) {
-		if(CommonUtils.isNullOrSpace(name)) {
+		if(CommonUtils.isBlank(name)) {
 			return "";
 		}
 		
@@ -376,7 +376,7 @@ public class MaskUtils {
 	 * @return
 	 */
 	public static String masking(String src, char replace, char[] exclude, int startIdx, int length) {
-		if(CommonUtils.isNullOrSpace(src)) {
+		if(CommonUtils.isBlank(src)) {
 			return "";
 		}
 		StringBuilder sb = new StringBuilder(src);

@@ -27,6 +27,11 @@ public class ThreadSafeLinkedMap<K, V>{
 
     private final Map<K, V> map;
 
+    
+    public ThreadSafeLinkedMap(int initialCapacity, float loadFactor) {
+    	this.map = Collections.synchronizedMap(new LinkedHashMap<>(initialCapacity,loadFactor));
+	}
+    
     /** 기본 생성자 */
     public ThreadSafeLinkedMap() {
         this.map = Collections.synchronizedMap(new LinkedHashMap<>());
@@ -63,7 +68,7 @@ public class ThreadSafeLinkedMap<K, V>{
     /** JSON 문자열로 초기화 */
     public ThreadSafeLinkedMap(String json) {
         this.map = Collections.synchronizedMap(new LinkedHashMap<>());
-        if (!CommonUtils.isNullOrSpace(json)) {
+        if (!CommonUtils.isBlank(json)) {
             Map<K, V> loaded = new JacksonUtils().fromJson(json, new TypeReference<LinkedHashMap<K, V>>() {});
             if (loaded != null) {
                 this.map.putAll(loaded);
@@ -305,8 +310,12 @@ public class ThreadSafeLinkedMap<K, V>{
         return map.get(key) == null;
     }
 
-    public boolean isNullOrSpace(K key) {
-        return CommonUtils.isNullOrSpace(getString(key));
+    public boolean isBlank(String key) {
+        return CommonUtils.isBlank(CommonUtils.toString(map.get(key)));
+    }
+    
+    public boolean isBlank(String key,String replace) {
+    	return CommonUtils.isBlank(CommonUtils.toString(map.get(key)));
     }
 
     public boolean isEquals(K key, Object value) {

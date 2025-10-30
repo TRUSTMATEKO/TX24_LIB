@@ -54,7 +54,7 @@ public class ServletConfiguration implements WebApplicationInitializer {
 		// 1. Root Application Context (Service, Repository, etc.)
 		AnnotationConfigWebApplicationContext rootContext = new AnnotationConfigWebApplicationContext();
 		rootContext.setDisplayName(config.serverName);
-		if(!config.basePackage.isEmpty()) {
+		if(!CommonUtils.isBlank(config.basePackage)) {
 			rootContext.scan(config.basePackage.split(","));
 		}
 		rootContext.register(SpringConfig.class);
@@ -96,7 +96,7 @@ public class ServletConfiguration implements WebApplicationInitializer {
 		
 		// 6. Multipart Config 설정 (File Upload)
 		String uploadDirectory = TomcatConfigLoader.load().uploadDirectory; 
-		if(CommonUtils.isEmpty(uploadDirectory)) {
+		if(CommonUtils.isBlank(uploadDirectory)) {
 			// 시스템 임시 디렉토리 사용 (null to blank 변환은 필요 없음)
 			uploadDirectory = System.getProperty("java.io.tmpdir"); 
 			if(SystemUtils.deepview()) {

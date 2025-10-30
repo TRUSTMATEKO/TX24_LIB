@@ -1,6 +1,5 @@
 package kr.tx24.was.conf;
 
-import java.io.File;
 import java.nio.file.Path;
 
 import org.slf4j.Logger;
@@ -21,7 +20,7 @@ public class TomcatConfigLoader {
 	public static TomcatConfig load() {
 		if(tomcatConfig == null) {
 			try {
-				tomcatConfig 	= new JacksonUtils().deserialize(CONFIG_PATH, TomcatConfig.class);
+				tomcatConfig 	= new JacksonUtils().fromJson(CONFIG_PATH, TomcatConfig.class);
 				
 				if(tomcatConfig == null || CommonUtils.isEmpty(tomcatConfig)) {
 					throw new Exception(CONFIG_PATH + " config is emtpy");

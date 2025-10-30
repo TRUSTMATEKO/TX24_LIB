@@ -2,6 +2,8 @@ package kr.tx24.lib.db;
 
 import java.sql.SQLException;
 
+import kr.tx24.lib.lang.CommonUtils;
+
 public class DBException extends SQLException {
 private static final long serialVersionUID = 1L;
     
@@ -74,7 +76,7 @@ private static final long serialVersionUID = 1L;
      * Extract operation type from query
      */
     private String extractOperation(String query) {
-        if (query == null || query.trim().isEmpty()) {
+        if (CommonUtils.isBlank(query)) {
             return "UNKNOWN";
         }
         

@@ -121,12 +121,7 @@ public class DBManager {
 	        throw new Exception(configPath.toAbsolutePath() + " not found");
 	    }
 
-	    // JSON 읽기
-	    String json = Files.readString(configPath).trim();
-	    if (json.isEmpty()) {
-	        throw new Exception("Config file is empty: " + configPath.toAbsolutePath());
-	    }
-	    SharedMap<String, Object> map = new JacksonUtils().fromJson(json, TypeRegistry.MAP_SHAREDMAP_OBJECT);
+	    SharedMap<String, Object> map = new JacksonUtils().fromJson(configPath, TypeRegistry.MAP_SHAREDMAP_OBJECT);
 
 	    if (map != null && map.containsKey("password")) {
 	        String password = map.getString("password");

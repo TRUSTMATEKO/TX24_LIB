@@ -30,7 +30,7 @@ import kr.tx24.lib.lb.LoadBalancer;
  */
 public class SystemUtils {
 
-    private static final String PROPERTY_NONE 		= "NONE";
+    private static final String PROPERTY_NONE 		= "N/A";
     private static final String PROPERTY_CONFIG 	= "CONF";
     private static final String PROPERTY_PROCESS 	= "PROC";
     private static final String PROPERTY_REDIS		= "REDIS";
@@ -45,6 +45,7 @@ public class SystemUtils {
     private static final String PROPERTY_LOG_REDIS1	= "LOG_REDIS1";
     private static final String PROPERTY_LOG_REDIS2	= "LOG_REDIS2";
     private static final String PROPERTY_JVM_MONITOR= "JVM_MONITOR";
+    private static final String PROPERTY_DEEP_VIEW  = "SystemUtils.DEEP_VIEW";
 
     private static final String CONFIG_LOADBALANCE 	= "nlb.json";
     private static final String CONFIG_DATABASE 	= "db.json";
@@ -131,7 +132,9 @@ public class SystemUtils {
         System.err.println("CONFIG  " + getConfigDirectory());
         System.err.println("PROC    " + getLocalProcessName() +",H:"+getLocalHostname()+",I:"+getLocalAddress()+",P:"+getLocalProcessId());
         // deep.view 감시
-        scheduler.scheduleAtFixedRate(SystemUtils::checkDeepView, 100, 10*1000, TimeUnit.MILLISECONDS);
+        
+        checkDeepView();
+        scheduler.scheduleAtFixedRate(SystemUtils::checkDeepView, 10*1000, 10*1000, TimeUnit.MILLISECONDS);
         
         if(Files.exists(getLoadBalanceConfigPath())) {
         	LoadBalancer.start();
@@ -144,21 +147,34 @@ public class SystemUtils {
 
 
     private static void checkDeepView() {
-        try {
-            boolean exists = Files.exists(Paths.get(getConfigDirectory(), CONFIG_DEEPVIEW));
-            if (exists != Boolean.getBoolean("SystemUtils.DEEP_VIEW")) {
-            	boolean deepview = exists;
-            	
-                setLogLevel(deepview ? Level.DEBUG : getLogLevel());
-                System.err.println("Deepview " + (deepview ? "enabled" : "disabled"));
-                System.setProperty("SystemUtils.DEEP_VIEW", Boolean.toString(deepview));
-                
-            }else {
-            	
+    	try {
+            Path deepViewPath = Paths.get(getConfigDirectory(), CONFIG_DEEPVIEW);
+            boolean fileExists = Files.exists(deepViewPath);
+            
+            // 현재 설정된 값
+            boolean currentValue = Boolean.getBoolean(PROPERTY_DEEP_VIEW);
+            
+            // 파일 존재 여부에 따라 설정 변경
+            if(fileExists) {
+                if(!currentValue) {
+                    // false → true 변경
+                    System.setProperty(PROPERTY_DEEP_VIEW, "true");
+                    setLogLevel(Level.DEBUG);
+                    System.err.println("deepview enabled ");
+                }
+            } else {
+                if(currentValue) {
+                    // true → false 변경
+                    System.setProperty(PROPERTY_DEEP_VIEW, "false");
+                    setLogLevel(Level.INFO);
+                    System.err.println("deepview disabled ");
+                }
             }
             
-           System.err.println("deep.view : "+Boolean.getBoolean("SystemUtils.DEEP_VIEW"));
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            System.setProperty(PROPERTY_DEEP_VIEW, "false");
+            System.err.println("error checking deep.view: " + e.getMessage());
+        }
     }
 
     public static void setLogLevel(Level level) {
@@ -168,7 +184,7 @@ public class SystemUtils {
         } catch (Exception e) {}
     }
 
-    public static boolean deepview() { return Boolean.getBoolean("SystemUtils.DEEP_VIEW"); }
+    public static boolean deepview() { return Boolean.getBoolean(PROPERTY_DEEP_VIEW); }
 
     
     public static String getConfigDirectory() {

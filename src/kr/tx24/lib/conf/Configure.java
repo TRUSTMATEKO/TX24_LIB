@@ -69,7 +69,7 @@ public class Configure {
 
         System.out.println("\n기본 암호키(32)를 설정하여 주시기 바랍니다.  : ");
         String kmsKey = scanner.nextLine().trim();
-        if (CommonUtils.isEmpty(kmsKey)) {
+        if (CommonUtils.isBlank(kmsKey)) {
             kmsKey = KEY;
         }
         kmsKey = String.format("%-32s", kmsKey);
@@ -78,7 +78,7 @@ public class Configure {
 
         System.out.println("\n기본 암호 Vector 를 설정하여 주시기 바랍니다.  : ");
         String kmsIv = scanner.nextLine().trim();
-        if (CommonUtils.isEmpty(kmsIv)) {
+        if (CommonUtils.isBlank(kmsIv)) {
             kmsIv = IV;
         }
         kmsIv = String.format("%-16s", kmsIv);
@@ -87,7 +87,7 @@ public class Configure {
 
         System.out.println("\nREDIS (로그용) 암호를 설정하시기 바랍니다.  : ");
         String redisLogKey = scanner.nextLine().trim();
-        if (CommonUtils.isEmpty(redisLogKey)) {
+        if (CommonUtils.isBlank(redisLogKey)) {
             redisLogKey = "";
         }
         System.out.println("\n=> [" + redisLogKey + "]");
@@ -95,7 +95,7 @@ public class Configure {
 
         System.out.println("\nREDIS (캐쉬용) 암호를 설정하시기 바랍니다.  : ");
         String redisCacheKey = scanner.nextLine().trim();
-        if (CommonUtils.isEmpty(redisCacheKey)) {
+        if (CommonUtils.isBlank(redisCacheKey)) {
             redisCacheKey = "";
         }
         System.out.println("\n=> [" + redisCacheKey + "]");

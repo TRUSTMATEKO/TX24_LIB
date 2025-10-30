@@ -34,8 +34,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -44,55 +42,91 @@ import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lb.LoadBalancer;
-import kr.tx24.lib.map.LinkedMap;
-import kr.tx24.lib.map.SharedMap;
-import kr.tx24.lib.map.ThreadSafeLinkedMap;
+import kr.tx24.lib.map.MapFactory;
 import kr.tx24.lib.map.TypeRegistry;
 
 /**
- *  INet 은 Internetwork 를 의미하며 내부 시스템간의 통신을 정의하기 위하서 만들어졌다.
- *  시스템간 Restfull, gPRC, Thrift, Tcp 등 많은 종류의 방법이 있겠지만.
- *  통신속도 및 marshalling 등에 소요되는 시간을 최소화 하기 위하여 아래와 같이
- *  TCP Base 에 Object 통신으로 정의하였다. INMessage 및 INMap 은 형상이 변경되면 안되므로
- *  INet 의 Inner Class 로 제작되었다. 
- *  아래 소스는 가급적 수정하면 통신이 불가 할 수 있다는 점에 유의하시기 바란다.
- *  
- *  
- *  사용 방법은 크게 2가지입니다.
- *  직접 타겟 시스템의 주소를 입력하는 방법 , 로드발런서 설정이 있다면 로드발런서 지정명칭을 사용하는 방법 
- *  
- *  INMessage exc = new INet("출발시스템명", "도착시스템명")
-			.head("head", "필요한값")
-			.data("data","data = pure java object")
-			.connect("IP",3333, 2*60*1000);
-		
-	INMessage exc2 = new INet("출발시스템명", "도착시스템명")
-			.head("head", "필요한값")
-			.data("data","data = pure java object")
-			.connectLb("로드밸런서이름값", 2*60*1000);
-			
-			
-	Head 값 
-		- proc 	: 현재 송신하는 프로그램의 명칭  실행시 지정
-		- procId: 현재 송신하는 프로그램의 프로세스 아이디 
-		- procIp: 현재 송신하는 시스템의 IP 또는 Hostname
-		- source: 송신 프로그램 명칭 지정 
-		- target: 수신 프로그램 명칭 지정
-		- result: connect(), connectLb() 실행 후 해당 값으로 응답 결과 판단.
-		  INMessage.head().isTrue("result") == true  > 송신 , 수신 정상
-		  INMessage.head().isTrue("result") == false > 송신 시 실패하였거나. 서버에서 실패 메세지 회신 시 
-		  INMessage.head().getString("message")  로 송수신 관련 성공/오류 관련 상세 메세지를 확인할 수 있습니다. 
-		  
-	Data 값
-	    - 특정한 Key 를 사용하지 않는다. 사용자 임의 지정하는 방법을 사용하면 된다. 
-		  
-	
-	★★★ 성능 최적화 ★★★
-	- Externalizable 적용으로 ObjectOutputStream 오버헤드 제거 (3-5배 빠름)
-	- ThreadLocal 버퍼 풀링으로 GC 압력 감소
-	- 버퍼 초기 크기 지정으로 재할당 최소화
+ * INet - Internetwork 통신 프레임워크
+ * 
+ * <p>내부 시스템 간 고성능 TCP 기반 객체 통신을 제공합니다.
+ * 
+ * <h3>주요 특징</h3>
+ * <ul>
+ *   <li>TCP 기반 바이너리 객체 통신</li>
+ *   <li>Externalizable 최적화 (ObjectOutputStream 오버헤드 제거)</li>
+ *   <li>ThreadLocal 버퍼 풀링으로 GC 압력 감소</li>
+ *   <li>로드밸런서 통합 지원</li>
+ *   <li>자동 재연결 및 장애 서버 관리</li>
+ * </ul>
+ * 
+ * <h3>사용 방법</h3>
+ * 
+ * <p><b>1. 직접 연결</b></p>
+ * <pre>{@code
+ * INMessage response = new INet("출발시스템명", "도착시스템명")
+ *     .head("customKey", "customValue")
+ *     .data("requestData", dataObject)
+ *     .connect("192.168.1.100", 3333, 120000);
+ * 
+ * if (response.head().isTrue("result")) {
+ *     // 성공 처리
+ * }
+ * }</pre>
+ * 
+ * <p><b>2. 로드밸런서 사용</b></p>
+ * <pre>{@code
+ * INMessage response = new INet("출발시스템명", "도착시스템명")
+ *     .head("customKey", "customValue")
+ *     .data("requestData", dataObject)
+ *     .connectLb("backend-service", 120000);
+ * }</pre>
+ * 
+ * <h3>메시지 구조</h3>
+ * 
+ * <p><b>Head 영역</b> (메타데이터)</p>
+ * <ul>
+ *   <li>{@code proc} - 송신 프로그램 명칭 (자동 설정)</li>
+ *   <li>{@code procId} - 송신 프로세스 ID (자동 설정)</li>
+ *   <li>{@code procIp} - 송신 시스템 IP (자동 설정)</li>
+ *   <li>{@code procHost} - 송신 시스템 Hostname (자동 설정)</li>
+ *   <li>{@code source} - 송신 시스템 명칭</li>
+ *   <li>{@code target} - 수신 시스템 명칭</li>
+ *   <li>{@code result} - 통신 성공 여부 (true/false)</li>
+ *   <li>{@code message} - 상태 또는 에러 메시지</li>
+ *   <li>{@code time} - 통신 소요 시간 (나노초)</li>
+ * </ul>
+ * 
+ * <p><b>Data 영역</b> (페이로드)</p>
+ * <ul>
+ *   <li>사용자 정의 키-값 쌍으로 자유롭게 구성</li>
+ *   <li>Java 기본 객체 및 직렬화 가능한 객체 지원</li>
+ * </ul>
+ * 
+ * <h3>응답 확인</h3>
+ * <pre>{@code
+ * if (response.head().isTrue("result")) {
+ *     // 성공
+ *     Object data = response.data().get("responseKey");
+ * } else {
+ *     // 실패
+ *     String errorMsg = response.head().getString("message");
+ *     logger.error("통신 실패: {}", errorMsg);
+ * }
+ * }</pre>
+ * 
+ * <h3>Inner Classes</h3>
+ * <ul>
+ *   <li>{@link INMessage} - 통신 메시지 컨테이너 (Externalizable 최적화)</li>
+ *   <li>{@link INMap} - LinkedHashMap 기반 유틸리티 맵</li>
+ * </ul>
+ * 
+ * @author TX24
+ * @version 2.0
+ * @see INMessage
+ * @see INMap
  */
 public class INet implements java.io.Serializable{
+	
 	private static final long serialVersionUID 	= -3518167926980673854L;
 	private static final Logger logger = LoggerFactory.getLogger(INet.class);
 	
@@ -100,11 +134,13 @@ public class INet implements java.io.Serializable{
 	private static final String TIMEOUT_CONNECT = "connect timeout";
 	private static final String TIMEOUT_READ = "read timeout";
 	
-	//버퍼 풀링 (ThreadLocal)
 	private static final ThreadLocal<ByteArrayOutputStream> bosPool = 
 	    ThreadLocal.withInitial(() -> new ByteArrayOutputStream(4096));
 	
 	private static volatile boolean isShutdown = false;
+	
+	
+	
 	static {
         Runtime.getRuntime().addShutdownHook(new Thread(INet::shutdown, "ShutdownHook-INet"));
     }
@@ -133,110 +169,92 @@ public class INet implements java.io.Serializable{
 	
 	
 	public INet() {
+		this.message = new INMessage();
 	}
 	
 	
 	public INet(String source) {
-		this(source,"NONE");
+		this(source,"N/A");
 	}
 	
 	public INet(String source,String target) {
-		this.message.head.put("proc"	, SystemUtils.getLocalProcessName());
-		this.message.head.put("procId"	, SystemUtils.getLocalProcessId());
-		this.message.head.put("procIp"	, SystemUtils.getLocalAddress());
-		this.message.head.put("procHost"	, SystemUtils.getLocalHostname());
-		this.message.head.put("source"	, source);
-		this.message.head.put("target"	, target);
+		this.message = new INMessage();
+		this.message.getHead().put("proc"	, SystemUtils.getLocalProcessName());
+		this.message.getHead().put("procId"	, SystemUtils.getLocalProcessId());
+		this.message.getHead().put("procIp"	, SystemUtils.getLocalAddress());
+		this.message.getHead().put("procHost"	, SystemUtils.getLocalHostname());
+		this.message.getHead().put("source"	, source);
+		this.message.getHead().put("target"	, target);
 	}
 	
 	
 	
 	public INet head(String key,Object value) {
-		this.message.head.put(key, value);
+		this.message.getHead().put(key, value);
 		return this;
 	}
 	
-	public INet head(Map<String,Object> map){
+	public <M extends Map<String, ?>> INet head(M map){
 		if(map != null){
-			this.message.head.putAll(map);
+			this.message.getHead().putAll(map);
 		}
 		return this;
 	}
 	
-	public INet data(Map<String,Object> map){
+
+	
+	public <M extends Map<String, ?>> INet data(M map){
 		if(map != null){
-			this.message.data.putAll(map);
+			this.message.getData().putAll(map);
 		}
 		return this;
 	}
 	
 	public INet data(String key,Object value) {
-		this.message.data.put(key, value);
+		this.message.getData().put(key, value);
 		return this;
 	}
 	
-	
-	
-	/**
-	 * 주소 포트를 지정한 통신 실행 
-	 * @param addr
-	 * @param port
-	 * @return
-	 */
+
 	public INMessage connect(String addr , int port) {
 		return connect(addr,port,this.timeout);
 	}
 	
-	/**
-	 * 주소,포트,타임아웃을 지정한 통신 실행 
-	 * @param addr
-	 * @param port
-	 * @param timeout
-	 * @return
-	 */
+
 	public INMessage connect(String host , int port , int timeout) {
 		this.host = host;
 		this.port = port;
 		this.timeout = timeout;
 		
-		this.head("result"	, false);
+		this.message.getHead().put("result"	, false);
 		
 		
 		if(this.host == null || this.host.trim().equals("")) {
 			logger.info("host 정보를 찾을 수 없습니다.");	
-			this.head("message"	, "서버 주소가 없습니다. ");
+			this.message.getHead().put("message"	, "서버 주소가 없습니다. ");
 			return this.message;
 		}
 		
 		if(this.port == 0 ) {
 			logger.info("port is 0");
-			this.head("message"	, "서버 포트가 지정되지 않았습니다.");
+			this.message.getHead().put("message"	, "서버 포트가 지정되지 않았습니다.");
 			return this.message;
 		}
 		
 		return execute();
 	}
 	
-	/**
-	 * 로드밸런스를 통한 통신 실행 
-	 * @param server
-	 * @return
-	 */
+
 	public INMessage connectLb(String server) {
 		return connectLb(server,this.timeout);
 	}
 	
-	/**
-	 * 로드밸런스를 통한 통신 실행
-	 * @param server
-	 * @param timeout
-	 * @return
-	 */
+
 	public INMessage connectLb(String server,int timeout) {
 		this.timeout = timeout;
 		
 		
-		this.head("result"	, false);
+		this.message.getHead().put("result"	, false);
 		
 		String endPoint = "";
 		
@@ -249,17 +267,17 @@ public class INet implements java.io.Serializable{
 					this.port = Integer.parseInt(endPoints[1]);
 				}else {
 					logger.info("접속 포트를 확인할 수 없습니다.");
-					this.head("message"	, "접속 포트를 확인할 수 없습니다. "+endPoints);
+					this.message.getHead().put("message"	, "접속 포트를 확인할 수 없습니다. "+endPoints);
 					return this.message;
 				}
 			}else {
 				logger.info("loadbalance address is null");
-				this.head("message"	, "로드발런서 주소를 찾을 수 없습니다.");
+				this.message.getHead().put("message"	, "로드밸런서 주소를 찾을 수 없습니다.");
 				return this.message;
 			}
 			
 		}else {
-			this.head("message"	, "로드발런서가 적용되지 않았거나 설정을 찾을 수 없습니다.");
+			this.message.getHead().put("message"	, "로드밸런서가 적용되지 않았거나 설정을 찾을 수 없습니다.");
 			return this.message;
 		}
 		
@@ -276,91 +294,59 @@ public class INet implements java.io.Serializable{
 
 	
 	public INMap head(){
-		return this.message.head;
+		return this.message.getHead();
 	}
 
 	
 	public INMap data(){
-		return this.message.data;
+		return this.message.getData();
 	}
 	
-	/*
-	 * LinkedHashMap<String,Object> headMap = inNet.head(LinkedHashMap.class);
-	 */
+
 	public <T extends Map<String,Object>> T head(Class<T> clazz) {
-	    try {
-	        T map = clazz.getDeclaredConstructor().newInstance();
-	        map.putAll(this.message.head);
-	        return map;
-	    } catch (Exception e) {
-	        throw new RuntimeException(e);
-	    }
+		T map = MapFactory.createObjectMap(clazz);
+	    map.putAll(this.message.getHead());
+	    return map;
 	}
 
-	/*
-	 * LinkedHashMap<String,Object> dataMap = inNet.data(LinkedHashMap.class);
-	 */
+
 	public <T extends Map<String,Object>> T data(Class<T> clazz) {
-	    try {
-	        T map = clazz.getDeclaredConstructor().newInstance();
-	        map.putAll(this.message.data);
-	        return map;
-	    } catch (Exception e) {
-	        throw new RuntimeException(e);
-	    }
+		T map = MapFactory.createObjectMap(clazz);
+	    map.putAll(this.message.getData());
+	    return map;
 	}
 	
 
 	public <T extends Map<String,Object>> T head(TypeRegistry typeRegistry) {
-	    T map = createMapFromRegistry(typeRegistry);
-	    map.putAll(this.message.head);
+		T map = MapFactory.createObjectMap(typeRegistry);
+	    map.putAll(this.message.getHead());
 	    return map;
 	}
 
 	
 	public <T extends Map<String,Object>> T data(TypeRegistry typeRegistry) {
-	    T map = createMapFromRegistry(typeRegistry);
-	    map.putAll(this.message.data);
+		T map = MapFactory.createObjectMap(typeRegistry);
+	    map.putAll(this.message.getData());
 	    return map;
 	}
 
-	@SuppressWarnings("unchecked")
-	private <T extends Map<String,Object>> T createMapFromRegistry(TypeRegistry typeRegistry) {
-	    switch (typeRegistry) {
-	        case MAP_OBJECT:
-	            return (T) new java.util.HashMap<String, Object>();
-	        case MAP_SHAREDMAP_OBJECT:
-	            return (T) new SharedMap<String, Object>();
-	        case MAP_LINKEDMAP_OBJECT:
-	            return (T) new LinkedMap<String, Object>();
-	        case MAP_THREADSAFE_LINKEDMAP_OBJECT:
-	            return (T) new ThreadSafeLinkedMap<String, Object>();
-	        case MAP_LINKEDHASHMAP_OBJECT:
-	            return (T) new LinkedHashMap<String, Object>();
-	        case MAP_CONCURRENTHASHMAP_OBJECT:
-	            return (T) new ConcurrentHashMap<String, Object>();
-	        case MAP_TREEMAP_OBJECT:
-	            return (T) new TreeMap<String, Object>();
-	        default:
-	            throw new IllegalArgumentException("Unsupported TypeRegistry: " + typeRegistry);
-	    }
-	}
+	
 
 	
 	private INMessage execute() {
-	    if (this.message.data.isEmpty()) {
-	        this.head("message", "전송할 데이터가 없습니다. data is empty");
+	    if (this.message.getData().isEmpty()) {
+	        this.message.getHead().put("message", "전송할 데이터가 없습니다. data is empty");
 	        return this.message;
 	    }
 
 	    long startTime = System.nanoTime();
-	    this.head("message", "ready");
+	    this.message.getHead().put("message", "ready");
 
 	    byte[] data;
 	    try {
 	        data = serialize();
 	    } catch (Exception e) {
-	        this.head("message", "serialize failed: " + e.getMessage());
+	        this.message.getHead().put("message", "serialize failed: " + e.getMessage());
 	        logger.warn("Serialization failed", e);
 	        return this.message;
 	    }
@@ -376,11 +362,11 @@ public class INet implements java.io.Serializable{
 
 	        // 접속
 	        if (!waitForConnect(channel, selector, DEFAULT_CONNECT_TIMEOUT)) {
-	            this.head("message", TIMEOUT_CONNECT);
+	            this.message.getHead().put("message", TIMEOUT_CONNECT);
 	            logger.info("Connect timeout to {}:{}", this.host, this.port);
 	            return this.message;
 	        }
-	        this.head("message", "connected");
+	        this.message.getHead().put("message", "connected");
 
 	        // 송신
 	        if (!writeFullyOnce(channel, selector, data, this.message)) {
@@ -389,12 +375,12 @@ public class INet implements java.io.Serializable{
 
 	        if (SystemUtils.deepview()) {
 	            logger.info("INET {} > {} : [{}] bytes",
-	                    this.message.head.getString("proc"),
-	                    this.message.head.getString("target"),
+	                    this.message.getHead().getString("proc"),
+	                    this.message.getHead().getString("target"),
 	                    data.length);
 	        }
 
-	        this.head("message", "message sent");
+	        this.message.getHead().put("message", "message sent");
 
 	        // 수신
 	        byte[] response = readFullyOnce(channel, selector, this.message, timeout);
@@ -404,23 +390,23 @@ public class INet implements java.io.Serializable{
 
 	        if (SystemUtils.deepview()) {
 	            logger.info("INET {} < {} : [{}] bytes",
-	                    this.message.head.getString("proc"),
-	                    this.message.head.getString("target"),
+	                    this.message.getHead().getString("proc"),
+	                    this.message.getHead().getString("target"),
 	                    response.length);
 	        }
 
 	        // 역직렬화
 	        deserialize(response);
-	        this.head("result", true);
+	        this.message.getHead().put("result", true);
 
 	    } catch (Exception e) {
-	        this.head("message",
-	                "execute step : " + this.message.head.getString("message") +
+	        this.message.getHead().put("message",
+	                "execute step : " + this.message.getHead().getString("message") +
 	                        " exception: " + e.getMessage());
 	        logger.warn("INet execute exception", e);
 	    } finally {
 	        long elapsed = System.nanoTime() - startTime;
-	        this.message.head.put("time", elapsed);
+	        this.message.getHead().put("time", elapsed);
 
 	        if (SystemUtils.deepview()) {
 	            logger.info(String.format("elapsed Time in %.3fms%n", elapsed / 1e6d));
@@ -548,22 +534,13 @@ public class INet implements java.io.Serializable{
 
 	
 	
-	
-
-	
-	
-	
-	/**
-	 * 역직렬화 (Externalizable 최적화)
-	 * 
-	 * @param data 직렬화된 바이트 배열
-	 * @return INet
-	 * @throws IOException
-	 * @throws ClassNotFoundException
-	 */
 	public INet deserialize(byte[] data) throws IOException, ClassNotFoundException{
 		 
 		Objects.requireNonNull(data, "data is null");
+		
+		if (data.length == 0) {
+			throw new InvalidObjectException("data is empty");
+		}
 
         try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
              ObjectInputStream in = new ObjectInputStream(bis)) {
@@ -571,8 +548,27 @@ public class INet implements java.io.Serializable{
             ObjectInputFilter filter = info -> {
                 Class<?> clazz = info.serialClass();
                 if (clazz == null) return ObjectInputFilter.Status.UNDECIDED;
+                
+                // 허용 클래스 명시
                 if (INMessage.class.equals(clazz)) return ObjectInputFilter.Status.ALLOWED;
                 if (INMap.class.equals(clazz)) return ObjectInputFilter.Status.ALLOWED;
+                
+                // 기본 타입 및 컬렉션 허용
+                if (clazz == String.class || clazz == Integer.class || clazz == Long.class ||
+                    clazz == Double.class || clazz == Float.class || clazz == Boolean.class ||
+                    clazz == Byte.class || clazz == Short.class || clazz == Character.class ||
+                    clazz == BigDecimal.class || clazz == BigInteger.class ||
+                    clazz == java.sql.Timestamp.class || clazz == java.util.Date.class ||
+                    clazz == java.util.LinkedHashMap.class) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+                
+                // 배열 타입 허용
+                if (clazz.isArray()) {
+                    return ObjectInputFilter.Status.ALLOWED;
+                }
+                
+                logger.warn("Rejected class in deserialization: {}", clazz.getName());
                 return ObjectInputFilter.Status.REJECTED;
             };
             in.setObjectInputFilter(filter);
@@ -585,76 +581,96 @@ public class INet implements java.io.Serializable{
 
             this.message = msg;
             return this;
+        } catch (EOFException e) {
+            throw new InvalidObjectException("Malformed serialized data: " + e.getMessage());
         }
 	}
 	
 	
-	/**
-	 * 직렬화 (Externalizable + 버퍼 풀링 최적화)
-	 * - 3-5배 성능 향상
-	 * - GC 압력 감소
-	 * 
-	 * @return 직렬화된 바이트 배열
-	 * @throws IOException
-	 */
 	public byte[] serialize() throws IOException{
-		// ★ 버퍼 재사용
 		ByteArrayOutputStream bos = bosPool.get();
 		bos.reset();
 		
-		try (ObjectOutputStream out = new ObjectOutputStream(bos)) {
-            out.writeObject(this.message);
-            out.flush();
-            return bos.toByteArray();
-        }
+		ObjectOutputStream out = null;
+		try {
+			out = new ObjectOutputStream(bos);
+			out.writeObject(this.message);
+			out.flush();
+			
+			byte[] result = bos.toByteArray();
+			return result;
+		} finally {
+			if (out != null) {
+				try {
+					out.close();
+				} catch (IOException e) {
+					logger.warn("Error closing ObjectOutputStream", e);
+				}
+			}
+		}
 	}
 	
 	
 	
 	
-	
-	/**
-	 * INMessage 클래스
-	 * 
-	 * ★★★ Externalizable 구현으로 직렬화 최적화 ★★★
-	 * - ObjectOutputStream의 메타데이터 오버헤드 제거
-	 * - 직접 제어로 불필요한 데이터 전송 최소화
-	 * - 3-5배 성능 향상
-	 */
-	public class INMessage implements Externalizable {
+
+	public static class INMessage implements Externalizable {
 		private static final long serialVersionUID = 6562469816779099746L;
 		
-		public INMap head = new INMap();
-		public INMap data = new INMap();
+		private INMap head = null;
+		private INMap data = null;
 		
-		/**
-		 * 기본 생성자 (Externalizable 필수)
-		 */
-		public INMessage() {}
+
+		public INMessage() {
+			this.head = new INMap();
+			this.data = new INMap();
+		}
 		
-		/**
-		 * 직렬화 (Externalizable)
-		 * - ObjectOutputStream 메타데이터 제거
-		 * - 최소한의 데이터만 전송
-		 */
+		
+		public INMap getHead() {
+			return this.head;
+		}
+		
+		public INMap getData() {
+			return this.data;
+		}
+
 		@Override
 		public void writeExternal(ObjectOutput out) throws IOException {
-			writeINMap(out, head);
-			writeINMap(out, data);
+			if (head == null) {
+				out.writeInt(0);
+			} else {
+				writeINMap(out, head);
+			}
+			
+			if (data == null) {
+				out.writeInt(0);
+			} else {
+				writeINMap(out, data);
+			}
 		}
 		
-		/**
-		 * 역직렬화 (Externalizable)
-		 */
 		@Override
 		public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-			head = readINMap(in);
-			data = readINMap(in);
+			try {
+				head = readINMap(in);
+				if (head == null) {
+					head = new INMap();
+				}
+				
+				data = readINMap(in);
+				if (data == null) {
+					data = new INMap();
+				}
+			} catch (ClassNotFoundException e) {
+				// 필드 초기화 보장
+				if (head == null) head = new INMap();
+				if (data == null) data = new INMap();
+				throw e;
+			}
 		}
 		
-		/**
-		 * INMap 쓰기 (최적화)
-		 */
+
 		private void writeINMap(ObjectOutput out, INMap map) throws IOException {
 			if (map == null) {
 				out.writeInt(0);
@@ -669,11 +685,13 @@ public class INet implements java.io.Serializable{
 			}
 		}
 		
-		/**
-		 * INMap 읽기 (최적화)
-		 */
+
 		private INMap readINMap(ObjectInput in) throws IOException, ClassNotFoundException {
 			int size = in.readInt();
+			
+			if (size < 0) {
+				throw new InvalidObjectException("Negative map size: " + size);
+			}
 			
 			INMap map = new INMap();
 			
@@ -690,22 +708,24 @@ public class INet implements java.io.Serializable{
 
 	
 
-	/**
-	 * INMap 클래스
-	 * 
-	 * LinkedHashMap 기반의 유틸리티 Map
-	 * - 다양한 타입 변환 메서드 제공
-	 * - 순서 보장 (LinkedHashMap)
-	 */
-	public class INMap extends LinkedHashMap<String, Object> implements Serializable {
+	public static class INMap extends LinkedHashMap<String, Object> implements Serializable {
 		
-	    private static final long serialVersionUID = 1L;
+	    private static final long serialVersionUID = 7834857649283647L;
 	    private static final DateTimeFormatter DF =
 	            DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss.S");
 
-	    public INMap() {}
+	    /**
+	     * 16개의 엔트리를 저장할 수 있는 공간으로 시작, 
+	     * 용량이 75% 차면 자동으로 2배 확장 
+	     * false (삽입 순서): 데이터를 넣은 순서대로 유지
+	     */
+	    public INMap() {
+	    	super(16, 0.75f, false);
+	    }
+
 
 	    public INMap(Map<? extends String, ? extends Object> map) {
+	        super(16, 0.75f, false);
 	        if (map != null) super.putAll(map);
 	    }
 
@@ -780,7 +800,6 @@ public class INet implements java.io.Serializable{
 	        return val.isBlank() ? replace : val;
 	    }
 
-	    // ---------------------- Boolean ----------------------
 	    public boolean getBoolean(String key) {
 	        Object obj = get(key);
 	        if (obj == null) return false;
@@ -788,7 +807,6 @@ public class INet implements java.io.Serializable{
 	        return val.equals("true") || val.equals("1");
 	    }
 
-	    // ---------------------- int ----------------------
 	    public int getInt(String key) {
 	        Object obj = get(key);
 	        if (obj == null) return 0;
@@ -820,7 +838,6 @@ public class INet implements java.io.Serializable{
 	        return val == 0 ? replace : val;
 	    }
 
-	    // ---------------------- long ----------------------
 	    public long getLong(String key) {
 	        Object obj = get(key);
 	        if (obj == null) return 0L;
@@ -852,7 +869,6 @@ public class INet implements java.io.Serializable{
 	        return val == 0L ? replace : val;
 	    }
 
-	    // ---------------------- double ----------------------
 	    public double getDouble(String key) {
 	        Object obj = get(key);
 	        if (obj == null) return 0.0;
@@ -884,14 +900,12 @@ public class INet implements java.io.Serializable{
 	        return val == 0.0 ? replace : val;
 	    }
 
-	    // ---------------------- BigDecimal ----------------------
 	    public BigDecimal getBigDecimal(String key) {
 	        Object obj = get(key);
 	        if (obj instanceof BigDecimal bd) return bd;
 	        return new BigDecimal(getString(key, "0"));
 	    }
 
-	    // ---------------------- BigInteger ----------------------
 	    public BigInteger getBigInteger(String key) {
 	        Object obj = get(key);
 	        if (obj instanceof BigInteger bi) return bi;
@@ -899,7 +913,6 @@ public class INet implements java.io.Serializable{
 	        return new BigInteger(getString(key, "0"));
 	    }
 
-	    // ---------------------- Timestamp ----------------------
 	    public Timestamp getTimestamp(String key) {
 	        Object obj = get(key);
 	        if (obj instanceof Timestamp ts) return ts;
@@ -907,7 +920,6 @@ public class INet implements java.io.Serializable{
 	        return null;
 	    }
 
-	    // ---------------------- Utility ----------------------
 	    public boolean like(String key, String value) {
 	        return getString(key).contains(value);
 	    }
@@ -920,9 +932,6 @@ public class INet implements java.io.Serializable{
 	        return get(key) == null;
 	    }
 
-	    public boolean isNullOrSpace(String key) {
-	        return getString(key).isBlank();
-	    }
 
 	    public boolean startsWith(String key, String value) {
 	        return getString(key).startsWith(value);

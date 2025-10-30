@@ -93,12 +93,43 @@ public class CommonUtils {
 	 * String 이 NULL 이거나 공백만 있는지 여부 확인 
 	 * @param str
 	 * @return
+	 * @see isBlank
 	 */
+	@Deprecated
 	public static boolean isNullOrSpace(String str) {
 		if(str == null || str.trim().isEmpty()) {
 			return true;
 		}else {
 			return false;
+		}
+	}
+	
+	
+	/**
+	 * String 이 NULL 이거나 공백만 있는지 여부 확인 
+	 * @param str
+	 * @return
+	 * @see isNullOrSpace
+	 */
+	public static boolean isBlank(String str) {
+		if(str == null || str.trim().isEmpty()) {
+			return true;
+		}else {
+			return false;
+		}
+	}
+	
+	/**
+	 * String 이 NULL 이거나 공백만 있는지 여부 확인 
+	 * @param str
+	 * @return
+	 * @see isNullOrSpace
+	 */
+	public static String isBlank(String str,String replace) {
+		if(str == null || str.trim().isEmpty()) {
+			return replace;
+		}else {
+			return str;
 		}
 	}
 	
@@ -108,6 +139,7 @@ public class CommonUtils {
 	 * @param replace
 	 * @return
 	 */
+	@Deprecated
 	public static String isNullOrSpace(String str,String replace) {
 		if(str == null || str.trim().isEmpty()) {
 			return replace;
@@ -188,20 +220,24 @@ public class CommonUtils {
 	}
 	
 	
-	public static boolean isEmpty(Object obj) {
-		if(obj == null) {
+	public static boolean isEmpty(Object value) {
+		if(value == null) {
 			return true;
 		}
 		
-		if (obj instanceof String s) return s.isEmpty();
-        if (obj instanceof Collection<?> c) return c.isEmpty();
-        if (obj instanceof Map<?,?> m) return m.isEmpty();
-        if (obj instanceof Object[] arr) return arr.length == 0;
-        if (obj instanceof Optional<?> opt) return opt.isEmpty();
+		if (value instanceof String s) return s.trim().isEmpty();
+        if (value instanceof Collection<?> c) return c.isEmpty();
+        if (value instanceof Map<?,?> m) return m.isEmpty();
+        if (value instanceof Optional<?> opt) return opt.isEmpty();
+        if (value.getClass().isArray()) return Array.getLength(value) == 0;
+        if (value instanceof Number n) return n.doubleValue() == 0;
+        if (value instanceof Boolean b) return !b;
 
 	
 		return false;
 	}
+	
+	
 	
 	public static boolean isNotEmpty(Object obj) {
 		return !isEmpty(obj);
@@ -471,7 +507,7 @@ public class CommonUtils {
 	 * @return
 	 */
 	public static String getExceptionMessage(Exception e){
-		return getExceptionMessage(e, 10);
+		return getExceptionMessage(e, 20);
 	}
 	
 	/**
@@ -482,52 +518,83 @@ public class CommonUtils {
 	 */
 	public static String getExceptionMessage(Exception e, int length){
 		StringBuilder sb = new StringBuilder();
-		StackTraceElement[] trace = null;
-		if(e instanceof SQLException){
-			SQLException sql = (SQLException)e;
-			sb.append(System.lineSeparator())
-				.append("code:").append(sql.getErrorCode ())
-				.append(",message:").append(sql.getMessage())
-				.append(System.lineSeparator());
-			trace = e.getStackTrace();
-		}else{
-			sb.append("message =")
-				.append(e.getMessage())
-				.append(System.lineSeparator());
-			trace = e.getStackTrace();
-		}
-		
-		if(trace != null && trace.length > 0){
-			int depth = Math.min(length, trace.length);
-			for(int i = 0; i < depth; i++ ) {
-				sb.append(trace[i].toString())
-					.append(System.lineSeparator());
-			}
-		}
-		
-		return sb.toString();
+	    
+	    // 최상위 예외 처리
+		exceptionInfo(sb, e, length, 0);
+	    
+	    // Cause chain 순회
+	    Throwable cause = e.getCause();
+	    int causeLevel = 1;
+	    while (cause != null) {
+	        sb.append(System.lineSeparator())
+	          .append("= Caused by (Level ").append(causeLevel).append(") =")
+	          .append(System.lineSeparator());
+	        exceptionInfo(sb, cause, length, causeLevel);
+	        cause = cause.getCause();
+	        causeLevel++;
+	    }
+	    
+	    return sb.toString();
 	}
 	
 	public static String getExceptionMessage(Throwable cause) {
-		return getExceptionMessage(cause,10);
+		return getExceptionMessage(cause,20);
 	}
 	
 	
 	public static String getExceptionMessage(Throwable cause , int length) {
 		StringBuilder sb = new StringBuilder();
 	
-		StackTraceElement[] trace =  cause.getStackTrace();		
-		if(trace != null && trace.length > 0){
-			int depth = trace.length > length ? length : trace.length;
-			sb.append(cause.getMessage());
-			for(int i = 0; i < depth; i++ ) {
-				
-				sb.append(trace[i].toString())
-					.append(System.lineSeparator());
-			}
-		}	
+		exceptionInfo(sb, cause, length, 0);
+		
+		Throwable nextCause = cause.getCause();
+	    int causeLevel = 1;
+	    while (nextCause != null) {
+	        sb.append(System.lineSeparator())
+	          .append("= Caused by (Level ").append(causeLevel).append(") =")
+	          .append(System.lineSeparator());
+	        exceptionInfo(sb, nextCause, length, causeLevel);
+	        nextCause = nextCause.getCause();
+	        causeLevel++;
+	    }
+	    	
 		return sb.toString();
 		
+	}
+	
+	
+	private static void exceptionInfo(StringBuilder sb, Throwable throwable, int length, int level) {
+	    // SQLException 특별 처리
+	    if (throwable instanceof SQLException) {
+	        SQLException sql = (SQLException) throwable;
+	        sb.append("SQLException Info:")
+	          .append(System.lineSeparator())
+	          .append("  Error Code: ").append(sql.getErrorCode())
+	          .append(System.lineSeparator())
+	          .append("  SQL State: ").append(sql.getSQLState())
+	          .append(System.lineSeparator())
+	          .append("  Message: ").append(sql.getMessage())
+	          .append(System.lineSeparator());
+	    } else {
+	        sb.append(throwable.getClass().getName())
+	          .append(": ")
+	          .append(throwable.getMessage())
+	          .append(System.lineSeparator());
+	    }
+	    
+	    // 스택 트레이스 추가
+	    StackTraceElement[] trace = throwable.getStackTrace();
+	    if (trace != null && trace.length > 0) {
+	        int depth = Math.min(length, trace.length);
+	        for (int i = 0; i < depth; i++) {
+	            sb.append("  at ").append(trace[i].toString())
+	              .append(System.lineSeparator());
+	        }
+	        if (trace.length > depth) {
+	            sb.append("  ... ").append(trace.length - depth).append(" more")
+	              .append(System.lineSeparator());
+	        }
+	    }
 	}
 
 	

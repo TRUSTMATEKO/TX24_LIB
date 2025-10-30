@@ -255,7 +255,7 @@ public class ApiUtils {
 	
 	
 	public static List<String> getParameterArgs(String uri){
-		if(CommonUtils.isNullOrSpace(uri)){
+		if(CommonUtils.isEmpty(uri)){
 			return new ArrayList<String>();
 		}
 		
@@ -281,7 +281,7 @@ public class ApiUtils {
 				}catch(Exception e){}
 				
 				if(obj.httpMethod.equals(HttpMethod.GET.name())){
-					if(!CommonUtils.isNullOrSpace(params)){
+					if(!CommonUtils.isEmpty(params)){
 						obj.payload	= params;
 					}
 				}
@@ -293,7 +293,7 @@ public class ApiUtils {
 	
 	
 	public static String getUri(String uri){
-		if(CommonUtils.isNullOrSpace(uri)){
+		if(CommonUtils.isEmpty(uri)){
 			return "/";
 		}
 		
@@ -553,7 +553,7 @@ public class ApiUtils {
 	
 
 	public static String getCharset(String contentType){
-		if(!CommonUtils.isNullOrSpace(contentType)){
+		if(!CommonUtils.isEmpty(contentType)){
 			if(contentType.indexOf("=") > 0 && contentType.toLowerCase().indexOf("charset") > -1){
 				String[] ctype = contentType.split("=");
 				if(ctype.length == 2){	

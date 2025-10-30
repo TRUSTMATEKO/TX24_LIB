@@ -22,6 +22,11 @@ public class SharedMap<K, V> extends ConcurrentHashMap<K, V> {
     private static final long serialVersionUID = -5846208410575929029L;
 
     public SharedMap() {}
+    
+    
+    public SharedMap(int initialCapacity, float loadFactor) {
+		super(initialCapacity,loadFactor);
+	}
 
     public SharedMap(Map<? extends K, ? extends V> map) {
         if (map != null) {
@@ -205,8 +210,12 @@ public class SharedMap<K, V> extends ConcurrentHashMap<K, V> {
         return super.get(key) == null;
     }
 
-    public boolean isNullOrSpace(String key) {
-        return CommonUtils.isNullOrSpace(getString(key));
+    public boolean isBlank(String key) {
+        return CommonUtils.isBlank(getString(key));
+    }
+    
+    public boolean isBlank(String key,String replace) {
+        return CommonUtils.isBlank(getString(key,replace));
     }
 
     public boolean startsWith(String key, String value) {

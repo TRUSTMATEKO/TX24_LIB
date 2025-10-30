@@ -25,7 +25,7 @@ public class MaskConverter extends ClassicConverter {
 	@Override
 	public String convert(ILoggingEvent iLoggingEvent) {
 		String message = iLoggingEvent.getFormattedMessage();
-		if(CommonUtils.isNullOrSpace(message)) {
+		if(CommonUtils.isBlank(message)) {
 			return "";
 		}else {
 			return filter(message);
@@ -38,7 +38,7 @@ public class MaskConverter extends ClassicConverter {
 		try{
 			while (match.find()) {
 				if(match.groupCount() == 2){
-					if(!CommonUtils.isNullOrSpace(match.group(2))){
+					if(!CommonUtils.isEmpty(match.group(2))){
 						String t = mask(match.group(1), match.group(2));
 						if (!t.equals(match.group(2))) {
 							String endStr = "";
@@ -61,8 +61,8 @@ public class MaskConverter extends ClassicConverter {
 	
 	
 	public static String mask(String name,String value){
-		value = CommonUtils.isNull(value,"").trim();
-		String lower = CommonUtils.isNull(name,"").toLowerCase().trim();
+		value = CommonUtils.isBlank(value,"").trim();
+		String lower = CommonUtils.isBlank(name,"").toLowerCase().trim();
 		
 		if(lower.indexOf(keyword[0]) > -1 || lower.indexOf(keyword[10]) > -1 || lower.indexOf(keyword[15]) > -1){			//rrn, account, ownerRrn
 			return value.replaceAll(LAST6_REGEX, "*".repeat(6)); // String.repeat() 적용

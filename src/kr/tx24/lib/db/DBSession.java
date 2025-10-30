@@ -497,7 +497,7 @@ public class DBSession implements AutoCloseable{
         if (dbType == null) {
             throw new IllegalStateException("데이터베이스 타입이 설정되지 않았습니다. database() 메서드를 호출하세요.");
         }
-        if (host == null || host.isEmpty()) {
+        if (CommonUtils.isBlank(host)) {
             throw new IllegalStateException("호스트 주소가 설정되지 않았습니다. host() 메서드를 호출하세요.");
         }
         
@@ -1025,7 +1025,7 @@ public class DBSession implements AutoCloseable{
  			
  			while (rset.next()) {
  				String catalog = CommonUtils.nToB(rset.getString(1));
- 				if (!CommonUtils.isNullOrSpace(catalog) && !DEFAULT_SCHEME.contains(catalog)) {
+ 				if (!CommonUtils.isEmpty(catalog) && !DEFAULT_SCHEME.contains(catalog)) {
  					catalogs.add(rset.getString(1));
  				}
  			}
@@ -1077,7 +1077,7 @@ public class DBSession implements AutoCloseable{
  			
  			while (rset.next()) {
  				String catalog = CommonUtils.nToB(rset.getString(1));
- 				if (!CommonUtils.isNullOrSpace(catalog) && !DEFAULT_SCHEME.contains(catalog)) {
+ 				if (!CommonUtils.isEmpty(catalog) && !DEFAULT_SCHEME.contains(catalog)) {
  					catalogs.add(rset.getString(1));
  				}
  			}
@@ -1432,7 +1432,7 @@ public class DBSession implements AutoCloseable{
 			double start = System.currentTimeMillis();
 			
 			// 데이터베이스 선택
-			if (!CommonUtils.isNullOrSpace(database)) {
+			if (!CommonUtils.isEmpty(database)) {
 				stmt.execute("USE " + database);
 			}
 			

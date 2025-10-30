@@ -127,7 +127,7 @@ public class Retrieve {
 	 * @return
 	 */
 	public Retrieve column(String column) {
-		if(CommonUtils.isEmpty(this.columns)) {
+		if(CommonUtils.isBlank(this.columns)) {
 			this.columns = column;
 		}else {
 			this.columns = this.columns +DBUtils.COMMA+column;
@@ -144,7 +144,7 @@ public class Retrieve {
 	 * @return
 	 */
 	public Retrieve orderBy(String orderBy) {
-		if(CommonUtils.isEmpty(this.orderBy)) {
+		if(CommonUtils.isBlank(this.orderBy)) {
 			this.orderBy = orderBy;
 		}else {
 			this.orderBy = this.orderBy + DBUtils.COMMA + orderBy;
@@ -160,7 +160,7 @@ public class Retrieve {
 	 * @return
 	 */
 	public Retrieve orderByAsc(String orderBy) {
-		if(CommonUtils.isEmpty(this.orderBy)) {
+		if(CommonUtils.isBlank(this.orderBy)) {
 			this.orderBy = orderBy + ASC;
 		}else {
 			this.orderBy = this.orderBy + DBUtils.COMMA + orderBy + ASC;
@@ -178,7 +178,7 @@ public class Retrieve {
 	 * @return
 	 */
 	public Retrieve orderByDesc(String orderBy) {
-		if(CommonUtils.isEmpty(this.orderBy)) {
+		if(CommonUtils.isBlank(this.orderBy)) {
 			this.orderBy = orderBy + DESC;
 		}else {
 			this.orderBy = this.orderBy + DBUtils.COMMA + orderBy + DESC;
@@ -197,7 +197,7 @@ public class Retrieve {
 	 * @return
 	 */
 	public Retrieve groupBy(String groupBy) {
-		if(CommonUtils.isEmpty(this.groupBy)) {
+		if(CommonUtils.isBlank(this.groupBy)) {
 			this.groupBy = groupBy;
 		}else {
 			this.groupBy = this.groupBy + DBUtils.COMMA + groupBy;
@@ -214,7 +214,7 @@ public class Retrieve {
 	 * @return
 	 */
 	public Retrieve having(String having) {
-		if(CommonUtils.isEmpty(this.having)) {
+		if(CommonUtils.isBlank(this.having)) {
 			this.having = having;
 		}else {
 			this.having = this.having + DBUtils.AND + having;
@@ -320,7 +320,7 @@ public class Retrieve {
 	 * @return
 	 */
 	public String build() {
-		if(CommonUtils.isEmpty(columns)) {
+		if(CommonUtils.isBlank(columns)) {
 			columns = ASTERISK;
 		}
 		StringBuilder sql 	= new StringBuilder();

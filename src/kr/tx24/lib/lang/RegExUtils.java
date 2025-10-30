@@ -223,7 +223,7 @@ public class RegExUtils {
 		
 		if(matcher.matches()){
 			for(String brand:brands){
-				String cc = CommonUtils.isNull(matcher.group(brand),"");
+				String cc = CommonUtils.isBlank(matcher.group(brand),"");
 				if(cc.equals(card)){
 					isMatch = true;
 					break;

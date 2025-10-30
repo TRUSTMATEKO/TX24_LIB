@@ -23,6 +23,10 @@ public class LinkedMap<K, V> extends LinkedHashMap<K, V> {
 	private static final long serialVersionUID = 3574302172005527508L;
 
 	public LinkedMap() {}
+	
+	public LinkedMap(int initialCapacity, float loadFactor) {
+		super(initialCapacity,loadFactor);
+	}
 
     public LinkedMap(Map<? extends K, ? extends V> map) {
         if (map != null) {
@@ -190,8 +194,6 @@ public class LinkedMap<K, V> extends LinkedHashMap<K, V> {
         return null;
     }
 
-    /* ================== Utility Methods ================== */
-
     public boolean like(String key, String value) {
         String val = getString(key);
         return val.contains(value);
@@ -205,8 +207,12 @@ public class LinkedMap<K, V> extends LinkedHashMap<K, V> {
         return super.get(key) == null;
     }
 
-    public boolean isNullOrSpace(String key) {
-        return CommonUtils.isNullOrSpace(getString(key));
+    public boolean isBlank(String key) {
+        return CommonUtils.isBlank(getString(key));
+    }
+    
+    public boolean isBlank(String key,String replace) {
+        return CommonUtils.isBlank(getString(key,replace));
     }
 
     public boolean startsWith(String key, String value) {
