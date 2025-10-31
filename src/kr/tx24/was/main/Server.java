@@ -277,7 +277,6 @@ public class Server{
 	        // JVM 모니터링 
 	        System.setProperty("JVM_MONITOR", "true");
 	    
-			LoadBalancer.start(10);
 			new Server().start();
 			
 		}catch(Exception e){

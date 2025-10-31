@@ -17,7 +17,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -74,10 +73,12 @@ public class SystemUtils {
     public static String KMS_IV 					= "iuytrewqkjhgfdsa";
 
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private static volatile boolean startLazyLoader = false;
 
     // JVM 로딩 시 즉시 초기화
     static {
         init();
+        startAsync();
     }
 
     public synchronized static void init() {
@@ -86,8 +87,6 @@ public class SystemUtils {
         }
     	
     	
-    	
-
         // Configure에서 설정 불러오기
         Configure configure 		= new Configure();
         Map<String, String> props 	= configure.load();
@@ -114,7 +113,8 @@ public class SystemUtils {
         
         System.setProperty("SystemUtils.INITIALIZED", "true");
         
-    
+        LoadBalancer.start();
+        
         // 초기 정보 출력
         System.err.println("__________________________");
         String art = """
@@ -128,20 +128,42 @@ public class SystemUtils {
         System.err.println("CONFIG  " + getConfigDirectory());
         System.err.println("PROC    " + getLocalProcessName() +",H:"+getLocalHostname()+",I:"+getLocalAddress()+",P:"+getLocalProcessId());
         
-        scheduler.scheduleAtFixedRate(SystemUtils::checkDeepView, 0, 10*1000, TimeUnit.MILLISECONDS);
         
-        if (Boolean.getBoolean(PROPERTY_JVM_MONITOR)) {
-        	JvmStatusUtils.start();
-        }
         
-        if(Files.exists(getLoadBalanceConfigPath())) {
-        	LoadBalancer.start();
-        }
         
         //System.err.println("SystemUtils initialized"); 
 
     }
     
+    
+    private static void startAsync() {
+    	
+    	scheduler.scheduleAtFixedRate(SystemUtils::checkDeepView, 0, 10*1000, TimeUnit.MILLISECONDS);
+    	
+        scheduler.execute(() -> {
+            try {
+                Thread.sleep(50);
+                synchronized (SystemUtils.class) {
+                    if (!startLazyLoader) {
+                        
+                    	if (Boolean.getBoolean(PROPERTY_JVM_MONITOR)) {
+                        	JvmStatusUtils.start();
+                        }
+                        
+                        if(Files.exists(getLoadBalanceConfigPath())) {
+                        	LoadBalancer.start();
+                        }
+                        startLazyLoader = true;
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                System.err.println("Failed to start lazy loader: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+    }
 
 
     private static void checkDeepView() {

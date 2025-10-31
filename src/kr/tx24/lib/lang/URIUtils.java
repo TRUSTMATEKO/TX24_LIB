@@ -353,15 +353,7 @@ public class URIUtils {
                   .collect(Collectors.joining("&"));
     }
 
-    /**
-     * Map을 쿼리 문자열로 변환합니다. (레거시 메서드명 호환성 유지)
-     * 
-     * @deprecated {@link #toQueryString(Map, String...)} 사용을 권장합니다.
-     */
-    @Deprecated
-    public static <M extends Map<String, ?>> String parse(M map, String... charsetNames) {
-        return toQueryString(map, charsetNames);
-    }
+
 
     /**
      * URL 디코딩을 수행합니다.

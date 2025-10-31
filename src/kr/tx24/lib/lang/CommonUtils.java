@@ -1848,5 +1848,58 @@ public class CommonUtils {
 
         return padListForce(list, targetSize, defaultValue);
     }
+    
+    
+    
+    /**
+     * 바이트 배열(4바이트)을 int 값으로 변환합니다.
+     * 
+     * @param bytes 변환할 바이트 배열 (4바이트)
+     * @param bigEndian true이면 Big-Endian, false이면 Little-Endian
+     * @return 변환된 int 값
+     */
+    public static int bytesToInt(byte[] bytes, boolean bigEndian) {
+        if (bigEndian) {
+            // Big-Endian: 첫 바이트가 최상위 바이트
+            return ((bytes[0] & 0xFF) << 24) |
+                   ((bytes[1] & 0xFF) << 16) |
+                   ((bytes[2] & 0xFF) << 8) |
+                   (bytes[3] & 0xFF);
+        } else {
+            // Little-Endian: 첫 바이트가 최하위 바이트
+            return (bytes[0] & 0xFF) |
+                   ((bytes[1] & 0xFF) << 8) |
+                   ((bytes[2] & 0xFF) << 16) |
+                   ((bytes[3] & 0xFF) << 24);
+        }
+    }
+    
+    
+    /**
+     * int 값을 4바이트 배열로 변환합니다.
+     * 
+     * @param value 변환할 정수 값
+     * @param bigEndian true이면 Big-Endian, false이면 Little-Endian
+     * @return 변환된 4바이트 배열
+     */
+    public static byte[] intToBytes(int value, boolean bigEndian) {
+        byte[] bytes = new byte[4];
+        
+        if (bigEndian) {
+            // Big-Endian: 최상위 바이트가 첫 번째
+            bytes[0] = (byte) (value >>> 24);
+            bytes[1] = (byte) (value >>> 16);
+            bytes[2] = (byte) (value >>> 8);
+            bytes[3] = (byte) value;
+        } else {
+            // Little-Endian: 최하위 바이트가 첫 번째
+            bytes[0] = (byte) value;
+            bytes[1] = (byte) (value >>> 8);
+            bytes[2] = (byte) (value >>> 16);
+            bytes[3] = (byte) (value >>> 24);
+        }
+        
+        return bytes;
+    }
 
 }

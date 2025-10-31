@@ -19,10 +19,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;
@@ -32,17 +29,16 @@ public class LoadBalancer {
     private static final Logger logger = LoggerFactory.getLogger(LoadBalancer.class);
 
     private static final Path LB_CONF = SystemUtils.getLoadBalanceConfigPath();
-    private static final ConcurrentHashMap<String, ConcurrentHashMap<String, Integer>> SERVER_POOLS = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, List<String>> SERVER_LIST = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, AtomicInteger> SERVER_POSITION = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Set<String>> SERVER_BROKEN_LIST = new ConcurrentHashMap<>();
-    private static volatile boolean enabled = false;
-    private static volatile boolean started = false;
-    private static volatile long lastConfigModified = 0;
-    
+    private static ConcurrentHashMap<String, ConcurrentHashMap<String, Integer>> SERVER_POOLS;
+    private static ConcurrentHashMap<String, List<String>> SERVER_LIST;
+    private static ConcurrentHashMap<String, AtomicInteger> SERVER_POSITION;
+    private static ConcurrentHashMap<String, Set<String>> SERVER_BROKEN_LIST;
+    private static volatile boolean enabled;
+    private static volatile boolean started;
+    private static volatile long lastConfigModified;
     
     private static final int DEFAULT_INTERVAL = 10;
-    private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private static ScheduledExecutorService scheduler;
     private static final Object START_LOCK = new Object();
 
     public static boolean isEnabled() {
@@ -61,6 +57,16 @@ public class LoadBalancer {
                 logger.warn("LoadBalancer is already started. Ignoring duplicate start() call.");
                 return;
             }
+            
+            
+            SERVER_POOLS = new ConcurrentHashMap<>();
+            SERVER_LIST = new ConcurrentHashMap<>();
+            SERVER_POSITION = new ConcurrentHashMap<>();
+            SERVER_BROKEN_LIST = new ConcurrentHashMap<>();
+            enabled = false;
+            started = false;
+            lastConfigModified = 0;
+            scheduler = Executors.newSingleThreadScheduledExecutor();
             
             File configFile = LB_CONF.toFile();
             if(!Files.exists(LB_CONF)) {

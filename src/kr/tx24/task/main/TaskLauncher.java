@@ -53,7 +53,6 @@ public class TaskLauncher {
                 try {
                     // 1. 스케줄러 중지
                     if (scheduler != null) {
-                        System.out.println("Stopping scheduler");
                         scheduler.cancelAll();
                     }
                     

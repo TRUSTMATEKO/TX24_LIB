@@ -2,6 +2,10 @@ package kr.tx24.lib.logback;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Queue;
+
+import org.slf4j.LoggerFactory;
+import org.slf4j.helpers.SubstituteLoggerFactory;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -31,7 +35,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
     
     static {
         // Logback 내부 상태 메시지를 OFF로 설정
-        System.setProperty("logback.statusListener", "ch.qos.logback.core.status.NopStatusListener");
+        //System.setProperty("logback.statusListener", "ch.qos.logback.core.status.NopStatusListener");
         
         // 또는, 콘솔 메시지 레벨 자체를 조정
         // System.setProperty("logback.status.level", "OFF");
@@ -42,8 +46,9 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
 
     @Override
     public ExecutionStatus configure(LoggerContext ctx) {
+    	
         ctx.reset();
-
+        
         // LOGGER 환경변수 기반 설정
         String[] udfs = Arrays.stream(System.getProperty("LOGGER", SystemUtils.LOG_ENV_DEFAULT).split(","))
                 .map(String::trim).toArray(String[]::new);
@@ -142,7 +147,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         	System.err.println(MsgUtils.format("LOG     console={}, local={}, remote={}", LOG_APPENDER[0], LOG_APPENDER[1], LOG_APPENDER[2]));
         }
         
-
+        printLostLogs();
         return ExecutionStatus.DO_NOT_INVOKE_NEXT_IF_ANY;
     }
 
@@ -153,8 +158,13 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         ctx.getLogger("io.netty").setLevel(Level.INFO);
         ctx.getLogger("org.apache").setLevel(Level.INFO);
         ctx.getLogger("org.hibernate").setLevel(Level.INFO);
+        
         ctx.getLogger("com.zaxxer.hikari").setLevel(Level.OFF);
+        ctx.getLogger("com.zaxxer.hikari.pool.HikariPool").setLevel(Level.ERROR);
+        
         ctx.getLogger("io.lettuce").setLevel(Level.INFO);
+        ctx.getLogger("io.lettuce.core.AbstractRedisClient").setLevel(Level.ERROR);
+        
         ctx.getLogger("reactor.util").setLevel(Level.INFO);
         ctx.getLogger("org.thymeleaf").setLevel(Level.INFO);
         ctx.getLogger("org.springframework").setLevel(Level.INFO);
@@ -162,6 +172,60 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         ctx.getLogger("com.password4j").setLevel(Level.INFO);
     }
     
+    
+    
+    /**
+     * SLF4J 큐에 저장된 로스트 로그를 출력합니다.
+     * LogBack 초기화 전에 호출해야 합니다.
+     */
+    public static void printLostLogs() {
+        try {
+        	
+            org.slf4j.ILoggerFactory factory = LoggerFactory.getILoggerFactory();
+            
+            if (!(factory instanceof SubstituteLoggerFactory)) {
+                return; // 이미 초기화됨
+            }
+            
+            SubstituteLoggerFactory subFactory = (SubstituteLoggerFactory) factory;
+            // Reflection으로 큐 접근
+            java.lang.reflect.Field field = SubstituteLoggerFactory.class.getDeclaredField("eventQueue");
+            field.setAccessible(true);
+            
+            @SuppressWarnings("unchecked")
+            Queue<Object> queue = (Queue<Object>) field.get(subFactory);
+            
+            if (queue == null || queue.isEmpty()) {
+                return;
+            }
+            
+            if(queue.size() > 0) {
+            	//System.out.println("SLF4J Lost Logs (" + queue.size() + "):");
+            
+	            int i = 1;
+	            for (Object event : queue) {
+	                try {
+	                    java.lang.reflect.Method getLevel = event.getClass().getMethod("getLevel");
+	                    java.lang.reflect.Method getLogger = event.getClass().getMethod("getLoggerName");
+	                    java.lang.reflect.Method getMessage = event.getClass().getMethod("getMessage");
+	                    
+	                    System.out.printf("[%d] %-5s %s - %s%n", 
+	                        i++, 
+	                        getLevel.invoke(event), 
+	                        getLogger.invoke(event), 
+	                        getMessage.invoke(event)
+	                    );
+	                } catch (Exception e) {
+	                }
+	            }
+            }
+            System.out.println();
+            
+        } catch (Exception e) {
+            // 조용히 실패
+        	System.out.println("x");
+        }
+    }
     
     
 }
