@@ -17,12 +17,12 @@ public class HelloCtl {
 	@SessionIgnore
     @GetMapping("/hello")
     public String hello(Model model, @Header LinkedMap<String,Object>  headerMap, @Param SharedMap<String,Object> paramMap) {
-        model.addAttribute("name", "Thymeleaf 테스트11");
+        model.addAttribute("name", "Thymeleaf 테스트11ㅁㅁㅁㅁ잘되나 신기하네a");
         
  
         System.out.println(headerMap.toJson());
         System.out.println(paramMap.toJson());
-         
+         //testsettt
          
         return "hello"; // templates/hello.html
     }

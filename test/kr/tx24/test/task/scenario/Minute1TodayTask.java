@@ -2,6 +2,8 @@ package kr.tx24.test.task.scenario;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import kr.tx24.lib.netty.NettyUtils;
 import kr.tx24.task.annotation.Task;
 
 /**
@@ -23,5 +25,8 @@ public class Minute1TodayTask implements Runnable {
     @Override
     public void run() {
         logger.info("[SCENARIO 10-1] 1 minutes interval today task executed");
+        try {
+        	NettyUtils.sleep(null, 0, null);
+        }catch(Exception e) {}
     }
 }

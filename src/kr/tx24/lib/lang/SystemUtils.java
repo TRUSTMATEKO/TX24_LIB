@@ -113,8 +113,7 @@ public class SystemUtils {
         
         System.setProperty("SystemUtils.INITIALIZED", "true");
         
-        LoadBalancer.start();
-        
+
         // 초기 정보 출력
         System.err.println("__________________________");
         String art = """

@@ -9,14 +9,14 @@ import kr.tx24.task.annotation.Task;
  * Generated for Task Scheduler testing
  */
 @Task(
-    name = "minute30_past_start",
-    time = "00:00",
-    period = "30m",
-    startDay = "20241015",
-    enabled = true,
-    desc = "Every 30 minutes with past start / 30분마다 과거 시작일",
-    priority = 88
-)
+	    name = "minute1_today333333",
+	    time = "00:00",
+	    period = "1m",
+	    startDay = "20251017",
+	    enabled = true,
+	    desc = "Every 1 minutes today / 1분마다 당일 시작",
+	    priority = 5
+	)
 public class Minute30PastStartTask implements Runnable {
     private static final Logger logger = LoggerFactory.getLogger(Minute30PastStartTask.class);
     

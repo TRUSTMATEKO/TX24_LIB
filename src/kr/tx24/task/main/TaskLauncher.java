@@ -62,7 +62,7 @@ public class TaskLauncher {
                 } catch (Exception e) {
                     //logger.error("Error during shutdown / 종료 중 오류 발생", e);
                 }
-            }, "shutdown-hook"));
+            }, "ShutdownHook-TaskLauncher"));
             
             
             

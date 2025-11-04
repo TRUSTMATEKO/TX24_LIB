@@ -26,9 +26,9 @@ import org.springframework.web.SpringServletContainerInitializer;
 
 import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.SystemUtils;
-import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.was.conf.TomcatConfig;
 import kr.tx24.was.conf.TomcatConfigLoader;
+import kr.tx24.was.core.EmbeddedReloadWatcher;
 import kr.tx24.was.core.ServletConfiguration;
 import kr.tx24.was.util.UADetect;
 import kr.tx24.was.util.Was;
@@ -205,11 +205,28 @@ public class Server{
 		if (additionWebInfClassesFolder.exists()) {
 			resourceSet = new DirResourceSet(resources, "/WEB-INF/classes", additionWebInfClassesFolder.getAbsolutePath(), "/");
 			resources.addPreResources(resourceSet);
-			/* 아래는 정상적으로 동작하지 않는다.
+			
+			
+			//class reload 반영 
 			if(config.reloadable) {
-				EmbeddedReloadWatcher watcher = new EmbeddedReloadWatcher(ctx, additionWebInfClassesFolder);
-			    watcher.start();
-			}*/
+			    if (additionWebInfClassesFolder.exists()) {
+			        try {
+			        	
+			        	
+			            EmbeddedReloadWatcher watcher = new EmbeddedReloadWatcher(ctx, additionWebInfClassesFolder);
+			            watcher.start();
+			            
+			            
+			        } catch (Exception e) {
+			            logger.error("EmbeddedReloadWatcher failed : {}", e);
+			        }
+			    } else {
+			        logger.warn("EmbeddedReloadWatcher directory not found : {}", 
+			                    additionWebInfClassesFolder.getAbsolutePath());
+			    }
+			}
+			
+			
 		}else{
 			resourceSet = new EmptyResourceSet(resources);
 		}
