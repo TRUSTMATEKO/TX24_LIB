@@ -137,7 +137,7 @@ public class LoadBalancer {
             pools.forEach((key, serverMap) -> SERVER_POOLS.put(key, new ConcurrentHashMap<>(serverMap)));
             enabled = true;
             lastConfigModified = modified;
-            logger.info("LoadBalancer config reloaded:\n{}", new JacksonUtils().toJson(SERVER_LIST));
+            logger.info("LoadBalancer config loaded:\n{}", new JacksonUtils().toJson(SERVER_LIST));
 
         } catch (Exception e) {
             logger.warn("LoadBalancer config reload failed: {}", e.getMessage());
@@ -196,7 +196,7 @@ public class LoadBalancer {
             return;
         }
         
-        logger.info("LoadBalancer shutting down...");
+        //logger.info("LoadBalancer shutting down...");
         
         try {
             //즉시 강제 종료

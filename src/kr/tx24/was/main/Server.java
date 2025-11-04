@@ -25,10 +25,12 @@ import org.slf4j.bridge.SLF4JBridgeHandler;
 import org.springframework.web.SpringServletContainerInitializer;
 
 import kr.tx24.lib.executor.AsyncExecutor;
+import kr.tx24.lib.lang.MsgUtils;
+import kr.tx24.lib.lang.NetUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.was.conf.TomcatConfig;
 import kr.tx24.was.conf.TomcatConfigLoader;
-import kr.tx24.was.core.EmbeddedReloadWatcher;
+import kr.tx24.was.core.ReloadWatcher;
 import kr.tx24.was.core.ServletConfiguration;
 import kr.tx24.was.util.UADetect;
 import kr.tx24.was.util.Was;
@@ -48,6 +50,11 @@ public class Server{
 	public void start()throws Exception {
 		
 		TomcatConfig config = TomcatConfigLoader.load();
+		
+		if(NetUtils.isAlive(config.host, config.port)) {
+			System.err.println(MsgUtils.format("{},{} aleady bounded", config.host,config.port));
+			System.exit(1);
+		}
 		
 		
 		// 기존 JUL 핸들러를 제거하여 JUL의 콘솔/파일 출력 중복을 방지합니다.
@@ -150,6 +157,7 @@ public class Server{
 		StandardContext ctx = (StandardContext) tomcat.addWebapp("", docBase+File.separator+"/webroot");
 		ctx.setReloadable(config.reloadable);		// tomcat 10.x 부터는 위 부분을 지원하지 않음. 그리고 EmbeddedReloadWatcht 가 필요함.
 		ctx.setDisplayName(config.serverName);
+		ctx.setName(config.serverName);
 		ctx.setWorkDir(docBase+File.separator+"/classes/work");
 		ctx.setSessionCookieName(null);   // JSESSIONID 쿠키 생성 방지
 		ctx.setSessionTimeout(-1);        // 명시적으로 세션 무효화
@@ -213,7 +221,7 @@ public class Server{
 			        try {
 			        	
 			        	
-			            EmbeddedReloadWatcher watcher = new EmbeddedReloadWatcher(ctx, additionWebInfClassesFolder);
+			            ReloadWatcher watcher = new ReloadWatcher(ctx, additionWebInfClassesFolder);
 			            watcher.start();
 			            
 			            

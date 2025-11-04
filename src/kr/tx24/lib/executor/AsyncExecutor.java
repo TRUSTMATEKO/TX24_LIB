@@ -428,7 +428,7 @@ public class AsyncExecutor {
                     logger.error("{} executor did not terminate after forced shutdown", name);
                 }
             } else {
-                logger.info("{} executor shutdown successfully", name);
+                logger.info("{} executor shutdown completed", name);
             }
             
         } catch (InterruptedException e) {

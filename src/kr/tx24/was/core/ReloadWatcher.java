@@ -19,9 +19,9 @@ import org.slf4j.LoggerFactory;
 /*
  * @author juseop
  */
-public class EmbeddedReloadWatcher {
+public class ReloadWatcher {
 
-    private static final Logger logger = LoggerFactory.getLogger(EmbeddedReloadWatcher.class);
+    private static final Logger logger = LoggerFactory.getLogger(ReloadWatcher.class);
     
     private final Context context;
     private final Path classesPath;
@@ -50,11 +50,11 @@ public class EmbeddedReloadWatcher {
      * @param context 리로드할 Tomcat Context
      * @param classesDir 감시할 컴파일된 클래스 파일 디렉토리
      */
-    public EmbeddedReloadWatcher(Context context, File classesDir) {
+    public ReloadWatcher(Context context, File classesDir) {
         this.context = context;
         this.classesPath = classesDir.toPath();
         this.executor = Executors.newSingleThreadExecutor(r -> {
-            Thread thread = new Thread(r, "EmbeddedReloadWatcher-Thread");
+            Thread thread = new Thread(r, "ReloadWatcher-Thread");
             thread.setDaemon(true);
             return thread;
         });
@@ -81,7 +81,7 @@ public class EmbeddedReloadWatcher {
             // 3. 재귀적으로 디렉토리 등록
             int dirCount = registerAll(classesPath);
             
-            logger.info("EmbeddedReloadWatcher stated");
+            logger.info("ReloadWatcher stated");
             logger.info("watch directory : {}, debounce : {}", classesPath,RELOAD_DEBOUNCE_MILLIS );
             
          
@@ -91,7 +91,7 @@ public class EmbeddedReloadWatcher {
             // 5. Shutdown Hook 등록
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 stop();
-            }, "ShutdownHook-EmbeddedReloadWatcher"));
+            }, "ShutdownHook-ReloadWatcher"));
             
         } catch (IOException e) {
             logger.error("WatchService 초기화 또는 디렉토리 등록 중 오류 발생", e);
@@ -364,7 +364,7 @@ public class EmbeddedReloadWatcher {
                 Thread.currentThread().interrupt();
             }
         }
-        
+        logger.info("ReloadWatcher scheduler shutdown completed");
         // 3. 리소스 정리
         keys.clear();
     }

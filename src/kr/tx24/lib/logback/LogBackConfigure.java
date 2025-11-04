@@ -70,7 +70,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         if (LOG_APPENDER[0]) {
             PatternLayoutEncoder consoleEncoder = new PatternLayoutEncoder();
             consoleEncoder.setContext(ctx);
-            consoleEncoder.setPattern("%d{HH:mm:ss.SSS} [%.7thread] %-5level %logger{16} -%mdc:%masked%n");
+            consoleEncoder.setPattern("%d{HH:mm:ss.SSS} [%thread] %-5level %logger{16} -%mdc:%masked%n");
             consoleEncoder.start();
 
             ConsoleAppender<ILoggingEvent> consoleAppender = new ConsoleAppender<>();
