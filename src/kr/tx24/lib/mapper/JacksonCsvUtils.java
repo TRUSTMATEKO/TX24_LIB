@@ -1,20 +1,28 @@
 package kr.tx24.lib.mapper;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.DateFormat;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Collections;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.csv.CsvMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;
 
 import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.map.TypeRegistry;
 
 /**
  * CSV 전용 Jackson Utility
@@ -95,9 +103,10 @@ import kr.tx24.lib.lang.CommonUtils;
  * @see JacksonXmlUtils
  * @see JacksonYamlUtils
  */
-public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
+public class JacksonCsvUtils {
     private static final Logger logger = LoggerFactory.getLogger(JacksonCsvUtils.class);
     
+    private final CsvMapper mapper;
     private final boolean withHeader;
     private final char separator;
 
@@ -105,7 +114,7 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
      * 기본 생성자 - 헤더 포함, comma 구분자로 초기화
      */
     public JacksonCsvUtils() {
-        super(createDefaultMapper());
+    	this.mapper = createDefaultMapper();
         this.withHeader = true;
         this.separator = ',';
     }
@@ -118,7 +127,7 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
      * @param separator 구분자
      */
     private JacksonCsvUtils(CsvMapper mapper, boolean withHeader, char separator) {
-        super(mapper);
+        this.mapper = mapper;
         this.withHeader = withHeader;
         this.separator = separator;
     }
@@ -140,44 +149,54 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
         csvMapper.disable(SerializationFeature.INDENT_OUTPUT);
         return csvMapper;
     }
-
-    /**
-     * Pretty 포맷 인스턴스 반환
-     * 
-     * <p>CSV는 본질적으로 compact 형식이므로 this를 반환합니다.</p>
-     * 
-     * @return this 인스턴스
-     */
-    @Override
-    public JacksonCsvUtils pretty() {
-        return this;
-    }
-
-    /**
-     * Compact 포맷 인스턴스 반환
-     * 
-     * <p>CSV는 본질적으로 compact 형식이므로 this를 반환합니다.</p>
-     * 
-     * @return this 인스턴스
-     */
-    @Override
-    public JacksonCsvUtils compact() {
-        return this;
-    }
-
-    /**
-     * 새로운 JacksonCsvUtils 인스턴스 생성 (Factory 패턴)
-     * 
-     * @param mapper 사용할 CsvMapper
-     * @return 새 JacksonCsvUtils 인스턴스
-     */
-    @Override
-    protected JacksonCsvUtils createNewInstance(CsvMapper mapper) {
-        return new JacksonCsvUtils(mapper, this.withHeader, this.separator);
+    
+    
+    public ObjectMapper getMapper() {
+        return mapper.copy();
     }
     
     
-    // ==================== CSV Options ====================
+    /**
+     * Null 값 포함 여부 설정
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * JacksonCsvUtils csvNullable = csv.nullable(true);
+     * </pre>
+     * 
+     * @param nullable true면 null 포함, false면 제외
+     * @return 설정이 적용된 새 인스턴스
+     */
+    public JacksonCsvUtils nullable(boolean nullable) {
+        CsvMapper tmp = mapper.copy();
+        JsonInclude.Include inclusion = nullable
+                ? JsonInclude.Include.USE_DEFAULTS
+                : JsonInclude.Include.NON_NULL;
+        tmp.setDefaultPropertyInclusion(JsonInclude.Value.construct(inclusion, inclusion));
+        return new JacksonCsvUtils(tmp, this.withHeader, this.separator);
+    }
+    
+    
+    /**
+     * 날짜 포맷 설정
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+     * JacksonCsvUtils csvWithDateFormat = csv.dateformat(sdf);
+     * </pre>
+     * 
+     * @param df DateFormat
+     * @return 설정이 적용된 새 인스턴스
+     */
+    public JacksonCsvUtils dateformat(DateFormat df) {
+        CsvMapper tmp = mapper.copy();
+        tmp.setDateFormat(df);
+        return new JacksonCsvUtils(tmp, this.withHeader, this.separator);
+    }
+    
+    
+    
     
     /**
      * 헤더 포함 인스턴스 반환
@@ -200,6 +219,7 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
         return new JacksonCsvUtils(mapper.copy(), true, this.separator);
     }
     
+    
     /**
      * 헤더 제외 인스턴스 반환
      * 
@@ -219,6 +239,7 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
         }
         return new JacksonCsvUtils(mapper.copy(), false, this.separator);
     }
+    
     
     /**
      * 구분자 설정 인스턴스 반환
@@ -249,7 +270,6 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
     }
     
     
-    // ==================== Schema Creation ====================
     
     /**
      * 클래스 타입으로부터 CsvSchema 생성
@@ -275,6 +295,7 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
         
         return builder.build();
     }
+    
     
     /**
      * 커스텀 헤더 매핑을 사용하여 CsvSchema 생성
@@ -306,9 +327,6 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
         return builder.build();
     }
     
-    
-    // ==================== Validation ====================
-    
     /**
      * CSV 문자열 유효성 검사
      * 
@@ -336,6 +354,8 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
             return false;
         }
     }
+    
+    
     
     /**
      * CSV 문자열을 특정 타입으로 변환 가능한지 검사
@@ -365,479 +385,760 @@ public class JacksonCsvUtils extends JacksonAbstract<CsvMapper> {
     }
     
     
-    // ==================== Serialization (기본) ====================
-    
     /**
-     * List 객체를 CSV 문자열로 변환
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * List<User> users = List.of(
-     *     new User("John", 30),
-     *     new User("Jane", 25)
-     * );
-     * String csv = csv.toCsv(users, User.class);
-     * // name,age
-     * // John,30
-     * // Jane,25
-     * </pre>
-     * 
-     * @param <T> 객체 타입
-     * @param list 변환할 List
-     * @param type 객체의 클래스
-     * @return CSV 문자열
-     */
-    public <T> String toCsv(List<T> list, Class<T> type) {
-        if (list == null || list.isEmpty()) return "";
-        try {
-            CsvSchema schema = createSchema(type);
-            return mapper.writer(schema).writeValueAsString(list);
-        } catch (Exception e) {
-            logger.warn("CSV 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return "";
-        }
-    }
-    
-    /**
-     * 단일 객체를 CSV 문자열로 변환 (1행)
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * User user = new User("John", 30);
-     * String csv = csv.toCsv(user, User.class);
-     * // name,age
-     * // John,30
-     * </pre>
-     * 
-     * @param <T> 객체 타입
-     * @param value 변환할 객체
-     * @param type 객체의 클래스
-     * @return CSV 문자열
-     */
-    public <T> String toCsv(T value, Class<T> type) {
-        if (value == null) return "";
-        return toCsv(List.of(value), type);
-    }
-    
-    
-    // ==================== Serialization (한글 헤더) ====================
-    
-    /**
-     * List 객체를 커스텀 헤더(한글 등)로 CSV 문자열로 변환
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * List<User> users = List.of(
-     *     new User("홍길동", 30),
-     *     new User("김철수", 25)
-     * );
-     * 
-     * Map<String, String> headerMap = Map.of(
-     *     "name", "이름",
-     *     "age", "나이",
-     *     "address", "주소"
-     * );
-     * 
-     * String csv = csv.toCsvWithCustomHeaders(users, User.class, headerMap);
-     * // 이름,나이,주소
-     * // 홍길동,30,서울
-     * // 김철수,25,부산
-     * </pre>
-     * 
-     * @param <T> 객체 타입
-     * @param list 변환할 List
-     * @param type 객체의 클래스
-     * @param fieldToHeaderMap 필드명 → 헤더명 매핑 (예: "name" → "이름")
-     * @return CSV 문자열
-     */
-    public <T> String toCsvWithCustomHeaders(List<T> list, Class<T> type, Map<String, String> fieldToHeaderMap) {
-        if (list == null || list.isEmpty()) return "";
-        if (fieldToHeaderMap == null || fieldToHeaderMap.isEmpty()) {
-            return toCsv(list, type);  // 매핑이 없으면 기본 메서드 사용
-        }
-        
-        try {
-            CsvSchema schema = createSchemaWithCustomHeaders(type, fieldToHeaderMap);
-            return mapper.writer(schema).writeValueAsString(list);
-        } catch (Exception e) {
-            logger.warn("CSV 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return "";
-        }
-    }
-    
-    /**
-     * 단일 객체를 커스텀 헤더(한글 등)로 CSV 문자열로 변환
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * User user = new User("홍길동", 30, "서울");
-     * 
-     * Map<String, String> headerMap = Map.of(
-     *     "name", "이름",
-     *     "age", "나이",
-     *     "address", "주소"
-     * );
-     * 
-     * String csv = csv.toCsvWithCustomHeaders(user, User.class, headerMap);
-     * // 이름,나이,주소
-     * // 홍길동,30,서울
-     * </pre>
-     * 
-     * @param <T> 객체 타입
-     * @param value 변환할 객체
-     * @param type 객체의 클래스
-     * @param fieldToHeaderMap 필드명 → 헤더명 매핑
-     * @return CSV 문자열
-     */
-    public <T> String toCsvWithCustomHeaders(T value, Class<T> type, Map<String, String> fieldToHeaderMap) {
-        if (value == null) return "";
-        return toCsvWithCustomHeaders(List.of(value), type, fieldToHeaderMap);
-    }
+    * List 객체를 CSV 문자열로 변환
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * List<User> users = List.of(
+    *     new User("John", 30),
+    *     new User("Jane", 25)
+    * );
+    * String csv = csv.toCsv(users, User.class);
+    * // name,age
+    * // John,30
+    * // Jane,25
+    * </pre>
+    * 
+    * @param <T> 객체 타입
+    * @param list 변환할 List
+    * @param type 객체의 클래스
+    * @return CSV 문자열
+    */
+   public <T> String toCsv(List<T> list, Class<T> type) {
+       if (list == null || list.isEmpty()) return "";
+       try {
+           CsvSchema schema = createSchema(type);
+           return mapper.writer(schema).writeValueAsString(list);
+       } catch (Exception e) {
+           logger.warn("CSV 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return "";
+       }
+   }
+   
+   /**
+    * 단일 객체를 CSV 문자열로 변환 (1행)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * User user = new User("John", 30);
+    * String csv = csv.toCsv(user, User.class);
+    * // name,age
+    * // John,30
+    * </pre>
+    * 
+    * @param <T> 객체 타입
+    * @param value 변환할 객체
+    * @param type 객체의 클래스
+    * @return CSV 문자열
+    */
+   public <T> String toCsv(T value, Class<T> type) {
+       if (value == null) return "";
+       return toCsv(List.of(value), type);
+   }
+   
+   
+   // ==================== Serialization (한글 헤더) ====================
+   
+   /**
+    * List 객체를 커스텀 헤더(한글 등)로 CSV 문자열로 변환
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * List<User> users = List.of(
+    *     new User("홍길동", 30),
+    *     new User("김철수", 25)
+    * );
+    * 
+    * Map<String, String> headerMap = Map.of(
+    *     "name", "이름",
+    *     "age", "나이",
+    *     "address", "주소"
+    * );
+    * 
+    * String csv = csv.toCsvWithCustomHeaders(users, User.class, headerMap);
+    * // 이름,나이,주소
+    * // 홍길동,30,서울
+    * // 김철수,25,부산
+    * </pre>
+    * 
+    * @param <T> 객체 타입
+    * @param list 변환할 List
+    * @param type 객체의 클래스
+    * @param fieldToHeaderMap 필드명 → 헤더명 매핑 (예: "name" → "이름")
+    * @return CSV 문자열
+    */
+   public <T> String toCsvWithCustomHeaders(List<T> list, Class<T> type, Map<String, String> fieldToHeaderMap) {
+       if (list == null || list.isEmpty()) return "";
+       if (fieldToHeaderMap == null || fieldToHeaderMap.isEmpty()) {
+           return toCsv(list, type);  // 매핑이 없으면 기본 메서드 사용
+       }
+       
+       try {
+           CsvSchema schema = createSchemaWithCustomHeaders(type, fieldToHeaderMap);
+           return mapper.writer(schema).writeValueAsString(list);
+       } catch (Exception e) {
+           logger.warn("CSV 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return "";
+       }
+   }
+   
+   /**
+    * 단일 객체를 커스텀 헤더(한글 등)로 CSV 문자열로 변환
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * User user = new User("홍길동", 30, "서울");
+    * 
+    * Map<String, String> headerMap = Map.of(
+    *     "name", "이름",
+    *     "age", "나이",
+    *     "address", "주소"
+    * );
+    * 
+    * String csv = csv.toCsvWithCustomHeaders(user, User.class, headerMap);
+    * // 이름,나이,주소
+    * // 홍길동,30,서울
+    * </pre>
+    * 
+    * @param <T> 객체 타입
+    * @param value 변환할 객체
+    * @param type 객체의 클래스
+    * @param fieldToHeaderMap 필드명 → 헤더명 매핑
+    * @return CSV 문자열
+    */
+   public <T> String toCsvWithCustomHeaders(T value, Class<T> type, Map<String, String> fieldToHeaderMap) {
+       if (value == null) return "";
+       return toCsvWithCustomHeaders(List.of(value), type, fieldToHeaderMap);
+   }
 
-    
-    // ==================== String CSV → List (기본) ====================
-    
-    /**
-     * CSV 문자열을 List로 변환 (Class 타입)
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * String csv = "name,age\nJohn,30\nJane,25";
-     * List<User> users = csv.fromCsv(csv, User.class);
-     * </pre>
-     * 
-     * @param <T> 반환 타입
-     * @param csv CSV 문자열
-     * @param type 대상 클래스
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsv(String csv, Class<T> type) {
-        if (csv == null || csv.isEmpty()) return Collections.emptyList();
-        try {
-            CsvSchema schema = createSchema(type);
-            return (List<T>) mapper.readerFor(type)
-                                   .with(schema)
-                                   .readValues(csv)
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    /**
-     * CSV 문자열을 List로 변환 (TypeReference)
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * String csv = "name,age\nJohn,30\nJane,25";
-     * List<User> users = csv.fromCsv(csv, 
-     *     new TypeReference<List<User>>(){});
-     * </pre>
-     * 
-     * @param <T> 반환 타입
-     * @param csv CSV 문자열
-     * @param typeRef TypeReference
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsv(String csv, TypeReference<List<T>> typeRef) {
-        if (csv == null || csv.isEmpty()) return Collections.emptyList();
-        try {
-            // TypeReference에서 실제 타입 추출은 복잡하므로
-            // 기본 스키마를 사용한 파싱
-            CsvSchema schema = CsvSchema.emptySchema();
-            if (withHeader) {
-                schema = schema.withHeader();
-            }
-            schema = schema.withColumnSeparator(separator);
-            
-            return (List<T>) mapper.readerFor(typeRef)
-                                   .with(schema)
-                                   .readValues(csv)
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    
-    // ==================== String CSV → List (한글 헤더) ====================
-    
-    /**
-     * 커스텀 헤더(한글 등)를 가진 CSV 문자열을 List로 변환
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * String csv = "이름,나이,주소\n홍길동,30,서울\n김철수,25,부산";
-     * 
-     * Map<String, String> headerMap = Map.of(
-     *     "name", "이름",
-     *     "age", "나이",
-     *     "address", "주소"
-     * );
-     * 
-     * List<User> users = csv.fromCsvWithCustomHeaders(csv, User.class, headerMap);
-     * // User 객체의 name, age, address 필드에 매핑됨
-     * </pre>
-     * 
-     * @param <T> 반환 타입
-     * @param csv CSV 문자열
-     * @param type 대상 클래스
-     * @param fieldToHeaderMap 필드명 → 헤더명 매핑 (예: "name" → "이름")
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsvWithCustomHeaders(String csv, Class<T> type, Map<String, String> fieldToHeaderMap) {
-        if (csv == null || csv.isEmpty()) return Collections.emptyList();
-        if (fieldToHeaderMap == null || fieldToHeaderMap.isEmpty()) {
-            return fromCsv(csv, type);  // 매핑이 없으면 기본 메서드 사용
-        }
-        
-        try {
-            CsvSchema schema = createSchemaWithCustomHeaders(type, fieldToHeaderMap);
-            return (List<T>) mapper.readerFor(type)
-                                   .with(schema)
-                                   .readValues(csv)
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    
-    // ==================== byte[] CSV → List (기본) ====================
-    
-    /**
-     * byte[] CSV를 List로 변환 (Class 타입)
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * byte[] csvBytes = "name,age\nJohn,30".getBytes();
-     * List<User> users = csv.fromCsv(csvBytes, User.class);
-     * </pre>
-     * 
-     * @param <T> 반환 타입
-     * @param csv CSV byte 배열
-     * @param type 대상 클래스
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsv(byte[] csv, Class<T> type) {
-        if (csv == null || csv.length == 0) return Collections.emptyList();
-        try {
-            CsvSchema schema = createSchema(type);
-            return (List<T>) mapper.readerFor(type)
-                                   .with(schema)
-                                   .readValues(csv)
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    /**
-     * byte[] CSV를 List로 변환 (TypeReference)
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * byte[] csvBytes = "name,age\nJohn,30".getBytes();
-     * List<User> users = csv.fromCsv(csvBytes, 
-     *     new TypeReference<List<User>>(){});
-     * </pre>
-     * 
-     * @param <T> 반환 타입
-     * @param csv CSV byte 배열
-     * @param typeRef TypeReference
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsv(byte[] csv, TypeReference<List<T>> typeRef) {
-        if (csv == null || csv.length == 0) return Collections.emptyList();
-        try {
-            CsvSchema schema = CsvSchema.emptySchema();
-            if (withHeader) {
-                schema = schema.withHeader();
-            }
-            schema = schema.withColumnSeparator(separator);
-            
-            return (List<T>) mapper.readerFor(typeRef)
-                                   .with(schema)
-                                   .readValues(csv)
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    
-    // ==================== byte[] CSV → List (한글 헤더) ====================
-    
-    /**
-     * 커스텀 헤더를 가진 byte[] CSV를 List로 변환
-     * 
-     * @param <T> 반환 타입
-     * @param csv CSV byte 배열
-     * @param type 대상 클래스
-     * @param fieldToHeaderMap 필드명 → 헤더명 매핑
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsvWithCustomHeaders(byte[] csv, Class<T> type, Map<String, String> fieldToHeaderMap) {
-        if (csv == null || csv.length == 0) return Collections.emptyList();
-        if (fieldToHeaderMap == null || fieldToHeaderMap.isEmpty()) {
-            return fromCsv(csv, type);
-        }
-        
-        try {
-            CsvSchema schema = createSchemaWithCustomHeaders(type, fieldToHeaderMap);
-            return (List<T>) mapper.readerFor(type)
-                                   .with(schema)
-                                   .readValues(csv)
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    
-    // ==================== Path (파일) CSV → List (기본) ====================
-    
-    /**
-     * 파일에서 CSV를 읽어 List로 변환 (Class 타입)
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * Path csvFile = Paths.get("users.csv");
-     * List<User> users = csv.fromCsv(csvFile, User.class);
-     * </pre>
-     * 
-     * @param <T> 반환 타입
-     * @param path 파일 경로
-     * @param type 대상 클래스
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsv(Path path, Class<T> type) {
-        if (path == null) return Collections.emptyList();
-        try {
-            CsvSchema schema = createSchema(type);
-            return (List<T>) mapper.readerFor(type)
-                                   .with(schema)
-                                   .readValues(path.toFile())
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    /**
-     * 파일에서 CSV를 읽어 List로 변환 (TypeReference)
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * Path csvFile = Paths.get("users.csv");
-     * List<User> users = csv.fromCsv(csvFile, 
-     *     new TypeReference<List<User>>(){});
-     * </pre>
-     * 
-     * @param <T> 반환 타입
-     * @param path 파일 경로
-     * @param typeRef TypeReference
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsv(Path path, TypeReference<List<T>> typeRef) {
-        if (path == null) return Collections.emptyList();
-        try {
-            CsvSchema schema = CsvSchema.emptySchema();
-            if (withHeader) {
-                schema = schema.withHeader();
-            }
-            schema = schema.withColumnSeparator(separator);
-            
-            return (List<T>) mapper.readerFor(typeRef)
-                                   .with(schema)
-                                   .readValues(path.toFile())
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    
-    // ==================== Path (파일) CSV → List (한글 헤더) ====================
-    
-    /**
-     * 커스텀 헤더를 가진 CSV 파일을 읽어 List로 변환
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * Path csvFile = Paths.get("users.csv");
-     * // CSV 파일 내용: 이름,나이,주소
-     * //              홍길동,30,서울
-     * 
-     * Map<String, String> headerMap = Map.of(
-     *     "name", "이름",
-     *     "age", "나이",
-     *     "address", "주소"
-     * );
-     * 
-     * List<User> users = csv.fromCsvWithCustomHeaders(csvFile, User.class, headerMap);
-     * </pre>
-     * 
-     * @param <T> 반환 타입
-     * @param path 파일 경로
-     * @param type 대상 클래스
-     * @param fieldToHeaderMap 필드명 → 헤더명 매핑
-     * @return 변환된 List
-     */
-    @SuppressWarnings("unchecked")
-    public <T> List<T> fromCsvWithCustomHeaders(Path path, Class<T> type, Map<String, String> fieldToHeaderMap) {
-        if (path == null) return Collections.emptyList();
-        if (fieldToHeaderMap == null || fieldToHeaderMap.isEmpty()) {
-            return fromCsv(path, type);
-        }
-        
-        try {
-            CsvSchema schema = createSchemaWithCustomHeaders(type, fieldToHeaderMap);
-            return (List<T>) mapper.readerFor(type)
-                                   .with(schema)
-                                   .readValues(path.toFile())
-                                   .readAll();
-        } catch (Exception e) {
-            logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
-            return Collections.emptyList();
-        }
-    }
-    
-    
-    // ==================== Utility Methods ====================
-    
-    /**
-     * 현재 헤더 포함 여부 반환
-     * 
-     * @return 헤더 포함 여부
-     */
-    public boolean isWithHeader() {
-        return withHeader;
-    }
-    
-    /**
-     * 현재 구분자 반환
-     * 
-     * @return 구분자 문자
-     */
-    public char getSeparator() {
-        return separator;
-    }
-    
+   
+   // ==================== String CSV → List (기본) ====================
+   
+   /**
+    * CSV 문자열을 List로 변환 (Class 타입)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * String csv = "name,age\nJohn,30\nJane,25";
+    * List<User> users = csv.fromCsv(csv, User.class);
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param csv CSV 문자열
+    * @param type 대상 클래스
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsv(String csv, Class<T> type) {
+       if (csv == null || csv.isEmpty()) return Collections.emptyList();
+       try {
+           CsvSchema schema = createSchema(type);
+           return (List<T>) mapper.readerFor(type)
+                                  .with(schema)
+                                  .readValues(csv)
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   /**
+    * CSV 문자열을 List로 변환 (TypeReference)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * String csv = "name,age\nJohn,30\nJane,25";
+    * List<User> users = csv.fromCsv(csv, 
+    *     new TypeReference<List<User>>(){});
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param csv CSV 문자열
+    * @param typeRef TypeReference
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsv(String csv, TypeReference<List<T>> typeRef) {
+       if (csv == null || csv.isEmpty()) return Collections.emptyList();
+       try {
+           // TypeReference에서 실제 타입 추출은 복잡하므로
+           // 기본 스키마를 사용한 파싱
+           CsvSchema schema = CsvSchema.emptySchema();
+           if (withHeader) {
+               schema = schema.withHeader();
+           }
+           schema = schema.withColumnSeparator(separator);
+           
+           return (List<T>) mapper.readerFor(typeRef)
+                                  .with(schema)
+                                  .readValues(csv)
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   
+   // ==================== String CSV → List (한글 헤더) ====================
+   
+   /**
+    * 커스텀 헤더(한글 등)를 가진 CSV 문자열을 List로 변환
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * String csv = "이름,나이,주소\n홍길동,30,서울\n김철수,25,부산";
+    * 
+    * Map<String, String> headerMap = Map.of(
+    *     "name", "이름",
+    *     "age", "나이",
+    *     "address", "주소"
+    * );
+    * 
+    * List<User> users = csv.fromCsvWithCustomHeaders(csv, User.class, headerMap);
+    * // User 객체의 name, age, address 필드에 매핑됨
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param csv CSV 문자열
+    * @param type 대상 클래스
+    * @param fieldToHeaderMap 필드명 → 헤더명 매핑 (예: "name" → "이름")
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsvWithCustomHeaders(String csv, Class<T> type, Map<String, String> fieldToHeaderMap) {
+       if (csv == null || csv.isEmpty()) return Collections.emptyList();
+       if (fieldToHeaderMap == null || fieldToHeaderMap.isEmpty()) {
+           return fromCsv(csv, type);  // 매핑이 없으면 기본 메서드 사용
+       }
+       
+       try {
+           CsvSchema schema = createSchemaWithCustomHeaders(type, fieldToHeaderMap);
+           return (List<T>) mapper.readerFor(type)
+                                  .with(schema)
+                                  .readValues(csv)
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   
+   // ==================== byte[] CSV → List (기본) ====================
+   
+   /**
+    * byte[] CSV를 List로 변환 (Class 타입)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * byte[] csvBytes = "name,age\nJohn,30".getBytes();
+    * List<User> users = csv.fromCsv(csvBytes, User.class);
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param csv CSV byte 배열
+    * @param type 대상 클래스
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsv(byte[] csv, Class<T> type) {
+       if (csv == null || csv.length == 0) return Collections.emptyList();
+       try {
+           CsvSchema schema = createSchema(type);
+           return (List<T>) mapper.readerFor(type)
+                                  .with(schema)
+                                  .readValues(csv)
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   /**
+    * byte[] CSV를 List로 변환 (TypeReference)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * byte[] csvBytes = "name,age\nJohn,30".getBytes();
+    * List<User> users = csv.fromCsv(csvBytes, 
+    *     new TypeReference<List<User>>(){});
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param csv CSV byte 배열
+    * @param typeRef TypeReference
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsv(byte[] csv, TypeReference<List<T>> typeRef) {
+       if (csv == null || csv.length == 0) return Collections.emptyList();
+       try {
+           CsvSchema schema = CsvSchema.emptySchema();
+           if (withHeader) {
+               schema = schema.withHeader();
+           }
+           schema = schema.withColumnSeparator(separator);
+           
+           return (List<T>) mapper.readerFor(typeRef)
+                                  .with(schema)
+                                  .readValues(csv)
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   
+   // ==================== byte[] CSV → List (한글 헤더) ====================
+   
+   /**
+    * 커스텀 헤더를 가진 byte[] CSV를 List로 변환
+    * 
+    * @param <T> 반환 타입
+    * @param csv CSV byte 배열
+    * @param type 대상 클래스
+    * @param fieldToHeaderMap 필드명 → 헤더명 매핑
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsvWithCustomHeaders(byte[] csv, Class<T> type, Map<String, String> fieldToHeaderMap) {
+       if (csv == null || csv.length == 0) return Collections.emptyList();
+       if (fieldToHeaderMap == null || fieldToHeaderMap.isEmpty()) {
+           return fromCsv(csv, type);
+       }
+       
+       try {
+           CsvSchema schema = createSchemaWithCustomHeaders(type, fieldToHeaderMap);
+           return (List<T>) mapper.readerFor(type)
+                                  .with(schema)
+                                  .readValues(csv)
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   
+   // ==================== Path (파일) CSV → List (기본) ====================
+   
+   /**
+    * 파일에서 CSV를 읽어 List로 변환 (Class 타입)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * Path csvFile = Paths.get("users.csv");
+    * List<User> users = csv.fromCsv(csvFile, User.class);
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param path 파일 경로
+    * @param type 대상 클래스
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsv(Path path, Class<T> type) {
+       if (path == null) return Collections.emptyList();
+       try {
+           CsvSchema schema = createSchema(type);
+           return (List<T>) mapper.readerFor(type)
+                                  .with(schema)
+                                  .readValues(path.toFile())
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   /**
+    * 파일에서 CSV를 읽어 List로 변환 (TypeReference)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * Path csvFile = Paths.get("users.csv");
+    * List<User> users = csv.fromCsv(csvFile, 
+    *     new TypeReference<List<User>>(){});
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param path 파일 경로
+    * @param typeRef TypeReference
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsv(Path path, TypeReference<List<T>> typeRef) {
+       if (path == null) return Collections.emptyList();
+       try {
+           CsvSchema schema = CsvSchema.emptySchema();
+           if (withHeader) {
+               schema = schema.withHeader();
+           }
+           schema = schema.withColumnSeparator(separator);
+           
+           return (List<T>) mapper.readerFor(typeRef)
+                                  .with(schema)
+                                  .readValues(path.toFile())
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   
+   // ==================== Path (파일) CSV → List (한글 헤더) ====================
+   
+   /**
+    * 커스텀 헤더를 가진 CSV 파일을 읽어 List로 변환
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * Path csvFile = Paths.get("users.csv");
+    * // CSV 파일 내용: 이름,나이,주소
+    * //              홍길동,30,서울
+    * 
+    * Map<String, String> headerMap = Map.of(
+    *     "name", "이름",
+    *     "age", "나이",
+    *     "address", "주소"
+    * );
+    * 
+    * List<User> users = csv.fromCsvWithCustomHeaders(csvFile, User.class, headerMap);
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param path 파일 경로
+    * @param type 대상 클래스
+    * @param fieldToHeaderMap 필드명 → 헤더명 매핑
+    * @return 변환된 List
+    */
+   @SuppressWarnings("unchecked")
+   public <T> List<T> fromCsvWithCustomHeaders(Path path, Class<T> type, Map<String, String> fieldToHeaderMap) {
+       if (path == null) return Collections.emptyList();
+       if (fieldToHeaderMap == null || fieldToHeaderMap.isEmpty()) {
+           return fromCsv(path, type);
+       }
+       
+       try {
+           CsvSchema schema = createSchemaWithCustomHeaders(type, fieldToHeaderMap);
+           return (List<T>) mapper.readerFor(type)
+                                  .with(schema)
+                                  .readValues(path.toFile())
+                                  .readAll();
+       } catch (Exception e) {
+           logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+           return Collections.emptyList();
+       }
+   }
+   
+   
+   // ==================== Object Copy (from JacksonAbstract) ====================
+   
+   /**
+    * 객체 복사 (Class 타입)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * User original = new User("John", 30);
+    * User copied = csv.copyObject(original, User.class);
+    * </pre>
+    * 
+    * @param <V> 객체 타입
+    * @param source 원본 객체
+    * @param type 객체 클래스
+    * @return 복사된 객체
+    */
+   public <V> V copyObject(V source, Class<V> type) {
+       if (source == null) return null;
+       try {
+           byte[] bytes = mapper.writeValueAsBytes(source);
+           return mapper.readValue(bytes, type);
+       } catch (Exception e) {
+           throw new RuntimeException("Object copy failed", e);
+       }
+   }
+
+   /**
+    * 객체 복사 (TypeReference)
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * List<User> original = List.of(new User("John", 30));
+    * List<User> copied = csv.copyObject(original, 
+    *     new TypeReference<List<User>>(){});
+    * </pre>
+    * 
+    * @param <V> 객체 타입
+    * @param source 원본 객체
+    * @param typeRef TypeReference
+    * @return 복사된 객체
+    */
+   public <V> V copyObject(V source, TypeReference<V> typeRef) {
+       if (source == null) return null;
+       try {
+           byte[] bytes = mapper.writeValueAsBytes(source);
+           return mapper.readValue(bytes, typeRef);
+       } catch (Exception e) {
+           throw new RuntimeException("Object copy failed", e);
+       }
+   }
+   
+   
+   // ==================== Map → Object (from JacksonAbstract) ====================
+   
+   /**
+    * Map을 객체로 변환
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * Map<String, Object> map = Map.of(
+    *     "name", "John",
+    *     "age", 30
+    * );
+    * User user = csv.mapToObject(map, User.class);
+    * </pre>
+    * 
+    * @param <V> 반환 타입
+    * @param map 변환할 Map
+    * @param type 대상 클래스
+    * @return 변환된 객체 또는 null
+    */
+   public <V> V mapToObject(Map<?, ?> map, Class<V> type) {
+       try {
+           CsvMapper tmpMapper = mapper.copy();
+           tmpMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
+           tmpMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+           tmpMapper.setVisibility(PropertyAccessor.FIELD, Visibility.ANY);
+           return tmpMapper.convertValue(map, type);
+       } catch (Exception e) {
+           return null;
+       }
+   }
+   
+   /**
+    * Map을 TypeRegistry 타입으로 변환
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * Map<String, Object> map = Map.of("name", "John", "age", 30);
+    * Map<String, Object> result = csv.convertValue(map, TypeRegistry.MAP_OBJECT);
+    * </pre>
+    * 
+    * @param <T> 반환 타입
+    * @param map 변환할 Map
+    * @param typeRegistry TypeRegistry
+    * @return 변환된 객체 또는 null
+    */
+   public <T> T convertValue(Map<?, ?> map, TypeRegistry typeRegistry) {
+       try {
+           return mapper.convertValue(map, typeRegistry.get());
+       } catch (Exception e) {
+           return null;
+       }
+   }
+   
+   
+   /**
+    * 문자열을 JsonNode로 변환
+    * 
+    * <p><b>사용 예:</b></p>
+    * <pre>
+    * String csv = "name,age\nJohn,30";
+    * JsonNode node = csv.toJsonNode(csv);
+    * </pre>
+    * 
+    * @param value CSV 문자열
+    * @return JsonNode 또는 null
+    */
+   public JsonNode toJsonNode(String value) {
+       try {
+           return mapper.readTree(value);
+       } catch (Exception e) {
+           return null;
+       }
+   }
+   
+   
+   
+   /**
+    * 객체를 문자열로 직렬화
+    * 
+    * <p>CSV가 아닌 일반 JSON 형식으로 변환됩니다.</p>
+    * 
+    * @param value 변환할 객체
+    * @return 직렬화된 문자열
+    */
+   public String serialize(Object value) {
+       if (value == null) return "";
+       try {
+           return mapper.writeValueAsString(value);
+       } catch (Exception e) {
+           throw new RuntimeException("Serialization failed", e);
+       }
+   }
+   
+   /**
+    * 객체를 byte[]로 직렬화
+    * 
+    * @param value 변환할 객체
+    * @return 직렬화된 byte 배열
+    */
+   public byte[] serializeBytes(Object value) {
+       if (value == null) return null;
+       try {
+           return mapper.writeValueAsBytes(value);
+       } catch (Exception e) {
+           throw new RuntimeException("Serialization failed", e);
+       }
+   }
+
+   /**
+    * 문자열을 객체로 역직렬화 (Class 타입)
+    * 
+    * @param <V> 반환 타입
+    * @param str 문자열
+    * @param type 대상 클래스
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(String str, Class<V> type) {
+       try {
+           return mapper.readValue(str, type);
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
+
+   /**
+    * 문자열을 객체로 역직렬화 (TypeReference)
+    * 
+    * @param <V> 반환 타입
+    * @param str 문자열
+    * @param typeRef TypeReference
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(String str, TypeReference<V> typeRef) {
+       try {
+           return mapper.readValue(str, typeRef);
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
+   
+   /**
+    * 문자열을 객체로 역직렬화 (TypeRegistry)
+    * 
+    * @param <V> 반환 타입
+    * @param str 문자열
+    * @param typeRegistry TypeRegistry
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(String str, TypeRegistry typeRegistry) {
+       try {
+           return mapper.readValue(str, typeRegistry.get());
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
+   
+   /**
+    * byte[]를 객체로 역직렬화 (Class 타입)
+    * 
+    * @param <V> 반환 타입
+    * @param str byte 배열
+    * @param type 대상 클래스
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(byte[] str, Class<V> type) {
+       try {
+           return mapper.readValue(str, type);
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
+
+   /**
+    * byte[]를 객체로 역직렬화 (TypeReference)
+    * 
+    * @param <V> 반환 타입
+    * @param str byte 배열
+    * @param typeRef TypeReference
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(byte[] str, TypeReference<V> typeRef) {
+       try {
+           return mapper.readValue(str, typeRef);
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
+   
+   /**
+    * byte[]를 객체로 역직렬화 (TypeRegistry)
+    * 
+    * @param <V> 반환 타입
+    * @param str byte 배열
+    * @param typeRegistry TypeRegistry
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(byte[] str, TypeRegistry typeRegistry) {
+       try {
+           return mapper.readValue(str, typeRegistry.get());
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
+   
+   /**
+    * 파일을 객체로 역직렬화 (Class 타입)
+    * 
+    * @param <V> 반환 타입
+    * @param path 파일 경로
+    * @param type 대상 클래스
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(Path path, Class<V> type) {
+       try {
+           return mapper.readValue(Files.readAllBytes(path), type);
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
+
+   /**
+    * 파일을 객체로 역직렬화 (TypeReference)
+    * 
+    * @param <V> 반환 타입
+    * @param path 파일 경로
+    * @param typeRef TypeReference
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(Path path, TypeReference<V> typeRef) {
+       try {
+           return mapper.readValue(Files.readAllBytes(path), typeRef);
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
+   
+   /**
+    * 파일을 객체로 역직렬화 (TypeRegistry)
+    * 
+    * @param <V> 반환 타입
+    * @param path 파일 경로
+    * @param typeRegistry TypeRegistry
+    * @return 역직렬화된 객체
+    */
+   public <V> V deserialize(Path path, TypeRegistry typeRegistry) {
+       try {
+           return mapper.readValue(Files.readAllBytes(path), typeRegistry.get());
+       } catch (Exception e) {
+           throw new RuntimeException("Deserialization failed", e);
+       }
+   }
 }

@@ -1,5 +1,6 @@
 package kr.tx24.lib.mapper;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.slf4j.Logger;
@@ -7,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
@@ -161,75 +163,7 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
     }
     
     
-    // ==================== Validation ====================
     
-    /**
-     * JSON 문자열 유효성 검사
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * boolean valid = json.isValid("{\"name\":\"John\"}");  // true
-     * boolean invalid = json.isValid("{invalid}");  // false
-     * </pre>
-     * 
-     * @param json JSON 문자열
-     * @return 유효하면 true, 아니면 false
-     */
-    public boolean isValid(String json) {
-        if (json == null || json.isEmpty()) return false;
-        try {
-            mapper.readTree(json);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    /**
-     * JSON 문자열을 특정 타입으로 변환 가능한지 검사
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * String json = "{\"name\":\"John\",\"age\":30}";
-     * boolean valid = json.isValid(json, User.class);  // true
-     * </pre>
-     * 
-     * @param json JSON 문자열
-     * @param valueType 대상 타입
-     * @return 변환 가능하면 true, 아니면 false
-     */
-    public boolean isValid(String json, Class<?> valueType) {
-        if (json == null || json.isEmpty()) return false;
-        try {
-            mapper.readValue(json, valueType);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    /**
-     * JSON 문자열을 TypeReference로 변환 가능한지 검사
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * String json = "[1,2,3]";
-     * boolean valid = json.isValid(json, new TypeReference<List<Integer>>(){});
-     * </pre>
-     * 
-     * @param json JSON 문자열
-     * @param typeRef TypeReference
-     * @return 변환 가능하면 true, 아니면 false
-     */
-    public boolean isValid(String json, TypeReference<?> typeRef) {
-        if (json == null || json.isEmpty()) return false;
-        try {
-            mapper.readValue(json, typeRef);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
     
     
     // ==================== Serialization ====================
@@ -251,9 +185,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return JSON 문자열
      */
     public String toJson(Object value) {
-    	if (value == null) return "";
         try {
-            return mapper.writeValueAsString(value);
+            return super.serialize(value);
         } catch (Exception e) {
             logger.warn("Json 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return "";
@@ -274,9 +207,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return JSON byte 배열
      */
     public byte[] toJsonBytes(Object value) {
-    	if (value == null) return null;
         try {
-            return mapper.writeValueAsBytes(value);
+        	return super.serializeBytes(value);
         } catch (Exception e) {
             logger.warn("Json 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -301,9 +233,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return 변환된 객체
      */
     public <V> V fromJson(String json, Class<V> type) {
-        if (json == null || json.isEmpty()) return null;
         try {
-            return mapper.readValue(json, type);
+        	return super.deserialize(json,type);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -326,9 +257,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return 변환된 객체
      */
     public <V> V fromJson(String json, TypeReference<V> typeRef) {
-        if (json == null || json.isEmpty()) return null;
         try {
-            return mapper.readValue(json, typeRef);
+        	return super.deserialize(json,typeRef);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -351,9 +281,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return 변환된 객체
      */
     public <V> V fromJson(String json, TypeRegistry typeRegistry) {
-        if (json == null || json.isEmpty()) return null;
         try {
-            return mapper.readValue(json, typeRegistry.get());
+        	return super.deserialize(json,typeRegistry);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -377,9 +306,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return 변환된 객체
      */
     public <V> V fromJson(byte[] json, Class<V> type) {
-        if (json == null || json.length == 0) return null;
         try {
-            return mapper.readValue(json, type);
+        	return super.deserialize(json,type);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -402,9 +330,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return 변환된 객체
      */
     public <V> V fromJson(byte[] json, TypeReference<V> typeRef) {
-        if (json == null || json.length == 0) return null;
         try {
-            return mapper.readValue(json, typeRef);
+        	return super.deserialize(json,typeRef);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -427,9 +354,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return 변환된 객체
      */
     public <V> V fromJson(byte[] json, TypeRegistry typeRegistry) {
-        if (json == null || json.length == 0) return null;
         try {
-            return mapper.readValue(json, typeRegistry.get());
+        	return super.deserialize(json,typeRegistry);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -453,9 +379,8 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      * @return 변환된 객체
      */
     public <V> V fromJson(Path path, Class<V> type) {
-        if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), type);
+        	return super.deserialize(Files.readAllBytes(path),type);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -480,7 +405,7 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
     public <V> V fromJson(Path path, TypeReference<V> typeRef) {
         if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), typeRef);
+        	return super.deserialize(Files.readAllBytes(path),typeRef);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -505,9 +430,20 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
     public <V> V fromJson(Path path, TypeRegistry typeRegistry) {
         if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), typeRegistry.get());
+        	return super.deserialize(Files.readAllBytes(path),typeRegistry);
         } catch (Exception e) {
             logger.warn("Json 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+            return null;
+        }
+    }
+    
+    
+    
+    public JsonNode toJsonNode(String value) {
+        try {
+            return mapper.readTree(value);
+        } catch (Exception e) {
+            // logger는 구현 클래스에서 정의
             return null;
         }
     }

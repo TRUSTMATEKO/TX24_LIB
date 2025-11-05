@@ -1,5 +1,6 @@
 package kr.tx24.lib.mapper;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.slf4j.Logger;
@@ -165,79 +166,6 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
     }
     
     
-    // ==================== Validation ====================
-    
-    /**
-     * XML 문자열 유효성 검사
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * String xml = "{@code <root><n>John</n></root>}";
-     * boolean valid = xml.isValid(xml);  // true
-     * 
-     * String invalid = "{@code <invalid}";
-     * boolean result = xml.isValid(invalid);  // false
-     * </pre>
-     * 
-     * @param xml XML 문자열
-     * @return 유효하면 true, 아니면 false
-     */
-    public boolean isValid(String xml) {
-        if (xml == null || xml.isEmpty()) return false;
-        try {
-            mapper.readTree(xml);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    /**
-     * XML 문자열을 특정 타입으로 변환 가능한지 검사
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * String xml = "{@code <User><n>John</n><age>30</age></User>}";
-     * boolean valid = xml.isValid(xml, User.class);  // true
-     * </pre>
-     * 
-     * @param xml XML 문자열
-     * @param valueType 대상 타입
-     * @return 변환 가능하면 true, 아니면 false
-     */
-    public boolean isValid(String xml, Class<?> valueType) {
-        if (xml == null || xml.isEmpty()) return false;
-        try {
-            mapper.readValue(xml, valueType);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    /**
-     * XML 문자열을 TypeReference로 변환 가능한지 검사
-     * 
-     * <p><b>사용 예:</b></p>
-     * <pre>
-     * String xml = "{@code <list><item>1</item><item>2</item></list>}";
-     * boolean valid = xml.isValid(xml, new TypeReference<List<Integer>>(){});
-     * </pre>
-     * 
-     * @param xml XML 문자열
-     * @param typeRef TypeReference
-     * @return 변환 가능하면 true, 아니면 false
-     */
-    public boolean isValid(String xml, TypeReference<?> typeRef) {
-        if (xml == null || xml.isEmpty()) return false;
-        try {
-            mapper.readValue(xml, typeRef);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
     
     // ==================== Serialization ====================
     
@@ -260,9 +188,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return XML 문자열
      */
     public String toXml(Object value) {
-        if (value == null) return "";
         try {
-            return mapper.writeValueAsString(value);
+        	return super.serialize(value);
         } catch (Exception e) {
         	logger.warn("XML 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return "";
@@ -284,7 +211,7 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
     public byte[] toXmlBytes(Object value) {
         if (value == null) return null;
         try {
-            return mapper.writeValueAsBytes(value);
+        	return super.serializeBytes(value);
         } catch (Exception e) {
         	logger.warn("XML 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -308,9 +235,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(String xml, Class<V> type) {
-        if (xml == null || xml.isEmpty()) return null;
         try {
-            return mapper.readValue(xml, type);
+        	return super.deserialize(xml,type);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -333,9 +259,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(String xml, TypeReference<V> typeRef) {
-        if (xml == null || xml.isEmpty()) return null;
         try {
-            return mapper.readValue(xml, typeRef);
+        	return super.deserialize(xml,typeRef);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -358,9 +283,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(String xml, TypeRegistry typeRegistry) {
-        if (xml == null || xml.isEmpty()) return null;
         try {
-            return mapper.readValue(xml, typeRegistry.get());
+        	return super.deserialize(xml,typeRegistry);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -384,9 +308,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(byte[] xml, Class<V> type) {
-        if (xml == null || xml.length == 0) return null;
         try {
-            return mapper.readValue(xml, type);
+        	return super.deserialize(xml,type);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -409,9 +332,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(byte[] xml, TypeReference<V> typeRef) {
-        if (xml == null || xml.length == 0) return null;
         try {
-            return mapper.readValue(xml, typeRef);
+        	return super.deserialize(xml,typeRef);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -434,9 +356,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(byte[] xml, TypeRegistry typeRegistry) {
-        if (xml == null || xml.length == 0) return null;
         try {
-            return mapper.readValue(xml, typeRegistry.get());
+        	return super.deserialize(xml,typeRegistry);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -460,9 +381,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(Path path, Class<V> type) {
-        if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), type);
+        	return super.deserialize(Files.readAllBytes(path),type);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -485,9 +405,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(Path path, TypeReference<V> typeRef) {
-        if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), typeRef);
+        	return super.deserialize(Files.readAllBytes(path),typeRef);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -510,9 +429,8 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      * @return 변환된 객체
      */
     public <V> V fromXml(Path path, TypeRegistry typeRegistry) {
-        if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), typeRegistry.get());
+        	return super.deserialize(Files.readAllBytes(path),typeRegistry);
         } catch (Exception e) {
             logger.warn("XML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;

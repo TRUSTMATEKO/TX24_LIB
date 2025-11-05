@@ -1,5 +1,6 @@
 package kr.tx24.lib.mapper;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.slf4j.Logger;
@@ -89,59 +90,6 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
     }
     
     
-    // ==================== Validation ====================
-    
-    /**
-     * YAML 문자열 유효성 검사
-     * 
-     * @param yaml YAML 문자열
-     * @return 유효하면 true, 아니면 false
-     */
-    public boolean isValid(String yaml) {
-        if (yaml == null || yaml.isEmpty()) return false;
-        try {
-            mapper.readTree(yaml);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    /**
-     * YAML 문자열을 특정 타입으로 변환 가능한지 검사
-     * 
-     * @param yaml YAML 문자열
-     * @param valueType 대상 타입
-     * @return 변환 가능하면 true, 아니면 false
-     */
-    public boolean isValid(String yaml, Class<?> valueType) {
-        if (yaml == null || yaml.isEmpty()) return false;
-        try {
-            mapper.readValue(yaml, valueType);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    /**
-     * YAML 문자열을 TypeReference로 변환 가능한지 검사
-     * 
-     * @param yaml YAML 문자열
-     * @param typeRef TypeReference
-     * @return 변환 가능하면 true, 아니면 false
-     */
-    public boolean isValid(String yaml, TypeReference<?> typeRef) {
-        if (yaml == null || yaml.isEmpty()) return false;
-        try {
-            mapper.readValue(yaml, typeRef);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-    
-    
     // ==================== Serialization ====================
     
     /**
@@ -159,9 +107,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return YAML 문자열
      */
     public String toYaml(Object value) {
-        if (value == null) return "";
         try {
-            return mapper.writeValueAsString(value);
+        	return super.serialize(value);
         } catch (Exception e) {
         	logger.warn("YAML 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return "";
@@ -181,9 +128,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return YAML byte 배열
      */
     public byte[] toYamlBytes(Object value) {
-        if (value == null) return null;
         try {
-            return mapper.writeValueAsBytes(value);
+        	return super.serializeBytes(value);
         } catch (Exception e) {
         	logger.warn("YAML 직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -207,9 +153,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(String yaml, Class<V> type) {
-        if (yaml == null || yaml.isEmpty()) return null;
         try {
-            return mapper.readValue(yaml, type);
+            return super.deserialize(yaml, type);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -232,9 +177,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(String yaml, TypeReference<V> typeRef) {
-        if (yaml == null || yaml.isEmpty()) return null;
         try {
-            return mapper.readValue(yaml, typeRef);
+        	return super.deserialize(yaml, typeRef);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -257,9 +201,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(String yaml, TypeRegistry typeRegistry) {
-        if (yaml == null || yaml.isEmpty()) return null;
         try {
-            return mapper.readValue(yaml, typeRegistry.get());
+        	return super.deserialize(yaml, typeRegistry);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -277,9 +220,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(byte[] yaml, Class<V> type) {
-        if (yaml == null || yaml.length == 0) return null;
         try {
-            return mapper.readValue(yaml, type);
+        	return super.deserialize(yaml, type);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -295,9 +237,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(byte[] yaml, TypeReference<V> typeRef) {
-        if (yaml == null || yaml.length == 0) return null;
         try {
-            return mapper.readValue(yaml, typeRef);
+        	return super.deserialize(yaml, typeRef);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -313,9 +254,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(byte[] yaml, TypeRegistry typeRegistry) {
-        if (yaml == null || yaml.length == 0) return null;
         try {
-            return mapper.readValue(yaml, typeRegistry.get());
+        	return super.deserialize(yaml, typeRegistry);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -339,9 +279,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(Path path, Class<V> type) {
-        if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), type);
+        	return super.deserialize(Files.readAllBytes(path), type);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -364,9 +303,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(Path path, TypeReference<V> typeRef) {
-        if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), typeRef);
+        	return super.deserialize(Files.readAllBytes(path), typeRef);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;
@@ -389,9 +327,8 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
      * @return 변환된 객체
      */
     public <V> V fromYaml(Path path, TypeRegistry typeRegistry) {
-        if (path == null) return null;
         try {
-            return mapper.readValue(path.toFile(), typeRegistry.get());
+        	return super.deserialize(Files.readAllBytes(path), typeRegistry);
         } catch (Exception e) {
             logger.warn("YAML 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
             return null;

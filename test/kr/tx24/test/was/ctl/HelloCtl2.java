@@ -17,7 +17,7 @@ public class HelloCtl2 {
 	@SessionIgnore
     @GetMapping("/hello2")
     public String hello(Model model, @Header LinkedMap<String,Object>  headerMap, @Param SharedMap<String,Object> paramMap) {
-        model.addAttribute("name", "Thymeleaf Hello2");
+        model.addAttribute("name", "Thymeleaf Hello3");
         
  
         System.out.println(headerMap.toJson());
@@ -25,5 +25,18 @@ public class HelloCtl2 {
          //testsettt
          
         return "hello2"; // templates/hello.html
+    }
+	
+	@SessionIgnore
+    @GetMapping("/hello3")
+    public String hellㅐ3(Model model, @Header LinkedMap<String,Object>  headerMap, @Param SharedMap<String,Object> paramMap) {
+        model.addAttribute("name", "Thymeleaf Helloxxxx");
+        
+ 
+        System.out.println(headerMap.toJson());
+        System.out.println(paramMap.toJson());
+         //testsettt
+         
+        return "hello3"; // templates/hello.html
     }
 }

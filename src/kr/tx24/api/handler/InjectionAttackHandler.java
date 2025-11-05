@@ -1,6 +1,5 @@
 package kr.tx24.api.handler;
 
-import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;

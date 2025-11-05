@@ -54,7 +54,6 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
         return createNewInstance((T) tmp);
     }
 
-    // ---------------- Serialization / Deserialization ----------------
 
     public String serialize(Object value) {
         if (value == null) return "";
@@ -195,7 +194,7 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
      * @param typeRegistry TypeRegistry
      * @return 변환된 객체 또는 null
      */
-    public <T> T convertValue(Map<?, ?> map, TypeRegistry typeRegistry) {
+    public <V> V convertValue(Map<?, ?> map, TypeRegistry typeRegistry) {
         try {
         	return mapper.convertValue(map, typeRegistry.get());
         } catch (Exception e) {
@@ -205,15 +204,106 @@ public abstract class JacksonAbstract<T extends ObjectMapper> {
     
     
     
-    public JsonNode toJsonNode(String value) {
+    
+    
+    
+    /**
+     * 문자열 콘텐츠의 유효성 검사
+     * 
+     * <p>파싱 가능한 구조인지 확인합니다. (JSON, XML, YAML 등)</p>
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // JSON
+     * boolean valid = json.isValid("{\"name\":\"John\"}");  // true
+     * 
+     * // XML
+     * boolean valid = xml.isValid("{@code <root><name>John</name></root>}");  // true
+     * 
+     * // YAML
+     * boolean valid = yaml.isValid("name: John");  // true
+     * </pre>
+     * 
+     * @param content 검사할 문자열 (JSON, XML, YAML 등)
+     * @return 유효하면 true, 아니면 false
+     */
+    protected boolean isValid(String content) {
+        if (content == null || content.isEmpty()) return false;
         try {
-            return mapper.readTree(value);
+            mapper.readTree(content);
+            return true;
         } catch (Exception e) {
-            // logger는 구현 클래스에서 정의
-            return null;
+            return false;
         }
     }
-    
+
+    /**
+     * 문자열 콘텐츠를 특정 타입으로 변환 가능한지 검사
+     * 
+     * <p>주어진 문자열이 지정된 클래스 타입으로 역직렬화 가능한지 검증합니다.</p>
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // JSON
+     * String json = "{\"name\":\"John\",\"age\":30}";
+     * boolean valid = json.isValid(json, User.class);  // true
+     * 
+     * // XML
+     * String xml = "{@code <User><name>John</name><age>30</age></User>}";
+     * boolean valid = xml.isValid(xml, User.class);  // true
+     * 
+     * // YAML
+     * String yaml = "name: John\nage: 30";
+     * boolean valid = yaml.isValid(yaml, User.class);  // true
+     * </pre>
+     * 
+     * @param content 검사할 문자열
+     * @param valueType 변환 대상 클래스
+     * @return 변환 가능하면 true, 아니면 false
+     */
+    protected boolean isValid(String content, Class<?> valueType) {
+        if (content == null || content.isEmpty()) return false;
+        try {
+            mapper.readValue(content, valueType);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 문자열 콘텐츠를 TypeReference 타입으로 변환 가능한지 검사
+     * 
+     * <p>제네릭 타입(List, Map 등)으로 역직렬화 가능한지 검증합니다.</p>
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // JSON - List 타입 검증
+     * String json = "[\"Apple\",\"Banana\",\"Cherry\"]";
+     * boolean valid = json.isValid(json, new TypeReference<List<String>>(){});  // true
+     * 
+     * // XML - List 타입 검증
+     * String xml = "{@code <list><item>Apple</item><item>Banana</item></list>}";
+     * boolean valid = xml.isValid(xml, new TypeReference<List<String>>(){});  // true
+     * 
+     * // YAML - Map 타입 검증
+     * String yaml = "name: John\nage: 30";
+     * boolean valid = yaml.isValid(yaml, new TypeReference<Map<String, Object>>(){});  // true
+     * </pre>
+     * 
+     * @param content 검사할 문자열
+     * @param typeRef TypeReference (제네릭 타입 지원)
+     * @return 변환 가능하면 true, 아니면 false
+     */
+    protected boolean isValid(String content, TypeReference<?> typeRef) {
+        if (content == null || content.isEmpty()) return false;
+        try {
+            mapper.readValue(content, typeRef);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
     
     
     

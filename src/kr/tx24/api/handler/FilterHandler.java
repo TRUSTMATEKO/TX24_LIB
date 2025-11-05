@@ -74,6 +74,9 @@ public class FilterHandler extends ChannelInboundHandlerAdapter {
             // 2: 디코딩 검증 (잘못된 요청 조기 차단)
             if (isDecodingFailed(ctx, request)) return;
             
+            isBlacklisted
+            
+            
             // 3: IP 차단 (보안 최우선)
             if (isDeniedIp(remoteIp)) {
                 logger.info("Denied IP: {}", remoteIp);
