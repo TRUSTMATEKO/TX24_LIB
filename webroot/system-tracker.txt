@@ -1,0 +1,12 @@
+[URGENT] {level}
+
+ - {mdc}
+ - {contents}
+
+* LOG DETAILS
+  - Process: {name} {host}
+  - Date:    {regDate}
+  - Logger:  {clz}
+
+* ERROR MESSAGE
+  - {msg}
