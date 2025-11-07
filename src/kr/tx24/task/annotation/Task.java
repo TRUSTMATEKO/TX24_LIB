@@ -7,6 +7,23 @@ import java.lang.annotation.Target;
 
 /**
  * 스케줄링할 Task 클래스에 지정하는 Annotation
+ * 
+ * Fixed Rate vs Fixed Delay 
+ * !! 현재 대부분의 구동 방식은 충돌을 방지해야 하므로 DELAY 방식을 채용 
+ * Fixed Rate (RATE) 사용 시기:
+ * - 정확한 시간 간격이 중요한 경우
+ * - 작업 실행 시간이 짧고 일정한 경우
+ * - 시간 기반 통계나 모니터링
+ * 
+ * Fixed Delay (DELAY) 사용 시기:
+ * - 작업 완료 후 일정 시간 대기가 필요한 경우
+ * - 작업 실행 시간이 가변적인 경우
+ * - 작업 간 충돌을 방지하고 싶은 경우
+ * - 예: 큐 처리, API 호출, 데이터 동기화, 캐시 갱신
+ * 
+ * 주의사항:
+ * - Fixed Rate: 작업이 지연되면 다음 작업이 즉시 실행될 수 있음
+ * - Fixed Delay: 작업 시간이 길어도 다음 작업까지 대기 시간 보장
  * <p>
  * daysOfWeek 는 'M' 월단위는 무시하며, 지정 시는 해당 요일만 실행됩니다.<br>
  * 비어 있을 경우는 전체 일자를 의미합니다.
@@ -34,6 +51,28 @@ import java.lang.annotation.Target;
 public @interface Task {
     
 	/**
+     * 스케줄링 타입
+     */
+    enum ScheduleType {
+        /**
+         * 고정 간격 스케줄링 (scheduleAtFixedRate)
+         * <p>
+         * 작업 시작 시점 기준으로 일정한 간격을 유지.<br>
+         * 이전 작업이 지연되어도 다음 작업은 정해진 시간에 시작.
+         */
+        RATE,
+        
+        /**
+         * 고정 지연 스케줄링 (scheduleWithFixedDelay)
+         * <p>
+         * 작업 완료 시점 기준으로 일정한 지연을 유지.<br>
+         * 이전 작업이 완료된 후 정해진 시간이 지나야 다음 작업이 시작.
+         * 작업 충돌이 없음.
+         */
+        DELAY
+    }
+	
+	/**
      * Task 이름 (고유 식별자)
      * <p>
      * 시스템 내에서 Task를 구분하는 고유한 이름
@@ -58,10 +97,24 @@ public @interface Task {
      * - 숫자+d: 일 단위 (예: 1d, 7d)<br>
      * - 숫자+h: 시간 단위 (예: 2h, 6h)<br>
      * - 숫자+m: 분 단위 (예: 30m, 45m)
+     * - 숫자+s: 초 단위 (예: 3s, 30s - 1~59초만 허용)
      * <p>
-     * <b>예시:</b> "M" (매월), "2w" (2주), "1d" (1일), "2h" (2시간), "30m" (30분)
+     * <b>예시:</b> "M" (매월), "2w" (2주), "1d" (1일), "2h" (2시간), "30m" (30분), "5s" (5초)
      */
     String period();
+    
+    
+    /**
+     * 스케줄링 타입
+     * <p>
+     * <b>RATE:</b> 작업 시작 시점 기준 고정 간격 (scheduleAtFixedRate)<br>
+     * <b>DELAY:</b> 작업 완료 시점 기준 고정 지연 (scheduleWithFixedDelay) - 기본값
+     * <p>
+     * <b>기본값:</b> DELAY<br>
+     * DELAY는 작업 완료 후 지정된 시간만큼 대기 후 다음 작업 실행<br>
+     * RATE는 작업 시작 시간을 기준으로 일정 간격 유지
+     */
+    ScheduleType type() default ScheduleType.DELAY;
     
     /**
      * 실행할 요일 지정

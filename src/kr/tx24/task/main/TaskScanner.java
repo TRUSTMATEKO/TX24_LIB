@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.task.annotation.Task;
+import kr.tx24.task.annotation.Task.ScheduleType;
 import kr.tx24.task.config.TaskConfig;
 
 /**
@@ -190,7 +191,10 @@ public class TaskScanner {
         // 2. period 파싱 및 검증
         Duration period = parsePeriodWithValidation(annotation.period(), taskName);
         
-        // 3. 월 단위 주기인 경우 startDay 필수 검증
+        // 3. scheduleType 가져오기
+        ScheduleType type = annotation.type();
+        
+        // 4. 월 단위 주기인 경우 startDay 필수 검증
         if (period.toDays() == -1 && annotation.startDay().isBlank()) {
             throw new IllegalArgumentException(
                 String.format("Task '%s': Monthly period (M) requires startDay / " +
@@ -198,16 +202,16 @@ public class TaskScanner {
             );
         }
         
-        // 4. 월 단위에 요일 지정 시 경고
+        // 5. 월 단위에 요일 지정 시 경고
         if (period.toDays() == -1 && annotation.daysOfWeek().length > 0) {
             logger.debug("Task '{}': daysOfWeek is ignored for monthly period (M) / " +
                        "월 단위 주기(M)에서는 daysOfWeek가 무시됩니다", taskName);
         }
         
-        // 5. daysOfWeek 파싱
+        // 6. daysOfWeek 파싱
         Set<DayOfWeek> daysOfWeek = Set.of(annotation.daysOfWeek());
         
-        // 6. startDay 파싱 및 검증
+        // 7. startDay 파싱 및 검증
         LocalDate startDate;
         if (annotation.startDay().isBlank()) {
             startDate = DateUtils.getDay();
@@ -215,7 +219,7 @@ public class TaskScanner {
             startDate = parseDateWithValidation(annotation.startDay(), "startDay", taskName);
         }
         
-        // 7. endDay 파싱 및 검증
+        // 8. endDay 파싱 및 검증
         LocalDate endDate;
         if (!annotation.endDay().isBlank()) {
             endDate = parseDateWithValidation(annotation.endDay(), "endDay", taskName);
@@ -237,6 +241,7 @@ public class TaskScanner {
             taskClass,
             scheduledTime,
             period,
+            type,
             daysOfWeek,
             startDate,
             endDate,
@@ -299,7 +304,7 @@ public class TaskScanner {
     }
 
     /**
-     * "M", "2w", "1d", "2h", "30m" 형식의 기간 파싱 및 검증
+     * "M", "2w", "1d", "2h", "30m", "5s" 형식의 기간 파싱 및 검증
      */
     private static Duration parsePeriodWithValidation(String periodStr, String taskName) {
         if (periodStr == null || periodStr.isBlank()) {
@@ -315,11 +320,11 @@ public class TaskScanner {
             return Duration.ofDays(-1); // 특수 플래그 (-1 = 월 단위)
         }
         
-        // 형식 검증: 숫자 + 단위(w|d|h|m)
-        if (!periodStr.matches("^\\d+[wdhm]$")) {
+        // 형식 검증: 숫자 + 단위(w|d|h|m|s)
+        if (!periodStr.matches("^\\d+[wdhms]$")) {
             throw new IllegalArgumentException(
-                String.format("Task '%s': period must be in format 'M' or 'number+unit(w|d|h|m)' (got: '%s') / " +
-                             "period는 'M' 또는 '숫자+단위(w|d|h|m)' 형식이어야 합니다 (예: 2w, 1d, 2h, 30m)",
+                String.format("Task '%s': period must be in format 'M' or 'number+unit(w|d|h|m|s)' (got: '%s') / " +
+                             "period는 'M' 또는 '숫자+단위(w|d|h|m|s)' 형식이어야 합니다 (예: 2w, 1d, 2h, 30m, 5s)",
                     taskName, periodStr)
             );
         }
@@ -333,6 +338,15 @@ public class TaskScanner {
                 throw new IllegalArgumentException(
                     String.format("Task '%s': period value must be positive (got: %d) / " +
                                  "period 값은 양수여야 합니다",
+                        taskName, value)
+                );
+            }
+            
+            // 초 단위 범위 검증 (1~59초)
+            if (unit == 's' && (value < 1 || value > 59)) {
+                throw new IllegalArgumentException(
+                    String.format("Task '%s': second period must be between 1 and 59 (got: %d) / " +
+                                 "초 단위 주기는 1~59 사이여야 합니다",
                         taskName, value)
                 );
             }
@@ -351,8 +365,9 @@ public class TaskScanner {
                 case 'd' -> Duration.ofDays(value);       // 일
                 case 'h' -> Duration.ofHours(value);      // 시간
                 case 'm' -> Duration.ofMinutes(value);    // 분
+                case 's' -> Duration.ofSeconds(value);    // 초 (1~59)
                 default -> throw new IllegalArgumentException(
-                    String.format("Task '%s': unsupported period unit '%c' (allowed: w, d, h, m) / " +
+                    String.format("Task '%s': unsupported period unit '%c' (allowed: w, d, h, m, s) / " +
                                  "지원하지 않는 단위입니다",
                         taskName, unit)
                 );
@@ -420,7 +435,7 @@ public class TaskScanner {
     }
     
     /**
-     * "M", "2w", "1d", "2h", "30m" 형식의 기간 파싱
+     * "M", "2w", "1d", "2h", "30m", "5s" 형식의 기간 파싱
      */
     private static Duration parsePeriod(String periodStr) {
         periodStr = periodStr.trim();
@@ -438,6 +453,7 @@ public class TaskScanner {
             case 'd' -> Duration.ofDays(value);       // 일
             case 'h' -> Duration.ofHours(value);      // 시간
             case 'm' -> Duration.ofMinutes(value);    // 분
+            case 's' -> Duration.ofSeconds(value);    // 초
             default -> {
                 logger.warn("알 수 없는 주기 단위 '{}', 기본값 1일 적용", unit);
                 yield Duration.ofDays(1);
@@ -462,6 +478,7 @@ public class TaskScanner {
             sb.append(String.format("Enabled      : %s%n", config.enabled() ? "Yes" : "No"));
             sb.append(String.format("Time         : %s%n", config.getScheduledTimeString()));
             sb.append(String.format("Period       : %s%n", config.getPeriodString()));
+            sb.append(String.format("Schedule Type: %s%n", config.getScheduleTypeString()));
             
             if (!config.isMonthlyPeriod()) {
                 sb.append(String.format("Days of Week : %s%n", config.getDaysOfWeekString()));

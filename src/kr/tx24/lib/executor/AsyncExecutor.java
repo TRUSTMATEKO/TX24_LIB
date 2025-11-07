@@ -1,6 +1,7 @@
 package kr.tx24.lib.executor;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -12,9 +13,12 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import kr.tx24.lib.lang.CommonUtils;
 
 /**
  * 비동기 작업 실행을 위한 Thread Pool Executor 래퍼
@@ -35,6 +39,18 @@ public class AsyncExecutor {
     // Volatile로 thread-safe하게 lazy initialization
     private static volatile ThreadPoolExecutor executor = null;
     private static volatile ScheduledExecutorService scheduler = null;
+    
+    // Task 추적용
+    private static final AtomicLong taskIdGenerator = new AtomicLong(0);
+    private static final ConcurrentHashMap<Long, Long> taskStartTimes = new ConcurrentHashMap<>();
+    
+    
+    private static final String PROP_RUNNING_THRESHOLD_WARN = "async.threshold.warn";
+    private static final String PROP_RUNNING_THRESHOLD_MILLIES = "async.threshold.millies";
+    
+    private static volatile boolean thresholdWarn = true;
+    private static volatile long  thresholdMillies= -1;
+    
     
     private static final Object EXECUTOR_LOCK = new Object();
     private static final Object SCHEDULER_LOCK = new Object();
@@ -59,6 +75,11 @@ public class AsyncExecutor {
     private static ThreadPoolExecutor createExecutor() {
         int corePoolSize = Runtime.getRuntime().availableProcessors();
         int maxPoolSize = corePoolSize * 2;
+        
+        
+        thresholdMillies = CommonUtils.parseLong(System.getProperty(PROP_RUNNING_THRESHOLD_MILLIES,"5"));
+        thresholdWarn 	 = Boolean.getBoolean(System.getProperty(PROP_RUNNING_THRESHOLD_WARN,"true"));
+        
         
         logger.info("Creating AsyncExecutor: core={}, max={}", corePoolSize, maxPoolSize);
         
@@ -142,6 +163,7 @@ public class AsyncExecutor {
         checkAndStartMonitoring();
         taskCounter.incrementAndGet();
         return getExecutorInstance().submit(() -> {
+        	
             try {
                 task.run();
             } finally {
@@ -181,13 +203,38 @@ public class AsyncExecutor {
     public static ScheduledFuture<?> schedule(Runnable task, long delay, TimeUnit unit) {
         checkShutdown();
         checkAndStartMonitoring();
-        ScheduledExecutorService scheduler = getSchedulerInstance();
-        taskCounter.incrementAndGet();
-        return scheduler.schedule(() -> {
+        
+        String taskName = extractTaskName(task);
+        long taskId = taskIdGenerator.incrementAndGet();
+        
+        
+        
+        return getSchedulerInstance().schedule(() -> {
+            long startTime = System.currentTimeMillis();
+            taskStartTimes.put(taskId, startTime);
+            taskCounter.incrementAndGet();
+            
             try {
                 task.run();
+                
+            } catch (Exception e) {
+                long duration = System.currentTimeMillis() - startTime;
+                logger.error("Scheduled task failed: [{}] ({}ms) - {}", 
+                    taskName, duration, e.getMessage(), e);
+                throw e;
+                
             } finally {
+                taskStartTimes.remove(taskId);
                 taskCounter.decrementAndGet();
+                
+                long duration = System.currentTimeMillis() - startTime;
+                if (duration > thresholdMillies) {
+                	if(thresholdWarn) {
+                		logger.warn("Long running scheduled task: [{}] ({}ms) , to disalbe =-Dasync.threshold.warn=false", taskName, duration);
+                	}else {
+                		logger.info("Long running scheduled task: [{}] ({}ms)", taskName, duration);
+                	}
+                }
             }
         }, delay, unit);
     }
@@ -205,7 +252,41 @@ public class AsyncExecutor {
                                                           long period, TimeUnit unit) {
         checkShutdown();
         checkAndStartMonitoring();
-        return getSchedulerInstance().scheduleAtFixedRate(task, initialDelay, period, unit);
+        
+        String taskName = extractTaskName(task);
+        
+        return getSchedulerInstance().scheduleAtFixedRate(() -> {
+        	long taskId = taskIdGenerator.incrementAndGet();
+        	long startTime = System.currentTimeMillis();
+            taskStartTimes.put(taskId, startTime);
+            taskCounter.incrementAndGet();
+            
+            try {
+                task.run();
+                
+            } catch (Exception e) {
+                long duration = System.currentTimeMillis() - startTime;
+                logger.error("Scheduled task failed: [{}] ({}ms) - {}", 
+                    taskName, duration, e.getMessage(), e);
+                throw e;
+                
+            } finally {
+                taskStartTimes.remove(taskId);
+                taskCounter.decrementAndGet();
+                
+                long duration = System.currentTimeMillis() - startTime;
+                
+                if (duration > thresholdMillies) {
+                	if(thresholdWarn) {
+                		logger.warn("Long running scheduled task: [{}] ({}ms)", taskName, duration);
+                	}else {
+                		logger.info("Long running scheduled task: [{}] ({}ms)", taskName, duration);
+                	}
+                }
+                
+                
+            }
+        }, initialDelay, period, unit);
     }
     
     /**
@@ -221,7 +302,37 @@ public class AsyncExecutor {
                                                              long delay, TimeUnit unit) {
         checkShutdown();
         checkAndStartMonitoring();
-        return getSchedulerInstance().scheduleWithFixedDelay(task, initialDelay, delay, unit);
+        
+        String taskName = extractTaskName(task);
+        
+        return getSchedulerInstance().scheduleWithFixedDelay(() -> {
+            long taskId = taskIdGenerator.incrementAndGet();
+            long startTime = System.currentTimeMillis();
+            taskStartTimes.put(taskId, startTime);
+            taskCounter.incrementAndGet();
+            
+            try {
+                task.run();
+                
+            } catch (Exception e) {
+                long duration = System.currentTimeMillis() - startTime;
+                logger.error("Fixed delay task failed: [{}] ({}ms) - {}", 
+                    taskName, duration, e.getMessage(), e);
+                
+            } finally {
+                taskStartTimes.remove(taskId);
+                taskCounter.decrementAndGet();
+                
+                long duration = System.currentTimeMillis() - startTime;
+                if (duration > thresholdMillies) {
+                	if(thresholdWarn) {
+                		logger.warn("Long running scheduled task: [{}] ({}ms)", taskName, duration);
+                	}else {
+                		logger.info("Long running scheduled task: [{}] ({}ms)", taskName, duration);
+                	}
+                }
+            }
+        }, initialDelay, delay, unit);
     }
     
     // ========== 상태 조회 ==========
@@ -470,7 +581,7 @@ public class AsyncExecutor {
     private static ScheduledExecutorService createScheduler() {
         logger.info("Creating scheduler...");
         return Executors.newScheduledThreadPool(
-            2, 
+            4, 
             new CustomThreadFactory("scheduler")
         );
     }
@@ -595,6 +706,53 @@ public class AsyncExecutor {
             );
         }
     }
+    
+    
+    private static String extractTaskName(Runnable task) {
+        Class<?> clazz = task.getClass();
+        String className = clazz.getSimpleName();
+        
+        // SimpleName이 비어있거나 '$'를 포함하는 경우 = 익명 클래스 또는 람다
+        if (className.isEmpty() || className.contains("$")) {
+            String fullName = clazz.getName();
+            int dollarIndex = fullName.indexOf('$');
+            
+            if (dollarIndex > 0) {
+                int lastDotIndex = fullName.lastIndexOf('.', dollarIndex);
+                String baseName = fullName.substring(lastDotIndex + 1, dollarIndex);
+                return baseName + "-anonymous";
+            }
+            
+            // 부모 클래스를 찾을 수 없는 경우
+            return "anonymous-task";
+        }
+        
+        return className;
+    }
+    
+    /*
+    private static String extractTaskName(Callable<?> task) {
+        Class<?> clazz = task.getClass();
+        String className = clazz.getSimpleName();
+        
+        if (className.isEmpty() || className.contains("$")) {
+            String fullName = clazz.getName();
+            int dollarIndex = fullName.indexOf('$');
+            
+            if (dollarIndex > 0) {
+                int lastDotIndex = fullName.lastIndexOf('.', dollarIndex);
+                String baseName = fullName.substring(lastDotIndex + 1, dollarIndex);
+                return baseName + "-callable";
+            }
+            
+            return "anonymous-callable";
+        }
+        
+        return className;
+    }
+    */
+    
+    
     
     // Private constructor
     private AsyncExecutor() {}

@@ -7,11 +7,14 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Set;
 
+import kr.tx24.task.annotation.Task.ScheduleType;
+
 public record TaskConfig(
 	    String name,
 	    Class<? extends Runnable> taskClass,
 	    LocalTime scheduledTime,
 	    Duration period,
+	    ScheduleType type,
 	    Set<DayOfWeek> daysOfWeek,
 	    LocalDate startDate,
 	    LocalDate endDate,
@@ -43,6 +46,7 @@ public record TaskConfig(
 	        long days = period.toDays();
 	        long hours = period.toHours();
 	        long minutes = period.toMinutes();
+	        long seconds = period.toSeconds();
 	        
 	        if (weeks > 0 && period.toDays() % 7 == 0) {
 	            return weeks + "w (Week)";
@@ -50,9 +54,15 @@ public record TaskConfig(
 	            return days + "d (Day)";
 	        } else if (hours > 0) {
 	            return hours + "h (Hour)";
-	        } else {
+	        } else if (minutes > 0) {
 	            return minutes + "m (Minute)";
+	        } else {
+	            return seconds + "s (Second)";
 	        }
+	    }
+	    
+	    public String getScheduleTypeString() {
+	        return type == ScheduleType.RATE ? "Fixed Rate" : "Fixed Delay";
 	    }
 	    
 	    public String getDaysOfWeekString() {

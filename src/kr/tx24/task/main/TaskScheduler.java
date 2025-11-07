@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.lib.lang.MsgUtils;
+import kr.tx24.task.annotation.Task.ScheduleType;
 import kr.tx24.task.config.TaskConfig;
 
 /**
@@ -32,6 +33,7 @@ public class TaskScheduler {
 			+ " - Name        : {}\n"
 			+ " - Class       : {}\n"
 			+ " - Schedule    : {}\n"
+			+ " - Type        : {}\n"
 			+ " - Days of week: {}\n"
 			+ " - Start day   : {}\n"
 			+ " - End day     : {}\n"
@@ -189,6 +191,7 @@ public class TaskScheduler {
     
     /**
      * 일반 Task 스케줄링 (고정 주기)
+     * scheduleType에 따라 Fixed Rate 또는 Fixed Delay 사용
      */
     private void scheduleRegularTask(TaskConfig taskConfig, Runnable task) {
         Runnable wrappedTask = createWrappedTask(taskConfig, task);
@@ -197,16 +200,30 @@ public class TaskScheduler {
         long initialDelay = calculateInitialDelay(taskConfig, now);
         long period = taskConfig.period().toMillis();
         
-        ScheduledFuture<?> future = AsyncExecutor.scheduleAtFixedRate(
-            wrappedTask,
-            initialDelay,
-            period,
-            TimeUnit.MILLISECONDS
-        );
+        ScheduledFuture<?> future;
+        
+        // scheduleType에 따라 적절한 스케줄링 메서드 호출
+        if (taskConfig.type() == ScheduleType.RATE) {
+            future = AsyncExecutor.scheduleAtFixedRate(
+                wrappedTask,
+                initialDelay,
+                period,
+                TimeUnit.MILLISECONDS
+            );
+            logger.debug("Task '{}' scheduled with RATE", taskConfig.name());
+        } else {
+            future = AsyncExecutor.scheduleWithFixedDelay(
+                wrappedTask,
+                initialDelay,
+                period,
+                TimeUnit.MILLISECONDS
+            );
+            logger.debug("Task '{}' scheduled with DELAY", taskConfig.name());
+        }
         
         scheduledFutures.add(future);
         
-        // ✅ First run과 Next run 구분
+        // First run과 Next run 구분
         LocalDateTime nextRun = calculateFirstRunTime(taskConfig, now);
         LocalDateTime firstRun = getInitialScheduledTime(taskConfig, now);
         
@@ -240,7 +257,7 @@ public class TaskScheduler {
     }
     
     /**
-     * ✅ 초기 스케줄 시간 계산 (일반 주기)
+     * 초기 스케줄 시간 계산 (일반 주기)
      * - 설정된 원래 시간을 반환 (시작일 + 스케줄 시간)
      */
     private LocalDateTime getInitialScheduledTime(TaskConfig taskConfig, LocalDateTime now) {
@@ -252,7 +269,7 @@ public class TaskScheduler {
     }
     
     /**
-     * ✅ 초기 스케줄 시간 계산 (월 단위)
+     * 초기 스케줄 시간 계산 (월 단위)
      */
     private LocalDateTime getInitialScheduledTimeMonthly(TaskConfig taskConfig) {
         return LocalDateTime.of(taskConfig.startDate(), taskConfig.scheduledTime());
@@ -306,12 +323,12 @@ public class TaskScheduler {
     
     /**
      * 첫 실행 시간 계산 (밀리초 단위)
-     * ⚠️ 주의: startDate보다 이전인지 반드시 확인 필요
+     * 주의: startDate보다 이전인지 반드시 확인 필요
      */
     private long calculateInitialDelay(TaskConfig taskConfig, LocalDateTime now) {
         Duration period = taskConfig.period();
         
-        // ✅ 분/시간 단위 주기인 경우 특별 처리
+        // 분/시간/초 단위 주기인 경우 특별 처리
         if (period.toDays() < 1) {
             return calculateShortPeriodInitialDelay(taskConfig, now, period);
         }
@@ -319,7 +336,7 @@ public class TaskScheduler {
         // 일 단위 이상 주기 처리
         LocalDateTime scheduledDateTime = now.with(taskConfig.scheduledTime());
         
-        // ✅ 시작일이 지정되어 있고 아직 도래하지 않았다면 시작일 기준으로 계산
+        // 시작일이 지정되어 있고 아직 도래하지 않았다면 시작일 기준으로 계산
         if (taskConfig.startDate() != null) {
             LocalDate startDate = taskConfig.startDate();
             LocalDate today = now.toLocalDate();
@@ -339,7 +356,7 @@ public class TaskScheduler {
             }
         }
         
-        // ✅ 오늘 실행 시간이 지났거나 요일이 안 맞으면 다음 유효 시간 찾기
+        // 오늘 실행 시간이 지났거나 요일이 안 맞으면 다음 유효 시간 찾기
         if (scheduledDateTime.isBefore(now) || scheduledDateTime.isEqual(now) ||
             !taskConfig.isValidDayOfWeek(scheduledDateTime.getDayOfWeek())) {
             scheduledDateTime = findNextValidDateTime(taskConfig, scheduledDateTime);
@@ -349,7 +366,7 @@ public class TaskScheduler {
     }
     
     /**
-     * ✅ 짧은 주기 (분/시간) 초기 지연 시간 계산
+     * 짧은 주기 (초/분/시간) 초기 지연 시간 계산
      * - 현재 시간과 동일하면 주기만큼 더함
      */
     private long calculateShortPeriodInitialDelay(TaskConfig taskConfig, LocalDateTime now, Duration period) {
@@ -383,10 +400,16 @@ public class TaskScheduler {
             // 주기만큼 더한 시간을 다음 실행 시간으로 설정
             scheduledDateTime = scheduledDateTime.plus(period);
             
-            // ✅ period 성격에 따라 동일한 분/시간 체크하여 즉시 실행 방지
+            // period 성격에 따라 동일한 초/분/시간 체크하여 즉시 실행 방지
             String periodString = taskConfig.getPeriodString();
             
-            if (periodString.endsWith("m (Minute)")) {
+            if (periodString.endsWith("s (Second)")) {
+                // 초 단위 주기: 동일한 초면 +1초 추가 지연
+                if (now.getSecond() == scheduledDateTime.getSecond()) {
+                    scheduledDateTime = scheduledDateTime.plusSeconds(1);
+                    logger.debug("Task '{}': 동일한 초 감지 ({}) - 1초 추가 지연", taskConfig.name(), periodString);
+                }
+            } else if (periodString.endsWith("m (Minute)")) {
                 // 분 단위 주기: 동일한 분이면 +1분 추가 지연
                 if (now.getMinute() == scheduledDateTime.getMinute()) {
                     scheduledDateTime = scheduledDateTime.plusMinutes(1);
@@ -417,11 +440,11 @@ public class TaskScheduler {
         
         LocalDateTime scheduledDateTime;
         
-        // ✅ 시작일이 미래면 시작일
+        // 시작일이 미래면 시작일
         if (today.isBefore(startDate)) {
             scheduledDateTime = LocalDateTime.of(startDate, scheduledTime);
         } 
-        // ✅ 시작일이 오늘이면 오늘의 스케줄 시간 확인
+        // 시작일이 오늘이면 오늘의 스케줄 시간 확인
         else if (today.isEqual(startDate)) {
             scheduledDateTime = LocalDateTime.of(startDate, scheduledTime);
             // 오늘의 스케줄 시간이 지났으면 다음 달
@@ -448,7 +471,7 @@ public class TaskScheduler {
     
     /**
      * 다음 유효한 실행 날짜/시간 찾기
-     * ⚠️ startDate 이후만 반환되도록 보장
+     * 주의: startDate 이후만 반환되도록 보장
      */
     private LocalDateTime findNextValidDateTime(TaskConfig taskConfig, LocalDateTime current) {
         LocalDateTime candidate = current;
@@ -460,7 +483,7 @@ public class TaskScheduler {
             
             LocalDate candidateDate = candidate.toLocalDate();
             
-            // ✅ startDate 체크: 시작일 이전이면 continue
+            // startDate 체크: 시작일 이전이면 continue
             if (startDate != null && candidateDate.isBefore(startDate)) {
                 continue;
             }
@@ -489,7 +512,7 @@ public class TaskScheduler {
     private LocalDateTime calculateFirstRunTime(TaskConfig taskConfig, LocalDateTime now) {
         Duration period = taskConfig.period();
         
-        // ✅ 분/시간 단위는 특별 계산
+        // 초/분/시간 단위는 특별 계산
         if (period.toDays() < 1) {
             LocalDateTime scheduledDateTime = now.with(taskConfig.scheduledTime());
             
@@ -570,12 +593,12 @@ public class TaskScheduler {
         int targetDay = startDate.getDayOfMonth();
         LocalDate today = now.toLocalDate();
         
-        // ✅ 시작일이 미래면 시작일
+        // 시작일이 미래면 시작일
         if (today.isBefore(startDate)) {
             return LocalDateTime.of(startDate, scheduledTime);
         }
         
-        // ✅ 시작일이 오늘이면 오늘의 스케줄 시간 확인
+        // 시작일이 오늘이면 오늘의 스케줄 시간 확인
         if (today.isEqual(startDate)) {
             LocalDateTime startDateTime = LocalDateTime.of(startDate, scheduledTime);
             if (now.isBefore(startDateTime)) {
@@ -681,7 +704,7 @@ public class TaskScheduler {
     }
     
     /**
-     * ✅ Task 상세 정보 로그 출력 (통합 버전)
+     * Task 상세 정보 로그 출력 (통합 버전)
      * @param taskConfig Task 설정
      * @param status 상태 (ACTIVE, SCHEDULED, EXPIRED)
      * @param firstRun 최초 스케줄된 시간 (설정 기준)
@@ -696,6 +719,7 @@ public class TaskScheduler {
                 taskConfig.name(),
                 taskConfig.taskClass().getName(),
                 taskConfig.getScheduledTimeString() + " every " + (isMonthly ? "M (Monthly / 매월)" : taskConfig.getPeriodString()),
+                taskConfig.getScheduleTypeString(),
                 taskConfig.getDaysOfWeekString(), 
                 taskConfig.getStartDateString(),
                 taskConfig.getEndDateString(), 
