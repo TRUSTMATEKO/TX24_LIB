@@ -725,7 +725,7 @@ public class TaskScheduler {
                 taskConfig.getEndDateString(), 
                 taskConfig.getScheduledTimeString(), 
                 firstRun != null ? DateUtils.toString(firstRun, "yyyy-MM-dd HH:mm:ss") : "",
-                nextRun != null ? DateUtils.toString(nextRun, "yyyy-MM-dd HH:mm:ss") : DateUtils.toString(firstRun, "yyyy-MM-dd HH:mm:ss"),
+                nextRun != null ? DateUtils.toString(nextRun, "yyyy-MM-dd HH:mm:ss") : firstRun != null ? DateUtils.toString(firstRun, "yyyy-MM-dd HH:mm:ss") : "",
                 taskConfig.description(), 
                 status + ("SCHEDULED".equals(status) ? " (시작 대기 중)" : "") + ("EXPIRED".equals(status) ? " (종료됨)" : "")
             )
