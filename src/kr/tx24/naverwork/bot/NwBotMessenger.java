@@ -227,7 +227,7 @@ public class NwBotMessenger {
         try (Response response = okHttpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
             
-            logger.info(responseBody);
+            logger.info("Response Code: {}, Body: {}", response.code(), responseBody);
             
             if (!response.isSuccessful()) {
                 throw new IOException(
@@ -236,6 +236,16 @@ public class NwBotMessenger {
                 );
             }
             
+            // ========== 핵심 수정: 빈 응답 처리 ==========
+            // HTTP 204 No Content 또는 빈 응답인 경우
+            if (response.code() == 204 || responseBody == null || responseBody.trim().isEmpty()) {
+                logger.info("메시지 전송 성공 (응답 본문 없음)");
+                MessageResponse emptyResponse = new MessageResponse();
+                // 필요시 URL에서 channelId 추출하여 설정
+                return emptyResponse;
+            }
+            
+            // JSON 응답이 있는 경우에만 파싱
             return objectMapper.readValue(responseBody, MessageResponse.class);
         }
     }

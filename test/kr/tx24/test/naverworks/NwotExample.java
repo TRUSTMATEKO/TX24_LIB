@@ -130,9 +130,6 @@ public class NwotExample {
 	        System.out.println("\n--- 예제 3: 배치 메시지 전송 (AsyncExecutor 활용) ---");
 	        
 	        List<String> channelIds = Arrays.asList(
-	            "channel-001",
-	            "channel-002",
-	            "channel-003",
 	            CHANNEL_ID
 	        );
 	        
