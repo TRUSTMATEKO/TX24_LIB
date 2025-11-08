@@ -94,22 +94,23 @@ public class NwOAuthClient {
         String assertion = jwtGenerator.generateOAuthAssertion();
         
         // Form URL Encoded 요청 바디 생성
-        FormBody.Builder formBuilder = new FormBody.Builder()
-            .add("assertion", assertion)
-            .add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-            .add("client_id", clientId)
-            .add("client_secret", clientSecret)
-            .add("scope", scope);
-        
-        RequestBody requestBody = formBuilder.build();
+        okhttp3.RequestBody requestBody = new FormBody.Builder()
+                .add("assertion", assertion)
+                .add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
+                .add("client_id", clientId)
+                .add("client_secret", clientSecret)
+                .add("scope", scope)
+                .build();
         
         Request request = new Request.Builder()
-            .url(TOKEN_ENDPOINT)
-            .post(requestBody)
-            .build();
+                .url(TOKEN_ENDPOINT)
+                .post(requestBody)
+                .build();
         
         try (Response response = okHttpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
+            
+            System.out.println(responseBody);
             
             if (!response.isSuccessful()) {
                 throw new RuntimeException(
@@ -158,6 +159,9 @@ public class NwOAuthClient {
         @JsonProperty("token_type")
         private String tokenType;
         
+        @JsonProperty("refresh_token")
+        private String refreshToken;
+        
         @JsonProperty("expires_in")
         private long expiresIn;
         
@@ -186,6 +190,25 @@ public class NwOAuthClient {
          */
         public void setAccessToken(String accessToken) {
             this.accessToken = accessToken;
+        }
+        
+        /**
+         * Token Type 반환
+         * 
+         * @return Token Type (일반적으로 "Bearer")
+         */
+        public String getRefreshToken() {
+            return refreshToken;
+        }
+        
+        
+        /**
+         * Access Token 설정
+         * 
+         * @param accessToken Access Token
+         */
+        public void setRefreshToken(String refreshToken) {
+            this.refreshToken = refreshToken;
         }
         
         /**

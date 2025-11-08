@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,6 +19,8 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class NwBotMessenger {
+	
+	private static final Logger logger = LoggerFactory.getLogger(NwBotMessenger.class);
 
 	/** 네이버웍스 API Base URL */
     private static final String API_BASE_URL = "https://www.worksapis.com/v1.0";
@@ -217,8 +222,12 @@ public class NwBotMessenger {
             .post(body)
             .build();
         
+        logger.info("url : {},body: {}",url,body);
+        
         try (Response response = okHttpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
+            
+            logger.info(responseBody);
             
             if (!response.isSuccessful()) {
                 throw new IOException(

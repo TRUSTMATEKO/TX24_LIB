@@ -15,7 +15,7 @@ public class NwJwt {
     private static final String NAVER_WORKS_TOKEN_URL = "https://auth.worksmobile.com/oauth2/v2.0/token";
     
     /** JWT 토큰 유효 시간 (기본: 1시간) */
-    private static final long TOKEN_EXPIRATION_TIME = 24*60*60*1000; // 1 hour in milliseconds
+    private static final long TOKEN_EXPIRATION_TIME = 60*60; // 1 hour in milliseconds
     
     /** Client ID (네이버웍스 Developer Console에서 발급) */
     private final String clientId;
