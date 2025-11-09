@@ -4,19 +4,44 @@ import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import org.springframework.web.bind.annotation.RequestBody;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import kr.tx24.lib.executor.AsyncExecutor;
 import okhttp3.FormBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
+/**
+ * NAVER WORKS OAuth 클라이언트
+ * 
+ * <p>JWT 기반 OAuth 2.0 인증과 Refresh Token을 통한 토큰 갱신을 지원합니다.</p>
+ * 
+ * <h3>주요 기능:</h3>
+ * <ul>
+ *   <li>JWT Assertion 기반 Access Token 획득</li>
+ *   <li>Refresh Token을 사용한 토큰 갱신</li>
+ *   <li>비동기 토큰 획득 및 갱신</li>
+ *   <li>Thread-safe 구현</li>
+ * </ul>
+ * 
+ * <h3>토큰 갱신 전략:</h3>
+ * <ol>
+ *   <li>Refresh Token이 있으면 우선 사용</li>
+ *   <li>Refresh Token이 없거나 실패하면 JWT Assertion으로 새 토큰 발급</li>
+ * </ol>
+ * 
+ * @author TX24
+ */
 public class NwOAuthClient {
-
-	/** 네이버웍스 OAuth Token Endpoint */
+    
+    private static final Logger logger = LoggerFactory.getLogger(NwOAuthClient.class);
+    
+    /** 네이버웍스 OAuth Token Endpoint */
     private static final String TOKEN_ENDPOINT = "https://auth.worksmobile.com/oauth2/v2.0/token";
     
     /** HTTP 클라이언트 연결 타임아웃 (초) */
@@ -44,7 +69,7 @@ public class NwOAuthClient {
     private final ObjectMapper objectMapper;
     
     /**
-     * NaverWorksOAuthClient 생성자
+     * NwOAuthClient 생성자
      * 
      * @param jwtGenerator JWT 생성기
      * @param clientId Client ID
@@ -67,6 +92,8 @@ public class NwOAuthClient {
         this.clientSecret = clientSecret;
         this.okHttpClient = createOkHttpClient();
         this.objectMapper = new ObjectMapper();
+        
+        logger.info("NwOAuthClient 초기화 완료 - clientId: {}", maskClientId(clientId));
     }
     
     /**
@@ -83,14 +110,19 @@ public class NwOAuthClient {
     }
     
     /**
-     * Access Token 획득
+     * Access Token 획득 (JWT Assertion 기반)
      * 
-     * @param scope 요청할 권한 범위 (예: "general", "user", "bot" 등)
-     * @return AccessTokenResponse 객체
+     * <p>JWT Assertion을 생성하여 OAuth 2.0 토큰을 획득합니다.
+     * 응답에는 access_token과 refresh_token이 포함됩니다.</p>
+     * 
+     * @param scope 요청할 권한 범위 (예: "bot", "user", "directory" 등)
+     * @return AccessTokenResponse 객체 (access_token, refresh_token 포함)
      * @throws IOException HTTP 통신 중 오류 발생 시
      * @throws RuntimeException Access Token 획득 실패 시
      */
     public AccessTokenResponse getAccessToken(String scope) throws IOException {
+        logger.debug("[{}] JWT Assertion 기반 Access Token 요청", scope);
+        
         String assertion = jwtGenerator.generateOAuthAssertion();
         
         // Form URL Encoded 요청 바디 생성
@@ -110,33 +142,126 @@ public class NwOAuthClient {
         try (Response response = okHttpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
             
-            System.out.println(responseBody);
-            
             if (!response.isSuccessful()) {
+                logger.error("[{}] Access Token 획득 실패: HTTP {}", scope, response.code());
                 throw new RuntimeException(
                     String.format("Access Token 획득 실패: HTTP %d - %s", 
                         response.code(), responseBody)
                 );
             }
             
-            return objectMapper.readValue(responseBody, AccessTokenResponse.class);
+            AccessTokenResponse tokenResponse = objectMapper.readValue(responseBody, AccessTokenResponse.class);
+            tokenResponse.setIssuedAt(System.currentTimeMillis());
+            
+            logger.info("[{}] Access Token 발급 성공 (유효기간: {}초, refresh_token: {})", 
+                scope, tokenResponse.getExpiresIn(), 
+                tokenResponse.getRefreshToken() != null ? "있음" : "없음");
+            
+            return tokenResponse;
         }
     }
     
     /**
-     * Access Token 획득 (비동기)
+     * Refresh Token을 사용한 Access Token 갱신 (동기)
+     * 
+     * <p>기존 refresh_token을 사용하여 새로운 access_token을 발급받습니다.
+     * 갱신 시 새로운 refresh_token도 함께 발급됩니다.</p>
+     * 
+     * <h3>갱신 시 발급되는 항목:</h3>
+     * <ul>
+     *   <li>새로운 access_token</li>
+     *   <li>새로운 refresh_token</li>
+     *   <li>토큰 유효기간 (expires_in)</li>
+     * </ul>
+     * 
+     * @param refreshToken 갱신에 사용할 Refresh Token
+     * @return AccessTokenResponse 객체 (새로운 access_token, refresh_token 포함)
+     * @throws IOException HTTP 통신 중 오류 발생 시
+     * @throws IllegalArgumentException refreshToken이 null이거나 비어있는 경우
+     * @throws RuntimeException Token 갱신 실패 시
+     */
+    public AccessTokenResponse refreshAccessToken(String refreshToken) throws IOException {
+        if (refreshToken == null || refreshToken.trim().isEmpty()) {
+            throw new IllegalArgumentException("Refresh Token이 비어있습니다.");
+        }
+        
+        logger.debug("Refresh Token 기반 Access Token 갱신 요청");
+        
+        // Form URL Encoded 요청 바디 생성
+        okhttp3.RequestBody requestBody = new FormBody.Builder()
+                .add("refresh_token", refreshToken)
+                .add("grant_type", "refresh_token")
+                .add("client_id", clientId)
+                .add("client_secret", clientSecret)
+                .build();
+        
+        Request request = new Request.Builder()
+                .url(TOKEN_ENDPOINT)
+                .post(requestBody)
+                .build();
+        
+        try (Response response = okHttpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+            
+            if (!response.isSuccessful()) {
+                logger.error("Token 갱신 실패: HTTP {} - {}", response.code(), responseBody);
+                throw new RuntimeException(
+                    String.format("Token 갱신 실패: HTTP %d - %s", 
+                        response.code(), responseBody)
+                );
+            }
+            
+            AccessTokenResponse tokenResponse = objectMapper.readValue(responseBody, AccessTokenResponse.class);
+            tokenResponse.setIssuedAt(System.currentTimeMillis());
+            
+            logger.info("Refresh Token으로 Access Token 갱신 성공 (유효기간: {}초, 새 refresh_token: {})", 
+                tokenResponse.getExpiresIn(),
+                tokenResponse.getRefreshToken() != null ? "있음" : "없음");
+            
+            return tokenResponse;
+            
+        } catch (IOException e) {
+            logger.error("Refresh Token 갱신 중 IO 오류 발생", e);
+            throw e;
+        }
+    }
+    
+    /**
+     * Access Token 비동기 획득
+     * 
+     * <p>AsyncExecutor를 사용하여 비동기적으로 토큰을 획득합니다.</p>
      * 
      * @param scope 요청할 권한 범위
-     * @return AccessTokenResponse의 CompletableFuture
+     * @return CompletableFuture&lt;AccessTokenResponse&gt;
      */
     public CompletableFuture<AccessTokenResponse> getAccessTokenAsync(String scope) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return getAccessToken(scope);
-            } catch (Exception e) {
+            } catch (IOException e) {
+                logger.error("[{}] 비동기 Access Token 획득 실패", scope, e);
                 throw new RuntimeException("비동기 Access Token 획득 실패", e);
             }
-        });
+        }, AsyncExecutor.getExecutor());
+    }
+    
+    /**
+     * Refresh Token 비동기 갱신
+     * 
+     * <p>AsyncExecutor를 사용하여 비동기적으로 토큰을 갱신합니다.</p>
+     * 
+     * @param refreshToken 갱신에 사용할 Refresh Token
+     * @return CompletableFuture&lt;AccessTokenResponse&gt;
+     */
+    public CompletableFuture<AccessTokenResponse> refreshAccessTokenAsync(String refreshToken) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return refreshAccessToken(refreshToken);
+            } catch (IOException e) {
+                logger.error("비동기 Token 갱신 실패", e);
+                throw new RuntimeException("비동기 Token 갱신 실패", e);
+            }
+        }, AsyncExecutor.getExecutor());
     }
     
     /**
@@ -149,7 +274,22 @@ public class NwOAuthClient {
     }
     
     /**
+     * Client ID 마스킹 (로그용)
+     * 
+     * @param clientId Client ID
+     * @return 마스킹된 Client ID
+     */
+    private String maskClientId(String clientId) {
+        if (clientId == null || clientId.length() < 8) {
+            return "***";
+        }
+        return clientId.substring(0, 4) + "***" + clientId.substring(clientId.length() - 4);
+    }
+    
+    /**
      * Access Token 응답 객체
+     * 
+     * <p>NAVER WORKS OAuth 2.0 토큰 응답을 표현합니다.</p>
      */
     public static class AccessTokenResponse {
         
@@ -169,110 +309,112 @@ public class NwOAuthClient {
         private String scope;
         
         /**
+         * 토큰 발급 시각 (밀리초 단위 Unix timestamp)
+         * 서버 응답에는 포함되지 않으며, 클라이언트에서 설정합니다.
+         */
+        private long issuedAt;
+        
+        /**
          * 기본 생성자
          */
         public AccessTokenResponse() {
+            this.issuedAt = System.currentTimeMillis();
         }
         
         /**
-         * Access Token 반환
+         * 토큰 만료 여부 확인
          * 
-         * @return Access Token
+         * @return 토큰이 만료되었으면 true, 아니면 false
          */
+        public boolean isExpired() {
+            return getRemainingSeconds() <= 0;
+        }
+        
+        /**
+         * 토큰이 곧 만료될 예정인지 확인
+         * 
+         * @param thresholdSeconds 임계값 (초 단위)
+         * @return 남은 시간이 임계값보다 작으면 true
+         */
+        public boolean isExpiringSoon(long thresholdSeconds) {
+            return getRemainingSeconds() <= thresholdSeconds;
+        }
+        
+        /**
+         * 토큰 남은 유효 시간 계산 (초 단위)
+         * 
+         * @return 남은 시간 (초)
+         */
+        public long getRemainingSeconds() {
+            long elapsedSeconds = (System.currentTimeMillis() - issuedAt) / 1000;
+            return expiresIn - elapsedSeconds;
+        }
+        
+        /**
+         * Refresh Token 존재 여부 확인
+         * 
+         * @return Refresh Token이 있으면 true
+         */
+        public boolean hasRefreshToken() {
+            return refreshToken != null && !refreshToken.trim().isEmpty();
+        }
+        
+        // Getters and Setters
+        
         public String getAccessToken() {
             return accessToken;
         }
         
-        /**
-         * Access Token 설정
-         * 
-         * @param accessToken Access Token
-         */
         public void setAccessToken(String accessToken) {
             this.accessToken = accessToken;
         }
         
-        /**
-         * Token Type 반환
-         * 
-         * @return Token Type (일반적으로 "Bearer")
-         */
-        public String getRefreshToken() {
-            return refreshToken;
-        }
-        
-        
-        /**
-         * Access Token 설정
-         * 
-         * @param accessToken Access Token
-         */
-        public void setRefreshToken(String refreshToken) {
-            this.refreshToken = refreshToken;
-        }
-        
-        /**
-         * Token Type 반환
-         * 
-         * @return Token Type (일반적으로 "Bearer")
-         */
         public String getTokenType() {
             return tokenType;
         }
         
-        /**
-         * Token Type 설정
-         * 
-         * @param tokenType Token Type
-         */
         public void setTokenType(String tokenType) {
             this.tokenType = tokenType;
         }
         
-        /**
-         * 토큰 만료 시간 반환 (초)
-         * 
-         * @return 만료 시간 (초 단위)
-         */
+        public String getRefreshToken() {
+            return refreshToken;
+        }
+        
+        public void setRefreshToken(String refreshToken) {
+            this.refreshToken = refreshToken;
+        }
+        
         public long getExpiresIn() {
             return expiresIn;
         }
         
-        /**
-         * 토큰 만료 시간 설정
-         * 
-         * @param expiresIn 만료 시간 (초 단위)
-         */
         public void setExpiresIn(long expiresIn) {
             this.expiresIn = expiresIn;
         }
         
-        /**
-         * 권한 범위 반환
-         * 
-         * @return 권한 범위
-         */
         public String getScope() {
             return scope;
         }
         
-        /**
-         * 권한 범위 설정
-         * 
-         * @param scope 권한 범위
-         */
         public void setScope(String scope) {
             this.scope = scope;
         }
         
+        public long getIssuedAt() {
+            return issuedAt;
+        }
+        
+        public void setIssuedAt(long issuedAt) {
+            this.issuedAt = issuedAt;
+        }
+        
         @Override
         public String toString() {
-            return "AccessTokenResponse{" +
-                "accessToken='" + (accessToken != null ? "***" : "null") + '\'' +
-                ", tokenType='" + tokenType + '\'' +
-                ", expiresIn=" + expiresIn +
-                ", scope='" + scope + '\'' +
-                '}';
+            return String.format(
+                "AccessTokenResponse{scope='%s', tokenType='%s', expiresIn=%d, remainingSeconds=%d, hasRefreshToken=%s}",
+                scope, tokenType, expiresIn, getRemainingSeconds(), hasRefreshToken()
+            );
         }
     }
 }
