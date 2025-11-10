@@ -3,6 +3,7 @@ package kr.tx24.inet.conf;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +27,7 @@ public class INetConfigLoader {
 	}
 	
 	
-	private static SharedMap<String, Object> getConfigMap() {
+	public static SharedMap<String, Object> getConfigMap() {
 		if (configMap == null) {
 			synchronized (LOCK) {
 				if (configMap == null) {
@@ -41,6 +42,8 @@ public class INetConfigLoader {
 		
 		return configMap;
 	}
+	
+
 	
 	
 	
@@ -70,28 +73,35 @@ public class INetConfigLoader {
 	
 	
 	public static LinkedHashMap<String,Object> getMap(String key){
-		return getConfigMap().getLinkedHashMap(key);
+		
+		return getConfigMap().getMap(key, TypeRegistry.MAP_LINKEDHASHMAP_OBJECT);
+	}
+	
+	
+	@SuppressWarnings("unchecked")
+	public static <T extends Map<String, Object>> T getMap(String key, TypeRegistry typeRegistry) {
+		if (key == null || typeRegistry == null) {
+			return null;
+		}
+		
+		return (T) getConfigMap().getMap(key, typeRegistry);
 	}
 	
 
+	
 	public static <T> T get(String key, Class<T> type) {
 		if (key == null || type == null) {
 			return null;
-			
 		}
 		
-		SharedMap<String, Object> config = getConfigMap();
-		if(!config.containsKey(key)) {
-			return null;
-		}
-		T instance = null;
 		try {
-			LinkedHashMap<String,Object> map = config.getLinkedHashMap(key);
+			LinkedHashMap<String,Object> map = getMap(key);
 			if(map == null) {
 				return null;
 			}
 			return new JacksonUtils().mapToObject(map, type);
 		}catch(Exception e) {
+			logger.warn("Failed to convert config key '{}' to type {}: {}", key, type.getSimpleName(), e.getMessage());
 			return null;
 		}
 	}
@@ -121,7 +131,7 @@ public class INetConfigLoader {
 	                }
 					
 					if(configMap.get("property") != null) {
-						LinkedHashMap<String,Object> propertiesMap = configMap.getLinkedHashMap("property");
+						LinkedHashMap<String,Object> propertiesMap = getMap("property");
 						propertiesMap.forEach((key, value) -> {
 					        if (key != null && value != null) {
 					        	String v = CommonUtils.toString(value);

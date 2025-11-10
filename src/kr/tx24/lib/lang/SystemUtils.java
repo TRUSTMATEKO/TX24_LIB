@@ -107,7 +107,7 @@ public class SystemUtils {
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_PROCESS	, PROPERTY_NONE);
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_DIR	, "../logs");
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_MAX	, "90");
-        CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_LEVEL, "DEBUG");
+        CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_LEVEL, "INFO");
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_REDIS, "");
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_JVM_MONITOR, "false");
         

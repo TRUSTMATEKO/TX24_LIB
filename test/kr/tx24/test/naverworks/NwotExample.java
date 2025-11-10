@@ -13,9 +13,13 @@ import kr.tx24.naverwork.oauth.NwAccessTokenManager;
 import kr.tx24.naverwork.oauth.NwConfig;
 
 public class NwotExample {
-
-	 private static final String BOT_ID = "11085652";
-	    private static final String CHANNEL_ID = "02155ff2-c722-134b-f3b1-04c8d74f6cb5";
+		//시스템공지
+	 	//private static final String BOT_ID = "11085652";
+	    //private static final String CHANNEL_ID = "02155ff2-c722-134b-f3b1-04c8d74f6cb5";
+		//업무관리
+	
+	    private static final String BOT_ID = "11085650";
+	    private static final String CHANNEL_ID = "89fcf9bb-69bc-fe1a-0494-8f5b9519ec09";
 	    
 	    public static void main(String[] args) throws Exception {
 	        
