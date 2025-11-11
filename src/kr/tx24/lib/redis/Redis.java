@@ -2,6 +2,7 @@ package kr.tx24.lib.redis;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,13 +23,13 @@ import kr.tx24.lib.lang.SystemUtils;
  * <ul>
  *   <li>Connection Pool 사용하지 않음 (Netty 기반 Non-blocking I/O</li>
  *   <li>하나의 Connection 을 여러 쓰레드에서 재사용</li>
- *   <li>Connection 에 대한 close() 제거, close() 는 성능 저하의 원인이며. Shutdown 시 자동 중료</li>
+ *   <li>Connection 에 대한 close() 제거, close() 는 성능 저하의 원인이며. Shutdown 시 자동 종료</li>
  *   <li>Lettuce 공식 권장사항: "Reuse connections, don't create/close per operation"</li>
- *   <li>getConnection() 시 close 되어 있다면 reconnect() 시도 </li>
+ *   <li>getConnection() 시 close 되어 있다면 reconnect() 시도</li>
  * </ul>
  * 
  * @author TX24
- * @version 1.0 
+ * @version 1.1
  * @see <a href="https://lettuce.io/core/release/reference/">Lettuce Reference</a>
  */
 public final class Redis {
@@ -40,14 +41,22 @@ public final class Redis {
     private static volatile StatefulRedisConnection<String, Object> connection;
     private static volatile boolean reconnecting = false;
     
+    // 초기화 상태 추적 플래그 추가
+    private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
+    private static final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
 
     private Redis() {
         throw new UnsupportedOperationException("Utility class");
     }
 
-
     private static synchronized void initClient() {
         if (client != null && connection != null && connection.isOpen()) {
+            return;
+        }
+        
+        // shutdown 중이면 초기화하지 않음
+        if (isShuttingDown.get()) {
+            logger.debug("Redis is shutting down, skipping initialization");
             return;
         }
         
@@ -58,7 +67,6 @@ public final class Redis {
             if (SystemUtils.REDIS_INITIAL.equals(redisUri)) {
                 throw new IllegalStateException("NOT_SET");
             }
-            
             
             // 기존 리소스 정리 (재연결의 경우)
             if (connection != null) {
@@ -80,21 +88,20 @@ public final class Redis {
             }
             
             if (clientResources == null) {
-            	// I/O 스레드: CPU 코어 수만큼 (최소 2개), Computation 스레드: CPU 코어 수만큼 (최소 2개)
+                // I/O 스레드: CPU 코어 수만큼 (최소 2개), Computation 스레드: CPU 코어 수만큼 (최소 2개)
                 int cpuCount = Runtime.getRuntime().availableProcessors();
                 clientResources = DefaultClientResources.builder()
-                		.ioThreadPoolSize(Math.max(2, cpuCount))
+                        .ioThreadPoolSize(Math.max(2, cpuCount))
                         .computationThreadPoolSize(Math.max(2, cpuCount))
                         .build();
             }
             
-         
             RedisURI uri = RedisURI.create(redisUri);
             uri.setTimeout(Duration.ofSeconds(10));  // Connection timeout
             
             // Redis Client 생성
             client = RedisClient.create(clientResources, uri);
-           
+            
             connection = client.connect(new TypedRedisCodec());
             
             // Connection 유효성 검증
@@ -103,8 +110,9 @@ public final class Redis {
                 throw new IllegalStateException("Redis connection validation failed");
             }
             
+            // 초기화 성공
+            isInitialized.set(true);
             logger.info("Redis        : initialized ");
-            
             
         } catch (IllegalStateException e) {
             if ("NOT_SET".equals(e.getMessage())) {
@@ -113,10 +121,9 @@ public final class Redis {
                 throw e;
             }
         } catch (Exception e) {
-        	logger.error("Redis client initialization failed: {}", SystemUtils.getRedisSystemUri(), e);
+            logger.error("Redis client initialization failed: {}", SystemUtils.getRedisSystemUri(), e);
         }
     }
-
 
     // ==================== Connection 접근 ====================
 
@@ -127,14 +134,23 @@ public final class Redis {
      * @throws RuntimeException 재연결 실패 시
      */
     public static StatefulRedisConnection<String, Object> getConnection() {
-    	if (connection == null || !connection.isOpen()) {
+        // shutdown 중이면 예외 발생
+        if (isShuttingDown.get()) {
+            throw new IllegalStateException("Redis is shutting down");
+        }
+        
+        if (connection == null || !connection.isOpen()) {
             synchronized (Redis.class) {
                 if (connection == null || !connection.isOpen()) {
                     initClient(); 
                 }
             }
         }
-       
+        
+        if (connection != null && connection.isOpen()) {
+            return connection;
+        }
+        
         return reconnect();
     }
 
@@ -154,6 +170,11 @@ public final class Redis {
      * @throws RuntimeException 재연결 실패 시
      */
     private static synchronized StatefulRedisConnection<String, Object> reconnect() {
+        // shutdown 중이면 재연결하지 않음
+        if (isShuttingDown.get()) {
+            throw new IllegalStateException("Redis is shutting down, cannot reconnect");
+        }
+        
         // Double-check: 다른 스레드가 이미 재연결 했을 수도 있음
         if (connection != null && connection.isOpen()) {
             return connection;
@@ -249,7 +270,7 @@ public final class Redis {
     }
 
     /**
-     * Redis 서버 연결 확인 PING -> POING
+     * Redis 서버 연결 확인 PING -> PONG
      * 
      * @return "PONG" 또는 null (연결 실패)
      */
@@ -268,14 +289,27 @@ public final class Redis {
      * @return Redis Client
      */
     public static RedisClient getClient() {
+        if (client == null) {
+            getConnection(); // 필요시 초기화
+        }
         return client;
     }
-
 
     /**
      * ⭐⭐ Redis 리소스 정리 (애플리케이션 종료 시에만!)
      */
     public static synchronized void shutdown() {
+        // shutdown 플래그 설정
+        if (!isShuttingDown.compareAndSet(false, true)) {
+            logger.debug("Redis shutdown already in progress");
+            return;
+        }
+        
+        // 초기화되지 않았으면 바로 리턴 (중요!)
+        if (!isInitialized.get()) {
+            logger.debug("Redis was not initialized, skipping shutdown");
+            return;
+        }
         
         // 1. Connection 종료
         if (connection != null) {
@@ -312,6 +346,7 @@ public final class Redis {
             }
         }
         
+        isInitialized.set(false);
         logger.info("Redis shutdown");
     }
 
@@ -344,5 +379,21 @@ public final class Redis {
         } catch (Exception e) {
             return "Redis: Error getting info - " + e.getMessage();
         }
+    }
+    
+    /**
+     * 초기화 상태 확인
+     * @return 초기화되었으면 true
+     */
+    public static boolean isInitialized() {
+        return isInitialized.get();
+    }
+    
+    /**
+     * Shutdown 진행 중 확인
+     * @return shutdown 중이면 true
+     */
+    public static boolean isShuttingDown() {
+        return isShuttingDown.get();
     }
 }

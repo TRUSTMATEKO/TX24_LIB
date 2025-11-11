@@ -64,7 +64,7 @@ public final class RedisPubSub {
         
         // shutdown 중이면 초기화하지 않음
         if (isShuttingDown.get()) {
-            logger.debug("RedisPubSub is shutting down, skipping initialization");
+            //logger.debug("RedisPubSub is shutting down, skipping initialization");
             return;
         }
         
@@ -129,7 +129,7 @@ public final class RedisPubSub {
         
         // 초기화되지 않았으면 바로 리턴
         if (!isInitialized.get()) {
-            logger.debug("RedisPubSub was not initialized, skipping shutdown");
+            //logger.debug("RedisPubSub was not initialized, skipping shutdown");
             return;
         }
         

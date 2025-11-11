@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +24,6 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import kr.tx24.lib.conf.Configure;
 import kr.tx24.lib.lb.LoadBalancer;
-import kr.tx24.lib.shutdown.ShutdownHook;
 
 /**
  * 시스템 초기화 유틸리티
@@ -75,6 +75,9 @@ public class SystemUtils {
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private static volatile boolean startLazyLoader = false;
 
+    private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
+    
+    
     // JVM 로딩 시 즉시 초기화
     static {
         init();
@@ -82,7 +85,7 @@ public class SystemUtils {
     }
 
     public synchronized static void init() {
-    	if (Boolean.getBoolean("SystemUtils.INITIALIZED")) {
+    	if (isInitialized.get()) {
             return;
         }
     	
@@ -111,7 +114,7 @@ public class SystemUtils {
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_REDIS, "");
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_JVM_MONITOR, "false");
         
-        System.setProperty("SystemUtils.INITIALIZED", "true");
+        isInitialized.set(true);
         
 
         // 초기 정보 출력

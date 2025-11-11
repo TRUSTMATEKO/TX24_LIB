@@ -1,4 +1,4 @@
-package kr.tx24.lib.shutdown;
+package kr.tx24.lib.lifecycle;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,15 +13,14 @@ import kr.tx24.lib.logback.RedisAppender;
 import kr.tx24.lib.redis.Redis;
 import kr.tx24.lib.redis.RedisPubSub;
 
-public class ShutdownHook extends Thread {
+public class SystemManager extends Thread {
 
-	protected static Logger logger = LoggerFactory.getLogger(ShutdownHook.class);
+	protected static Logger logger = LoggerFactory.getLogger(SystemManager.class);
 	public static final String PROCESS_STARTED	 	= "#process started,";
 	public static final String PROCESS_STOPPED	 	= "#process shutdown,";
 	private static long PROCESS_ID	= System.currentTimeMillis();
 	
-	public ShutdownHook(){
-		System.out.println("ShutdownHook : initialized");
+	public SystemManager(){
 		try {
 	        Thread.sleep(100);
 	    } catch (InterruptedException e) {
