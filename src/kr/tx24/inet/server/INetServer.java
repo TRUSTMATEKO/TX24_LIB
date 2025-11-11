@@ -57,7 +57,7 @@ public class INetServer extends Thread{
 	@Override
 	public void run(){
 		
-		Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
+		
 		
 		// Netty 4.2.x 최신 방식: MultiThreadIoEventLoopGroup with NioIoHandler
 		bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
@@ -130,7 +130,7 @@ public class INetServer extends Thread{
             return;
         }
 		
-		
+		/*
 		try {
             // Netty 패키지 전체 로거 비활성화
             String[] nettyLoggers = {
@@ -157,7 +157,7 @@ public class INetServer extends Thread{
         } catch (Throwable t) {
             // 무시
         }
-		
+		*/
         try {
             if (bossGroup != null) {
             	bossGroup.shutdownGracefully().sync();

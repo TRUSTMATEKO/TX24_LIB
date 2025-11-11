@@ -48,22 +48,7 @@ public class TaskLauncher {
             
             
             
-            // 3. Shutdown Hook 등록
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {            
-                try {
-                    // 1. 스케줄러 중지
-                    if (scheduler != null) {
-                        scheduler.cancelAll();
-                    }
-                    
-                    //logger shutdown 과 중복일수 있으나 안전한 종료를 위하여 
-                    AsyncExecutor.shutdown();
-
-                } catch (Exception e) {
-                    //logger.error("Error during shutdown / 종료 중 오류 발생", e);
-                }
-            }, "ShutdownHook-TaskLauncher"));
-            
+           
             
             
             

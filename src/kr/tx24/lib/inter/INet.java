@@ -140,11 +140,7 @@ public class INet implements java.io.Serializable{
 	private static volatile boolean isShutdown = false;
 	
 	
-	
-	static {
-        Runtime.getRuntime().addShutdownHook(new Thread(INet::shutdown, "ShutdownHook-INet"));
-    }
-	
+
 	
 	private String host		= null;
 	private int port		= 0;

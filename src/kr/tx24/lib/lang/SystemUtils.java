@@ -23,7 +23,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import kr.tx24.lib.conf.Configure;
 import kr.tx24.lib.lb.LoadBalancer;
-import kr.tx24.lib.logback.LogBackConfigure;
+import kr.tx24.lib.shutdown.ShutdownHook;
 
 /**
  * 시스템 초기화 유틸리티

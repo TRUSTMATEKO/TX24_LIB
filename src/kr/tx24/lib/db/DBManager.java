@@ -149,7 +149,7 @@ public class DBManager {
 		}
 	} 
 	
-	public static void shutdown()throws DBException {
+	public static void shutdown() {
 		if (ds != null) {
             ds.close();
             ds = null;

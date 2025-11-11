@@ -50,7 +50,7 @@ public class Router {
             for (String pkg : packages) {
                 String trimmed = pkg.trim();
                 if (!trimmed.isEmpty()) {
-                    logger.info("Scanning package: {}", trimmed);
+                    //logger.info("Scanning package: {}", trimmed);
                     scanPackage(trimmed);
                 }
             }

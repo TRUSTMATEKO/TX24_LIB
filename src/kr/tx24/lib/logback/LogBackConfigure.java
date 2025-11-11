@@ -26,6 +26,7 @@ import ch.qos.logback.core.status.StatusManager;
 import ch.qos.logback.core.status.OnConsoleStatusListener;
 import kr.tx24.lib.lang.MsgUtils;
 import kr.tx24.lib.lang.SystemUtils;
+import kr.tx24.lib.shutdown.ShutdownHook;
 
 /**
  * Advanced LogBack Configurator
@@ -252,6 +253,9 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         }
         
         printLostLogs();
+        
+        Runtime.getRuntime().addShutdownHook(new ShutdownHook());
+        
         return ExecutionStatus.DO_NOT_INVOKE_NEXT_IF_ANY;
     }
 

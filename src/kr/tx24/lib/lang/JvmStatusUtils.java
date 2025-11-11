@@ -192,7 +192,7 @@ public class JvmStatusUtils {
         
         System.out.println("JvmStatusLogger:monitoring every "+PERIOD_SECONDS+" seconds.");
         
-        Runtime.getRuntime().addShutdownHook(new Thread(JvmStatusUtils::shutdown, "ShutdownHook-JvmStatusUtils"));
+        
     }
     
     /**

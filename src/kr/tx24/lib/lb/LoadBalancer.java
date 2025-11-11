@@ -95,9 +95,7 @@ public class LoadBalancer {
                 }
             }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
             
-            Runtime.getRuntime().addShutdownHook(
-                new Thread(LoadBalancer::shutdown, "ShutdownHook-LoadBalancer")
-            );
+            
             
             started = true;
         }
@@ -192,29 +190,32 @@ public class LoadBalancer {
     
     
     public static synchronized void shutdown() {
-        if (scheduler.isShutdown()) {
-            return;
-        }
-        
-        //logger.info("LoadBalancer shutting down...");
-        
-        try {
-            //즉시 강제 종료
-            scheduler.shutdownNow();
-            
-            // 종료 확인만 (1초)
-            if (!scheduler.awaitTermination(1, TimeUnit.SECONDS)) {
-                logger.warn("LoadBalancer scheduler could not be terminated within 1 second");
-            } else {
-                logger.info("LoadBalancer scheduler shutdown completed");
-            }
-            
-            started = false;
-            enabled = false;
-            
-        } catch (InterruptedException e) {
-            logger.warn("LoadBalancer shutdown interrupted");
-            Thread.currentThread().interrupt();
-        }
+    	if(scheduler != null) {
+    	
+	        if (scheduler.isShutdown()) {
+	            return;
+	        }
+	        
+	        //logger.info("LoadBalancer shutting down...");
+	        
+	        try {
+	            //즉시 강제 종료
+	            scheduler.shutdownNow();
+	            
+	            // 종료 확인만 (1초)
+	            if (!scheduler.awaitTermination(1, TimeUnit.SECONDS)) {
+	                logger.warn("LoadBalancer scheduler could not be terminated within 1 second");
+	            } else {
+	                logger.info("LoadBalancer scheduler shutdown completed");
+	            }
+	            
+	            started = false;
+	            enabled = false;
+	            
+	        } catch (InterruptedException e) {
+	            logger.warn("LoadBalancer shutdown interrupted");
+	            Thread.currentThread().interrupt();
+	        }
+    	}
     }
 }

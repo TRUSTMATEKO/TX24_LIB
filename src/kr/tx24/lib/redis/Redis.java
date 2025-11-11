@@ -40,10 +40,6 @@ public final class Redis {
     private static volatile StatefulRedisConnection<String, Object> connection;
     private static volatile boolean reconnecting = false;
     
-    static {
-        initClient();
-        Runtime.getRuntime().addShutdownHook(new Thread(Redis::shutdown, "ShutdownHook-Redis"));
-    }
 
     private Redis() {
         throw new UnsupportedOperationException("Utility class");
@@ -107,7 +103,8 @@ public final class Redis {
                 throw new IllegalStateException("Redis connection validation failed");
             }
             
-            logger.info("Redis initialized " );
+            logger.info("Redis        : initialized ");
+            
             
         } catch (IllegalStateException e) {
             if ("NOT_SET".equals(e.getMessage())) {
@@ -130,8 +127,12 @@ public final class Redis {
      * @throws RuntimeException 재연결 실패 시
      */
     public static StatefulRedisConnection<String, Object> getConnection() {
-        if (connection != null && connection.isOpen()) {
-            return connection;
+    	if (connection == null || !connection.isOpen()) {
+            synchronized (Redis.class) {
+                if (connection == null || !connection.isOpen()) {
+                    initClient(); 
+                }
+            }
         }
        
         return reconnect();
@@ -275,14 +276,12 @@ public final class Redis {
      * ⭐⭐ Redis 리소스 정리 (애플리케이션 종료 시에만!)
      */
     public static synchronized void shutdown() {
-        logger.info("Shutting down Redis...");
         
         // 1. Connection 종료
         if (connection != null) {
             try {
                 if (connection.isOpen()) {
                     connection.close();
-                    logger.debug("Connection closed");
                 }
             } catch (Exception e) {
                 logger.warn("Error closing connection: {}", e.getMessage());
@@ -295,7 +294,6 @@ public final class Redis {
         if (client != null) {
             try {
                 client.shutdown(100, 1000, TimeUnit.MILLISECONDS);
-                logger.debug("Redis client shutdown");
             } catch (Exception e) {
                 logger.warn("Error shutting down Redis client: {}", e.getMessage());
             } finally {
@@ -307,7 +305,6 @@ public final class Redis {
         if (clientResources != null) {
             try {
                 clientResources.shutdown(100, 1000, TimeUnit.MILLISECONDS).get();
-                logger.debug("ClientResources shutdown");
             } catch (Exception e) {
                 logger.warn("Error shutting down ClientResources: {}", e.getMessage());
             } finally {
@@ -315,7 +312,7 @@ public final class Redis {
             }
         }
         
-        logger.info("Redis shutdown completed");
+        logger.info("Redis shutdown");
     }
 
     // ==================== 유틸리티 ====================

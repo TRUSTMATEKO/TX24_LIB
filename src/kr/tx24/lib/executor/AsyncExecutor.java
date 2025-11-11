@@ -96,8 +96,7 @@ public class AsyncExecutor {
         // 코어 스레드도 타임아웃 허용 (리소스 효율)
         executor.allowCoreThreadTimeOut(true);
         
-        Runtime.getRuntime().addShutdownHook(new Thread(AsyncExecutor::shutdown, "ShutdownHook-AsyncExecutor"));
-        
+
         return executor;
     }
     
