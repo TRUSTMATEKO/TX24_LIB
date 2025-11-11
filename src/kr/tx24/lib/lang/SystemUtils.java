@@ -119,10 +119,11 @@ public class SystemUtils {
         String art = """
                 ╺┳╸╻ ╻┏━┓╻ ╻
                  ┃ ┏╋┛┏━┛┗━┫
-                 ╹ ╹ ╹┗━╸  ╹      v.250926
+                 ╹ ╹ ╹┗━╸  ╹      v.251201
                 """;
 
         System.err.print(art);
+        System.err.print("\n\n");
         System.err.println("JDK     " + getJavaVersion());
         System.err.println("CONFIG  " + getConfigDirectory());
         System.err.println("PROC    " + getLocalProcessName() +",H:"+getLocalHostname()+",I:"+getLocalAddress()+",P:"+getLocalProcessId());

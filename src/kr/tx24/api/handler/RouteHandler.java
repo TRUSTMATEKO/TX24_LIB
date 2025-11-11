@@ -6,10 +6,11 @@ import org.slf4j.LoggerFactory;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.FullHttpRequest;
 
-public class RouteHandler extends SimpleChannelInboundHandler<FullHttpRequest>{
+public class RouteHandler {
 	
-	private static final Logger logger = LoggerFactory.getLogger(RouteHandler.class);
-	
+
 	this.trxId = IDUtils.getUnique("TRX");
+	
+
 
 }

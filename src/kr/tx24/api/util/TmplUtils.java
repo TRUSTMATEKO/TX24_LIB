@@ -1,27 +1,12 @@
 package kr.tx24.api.util;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Map;
-import java.util.StringJoiner;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import mik.lib.json.JacksonUtils;
-import mik.lib.lang.CommonUtils;
-import mik.lib.lang.DateUtils;
-import mik.lib.lang.MsgUtils;
-import mik.lib.map.LinkedMap;
-import mik.lib.map.SharedMap;
 
 public class TmplUtils {
     private static Logger logger = LoggerFactory.getLogger(TmplUtils.class);
     private static String inputTag = "<input type='hidden' name='{}' value ='{}'/>";
-
+/*
     public static String failure(String name, LinkedMap<String, Object> dataMap){
         String tmpl = getTemplate(name, "tmpl");
 
@@ -119,5 +104,5 @@ public class TmplUtils {
         }
         matcher.appendTail(sb);
         return sb.toString();
-    }
+    }*/
 }

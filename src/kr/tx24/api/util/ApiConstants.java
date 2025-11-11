@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.Set;
 
 import io.netty.util.AttributeKey;
-import mik.proc.http.bean.Env;
 
 public class ApiConstants {
 	
@@ -90,7 +89,7 @@ public class ApiConstants {
 	
 
 	public static boolean STATIC_CACHE					= false;
-	public static final CacheMap staticMap				= new CacheMap(15);	//15분
+	
 	
 
 	

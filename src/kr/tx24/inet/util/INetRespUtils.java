@@ -132,8 +132,9 @@ public class INetRespUtils {
         if (autoClose) {
             future.addListener((ChannelFutureListener) f -> {
                 if (f.isSuccess()) {
-                    logger.debug("Response sent successfully to {}", 
-                            ctx.channel().id().asShortText());
+                	if(SystemUtils.deepview()) {
+                		logger.debug("Response sent successfully to {}",ctx.channel().id().asShortText());
+                	}
                 } else {
                     logger.error("Failed to send response", f.cause());
                 }
@@ -200,9 +201,12 @@ public class INetRespUtils {
     
     private void logIfEnabled() {
         if (enableLogging || SystemUtils.deepview()) {
-            JacksonUtils json = jsonUtils.get().pretty();
-            logger.info("Response head:\n{}", json.toJson(resInet.head()));
-            logger.info("Response data:\n{}", json.toJson(resInet.data()));
+            StringBuilder sb =new StringBuilder()
+            .append("\nresponse\n")
+            .append("head : ").append(jsonUtils.get().toJson(resInet.head()))
+            .append("\n")
+            .append("data : ").append(jsonUtils.get().toJson(resInet.data()));
+            logger.info(sb.toString());
         }
     }
     

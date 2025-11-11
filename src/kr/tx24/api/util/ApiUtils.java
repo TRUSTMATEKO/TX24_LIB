@@ -30,7 +30,6 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import kr.tx24.api.conf.ApiConfigLoader;
 import kr.tx24.api.conf.HandlerConfig;
@@ -38,7 +37,7 @@ import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lang.URIUtils;
 import kr.tx24.lib.map.LinkedMap;
-import mik.proc.http.bean.RequestObject;
+
 
 public class ApiUtils {
 	private static Logger logger = LoggerFactory.getLogger(ApiUtils.class);
@@ -268,27 +267,7 @@ public class ApiUtils {
 	
 	
 	
-	public static void parseUri(String uri, RequestObject obj){
-		obj.uri 	= getUri(uri);
-		
-		//URI 뒤 파라미터 파싱
-		if(uri.indexOf("?") > 1){
-			if(uri.indexOf("=") > 1){
-				String params = uri.substring(uri.indexOf("?")+1);
-				obj.queryMap = new LinkedMap<String,String>();
-				try{
-					obj.queryMap = setQueryString(params, obj.charset);
-				}catch(Exception e){}
-				
-				if(obj.httpMethod.equals(HttpMethod.GET.name())){
-					if(!CommonUtils.isEmpty(params)){
-						obj.payload	= params;
-					}
-				}
-				
-			}	
-		}
-	}
+	
 	
 	
 	

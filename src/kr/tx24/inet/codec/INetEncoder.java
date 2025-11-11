@@ -13,6 +13,7 @@ import io.netty.handler.codec.MessageToByteEncoder;
 import io.netty.handler.stream.ChunkedStream;
 import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.lang.SystemUtils;
 
 public class INetEncoder extends MessageToByteEncoder<INet> {
 
@@ -47,8 +48,10 @@ public class INetEncoder extends MessageToByteEncoder<INet> {
 			 }
 			
 			 // 수신 내용 미리보기
-			 String preview 	= data.length > 55 ? CommonUtils.toString(data, 0, 55, StandardCharsets.UTF_8) : CommonUtils.toString(data, StandardCharsets.UTF_8);
-			 logger.info("Infra send: [{}], length={}", preview, data.length);
+			 // String preview 	= data.length > 55 ? CommonUtils.toString(data, 0, 55, StandardCharsets.UTF_8) : CommonUtils.toString(data, StandardCharsets.UTF_8);
+			 if(SystemUtils.deepview()) {
+				 logger.info("Infra response length={}", data.length);
+			 }
 			
 		}catch(Exception e) {
 			 logger.error("Encoding failed for INet object: {}", inet, e);

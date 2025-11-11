@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ch.qos.logback.classic.Level;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
@@ -99,21 +100,20 @@ public class INetServer extends Thread{
                     });	
 					
 					
-            logger.info("Server started ... : [{}:{}]", INetConfigLoader.getHost(), INetConfigLoader.getPort());
-            logger.info("Boss threads: 1, Worker threads: {}", Runtime.getRuntime().availableProcessors() * 2);
+            
             
             ChannelFuture future = bootstrap.bind( INetConfigLoader.getHost(), INetConfigLoader.getPort()).sync();
 
             future.addListener((ChannelFutureListener) channelFuture -> {
                 if (channelFuture.isSuccess()) {
                 	 logger.info("Channel binded ...");
+                	 logger.info("Server started ... : [{}:{}]", INetConfigLoader.getHost(), INetConfigLoader.getPort());
+                     logger.info("Boss threads: 1, Worker threads: {}", Runtime.getRuntime().availableProcessors() * 2);
                 } else {
                     logger.error("Failed to bind server", channelFuture.cause());
                 }
             });
 
-            logger.info("Server started successfully");
-            
             future.channel().closeFuture().sync();
 		}catch (Exception e){
 			logger.error("server exception : {}",e.getMessage());
@@ -129,6 +129,35 @@ public class INetServer extends Thread{
             logger.debug("Shutdown already in progress or completed");
             return;
         }
+		
+		
+		try {
+            // Netty 패키지 전체 로거 비활성화
+            String[] nettyLoggers = {
+                "io.netty",
+                "io.netty.util",
+                "io.netty.util.concurrent",
+                "io.netty.util.internal",
+                "io.netty.channel",
+                "io.netty.handler",
+                "io.netty.bootstrap"
+            };
+            
+            for (String loggerName : nettyLoggers) {
+            	org.slf4j.Logger slf4jLogger = LoggerFactory.getLogger(loggerName);
+                
+                // ⭐ LogBack의 Logger로 캐스팅
+                if (slf4jLogger instanceof ch.qos.logback.classic.Logger) {
+                    ch.qos.logback.classic.Logger logbackLogger = 
+                        (ch.qos.logback.classic.Logger) slf4jLogger;
+                    logbackLogger.setLevel(Level.OFF);
+                }
+            }
+            
+        } catch (Throwable t) {
+            // 무시
+        }
+		
         try {
             if (bossGroup != null) {
             	bossGroup.shutdownGracefully().sync();

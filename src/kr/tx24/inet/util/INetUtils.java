@@ -6,17 +6,17 @@ import kr.tx24.lib.redis.RedisUtils;
 
 public class INetUtils {
 
-public static String INET_TRX_ID = "INET_TRX_ID";
+public static String EXT_TRX_ID = "extTrxId";
 	
-	
+	 
 	public INetUtils() {
 	}
 	
 	 
 	public static String getTrxId() {
-		long seqNo = RedisUtils.incr(INET_TRX_ID);
+		long seqNo = RedisUtils.incr(EXT_TRX_ID);
 		if(seqNo > 999999){
-			RedisUtils.set(INET_TRX_ID,"1");
+			RedisUtils.set(EXT_TRX_ID,"1");
 			seqNo = 1;
 		}
 		

@@ -1,48 +1,11 @@
 package kr.tx24.api.util;
 
-import java.io.File;
-import java.io.UnsupportedEncodingException;
-import java.net.URLDecoder;
-import java.nio.charset.Charset;
-import java.nio.file.Files;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.GregorianCalendar;
-import java.util.Locale;
-import java.util.TimeZone;
 import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.handler.codec.http.DefaultFullHttpResponse;
-import io.netty.handler.codec.http.FullHttpRequest;
-import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpHeaderValues;
-import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpUtil;
-import io.netty.handler.codec.http.HttpVersion;
-import io.netty.handler.codec.http.LastHttpContent;
-import io.netty.util.AttributeKey;
-import io.netty.util.CharsetUtil;
-import kr.tx24.api.conf.ApiConfigLoader;
-import kr.tx24.lib.inter.INet;
-import kr.tx24.lib.lang.CommonUtils;
-import kr.tx24.lib.lang.MsgUtils;
-import kr.tx24.lib.lang.SystemUtils;
-import kr.tx24.lib.lang.URIUtils;
-import kr.tx24.lib.map.LinkedMap;
-import kr.tx24.lib.mapper.JacksonUtils;
-import mik.proc.http.bean.RequestObject;
 
 public class Response {
 	private static Logger logger = LoggerFactory.getLogger(Response.class);
@@ -59,7 +22,7 @@ public class Response {
 	private static final String RESPONSE = "response";
 	private static HttpResponseStatus STATUS_OK = new HttpResponseStatus(200, "OK. ");
 
-
+/*
 	public static void redirect(ChannelHandlerContext ctx, String newUri, boolean permanent) {
 		FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, (permanent == true) ? HttpResponseStatus.PERMANENT_REDIRECT : HttpResponseStatus.TEMPORARY_REDIRECT);
 		response.headers().set(HttpHeaderNames.CONTENT_TYPE, TEXT_PLAIN);
@@ -494,6 +457,6 @@ public class Response {
 	public static void main(String[] args) {
 		String s = "SERVICE_ID=glx_api&ORDER_ID=TRX22000435330D67F44%3A1&ORDER_DATE=20240725162448&SERVICE_CODE=0900&PAY_MESSAGE=";
 		System.out.println(URIUtils.decode("MDg0NjAxMDAgICAgICBnbHhfYXBpICAgICAgICAgICAgIDA5MDB0ZUorTGxUa1FMM0Q3UllIWjBDYldPMjFMWFk2TzJBSmN4ZEF1SERGUnZmeFRNeU9RUlh1NURDM0FiWHVnWkVuTE9ERkRWS3Z2a1JyR1hSajNqWDBtT2tkTXZKaEI5TkhYcm83Q2J3b0lPSG5ZMFlZa3EyYksrS3BEeE05Qy9nNitIODlUeFNWd1AwVWtuZ3VUazZRV3Z5OWRITHRUS0RaeFJIL2pzYjZTK3dwQjN3ZTFSSEV1bU5JSlRlWDF6SDR5Vm14MWR3ekI2UlJiVnlXZFlIZ2t0ZWtoeHJiYnNqTDBoNkExaTBwMUk0R0l4eUl4UlNBR2N3c3o5KzlweEtzZm1meVp4NjFpSEQvZWZFQm1yZjFzcFA1OVFKNmtpcFk0WDJyZlVHK1luTUJadjlSM3pPdWlPTFZSTXJmanpibFd1MjY1UlQxSjhHV2RsMDN3cThhQVVFWUNTQ3lKWTkwS01qcUp1WUdNamlNNFFGSTRaeGxBMElBU3JMTkJvOHlIaG43WkRJZHJUaFc3K0NGS0s4QzI5QkJlOVZDN3BYdHJuMSt3OHZoM2s1d3ZlM1JqSHB2RVN4WVpZSlFtdlJqTXZZMTF6V1RDQitDUlNZMHRoMWJNRWFxQlpwbTBkcDFkeEFuenN1QmdjOFFlYm1KcVRlc1lVNkIzdHRaVjg4Ujg0STNzZFdVRDBkcmxpb21hS3Uwdis1TllEYm5QN0FseHNLbGFxbWNTc3UwOTlzYUkzNys1STkvenVVSHFSUGE3c3kzdXczUVAyZUkrTktub1pwbjFOTVBIQWNNbEczbVFYTjRBYXU2d2ZubmlJT21NblJGUFplT3pKMUI5VTgyWDA2ekFqS3Ywd2hldExpWFEwWG1xQVZ3UWZXNERQMzhXTmZSc1VWRDE5amtPcC9NT1YwNElTRnF0UUx6Tzd5RHVOSTJPQUhLQkRSTGNneWxudStHQlE5NkVPZGg0OU1nR2N4eEZBVTNDQTdlQWg0Z1NkanNjcFpXMW1PSU5jUHpocUwyeFZHUkllektLSVA4U2pxWXp1ZmY2U2RmWFJTc1h3a3ROWlpsQ2JNPQ%3D%3D"));
-	}
+	}*/
 }
 

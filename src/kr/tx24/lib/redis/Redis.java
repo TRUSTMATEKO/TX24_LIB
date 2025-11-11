@@ -107,7 +107,7 @@ public final class Redis {
                 throw new IllegalStateException("Redis connection validation failed");
             }
             
-            logger.info("Redis initialized: {}", redisUri);
+            logger.info("Redis initialized " );
             
         } catch (IllegalStateException e) {
             if ("NOT_SET".equals(e.getMessage())) {

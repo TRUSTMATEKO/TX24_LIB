@@ -14,6 +14,7 @@ import kr.tx24.inet.route.Router;
 import kr.tx24.inet.util.INetRespUtils;
 import kr.tx24.inet.util.INetUtils;
 import kr.tx24.lib.inter.INet;
+import kr.tx24.lib.lang.IDUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;
 
@@ -38,19 +39,19 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, INet inet) throws Exception {
-    	String extTrxId = INetUtils.getTrxId();										// 트랜잭션 ID 생성
-        inet.data(INetUtils.INET_TRX_ID, extTrxId);
+    	String extTrxId = IDUtils.getUnique("INET_");										// 트랜잭션 ID 생성
+        inet.data(INetUtils.EXT_TRX_ID, extTrxId);
         
-        if (!inet.head().containsKey(INetUtils.INET_TRX_ID)) {
-            inet.head().put(INetUtils.INET_TRX_ID, extTrxId);
+        if (!inet.head().containsKey(INetUtils.EXT_TRX_ID)) {
+            inet.head().put(INetUtils.EXT_TRX_ID, extTrxId);
         }
-
+ 
         MDC.put("id", extTrxId);													// MDC에 트랜잭션 ID 설정
         
         
         try {
             String target = inet.head().getString("target");
-            logger.info("Processing request - target: {}", target);
+            logger.info("target: {}", target);
 
             RouteInvoker invoker = Router.getRoute(target);							// 라우트 조회 (RouteInvoker 반환)
             
@@ -115,7 +116,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
             
             INetRespUtils.error(ctx, "서버 내부 오류가 발생하였습니다.")
             .data("response", errorDetail)
-            .data("extTrxId", extTrxId)
+            .data(INetUtils.EXT_TRX_ID, extTrxId)
             .data("exceptionType", cause.getClass().getSimpleName())
             .delayBeforeClose(100L)
             .send();
@@ -159,7 +160,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
 		responseUtils
 			//.head("result", true)
 			//.head("message", "successful")
-			.data("extTrxId", extTrxId);
+			.data(INetUtils.EXT_TRX_ID, extTrxId);
 		
 		// 반환 객체에 따른 처리
 		if (returnObj != null) {
@@ -178,7 +179,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
 			.addListener(future -> {
 			if (future.isSuccess()) {
 			   double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
-			   logger.info("Response sent successfully - elapsed: {:.3f}ms", elapsedMs);
+			   logger.info("response sent, elapsed: {}ms", elapsedMs);
 			} else {
 			   logger.error("Failed to send response", future.cause());
 			}
@@ -192,7 +193,9 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        logger.debug("Channel inactive: {}", ctx.channel().id().asShortText());
+    	if(SystemUtils.deepview()) {
+    		logger.debug("channel inactive: {}", ctx.channel().id().asShortText());
+    	}
         super.channelInactive(ctx);
     }
     
@@ -230,9 +233,14 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
     
     private void logRequest(RouteInvoker invoker, INet inet) {
         if (invoker.isLoggable() || SystemUtils.deepview()) {
-            JacksonUtils json = jsonUtils.get();
-            logger.info("Request head:\n{}", json.toJson(inet.head()));
-            logger.info("Request data:\n{}", json.toJson(inet.data()));
+            StringBuilder sb =new StringBuilder()
+            .append("\nrequest \n")
+            .append("head : ").append(jsonUtils.get().toJson(inet.head()))
+            .append("\n")
+            .append("data : ").append(jsonUtils.get().toJson(inet.data()));
+            logger.info(sb.toString());
+            
+            
         }
     }
     

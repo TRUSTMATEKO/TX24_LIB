@@ -324,43 +324,44 @@ public final class MapFactory {
             throw new IllegalArgumentException("Class cannot be null");
         }
 
+        String className = clazz.getSimpleName();
+
         // HashMap 계열
-        if (clazz == HashMap.class || "HashMap".equals(clazz.getSimpleName())) {
+        if ("HashMap".equals(className)) {
             return (T) new HashMap<String, Object>(initialCapacity, loadFactor);
         }
 
         // LinkedHashMap
-        if (clazz == LinkedHashMap.class || "LinkedHashMap".equals(clazz.getSimpleName())) {
+        if ("LinkedHashMap".equals(className)) {
             return (T) new LinkedHashMap<String, Object>(initialCapacity, loadFactor);
         }
 
         // ConcurrentHashMap
-        if (clazz == ConcurrentHashMap.class || "ConcurrentHashMap".equals(clazz.getSimpleName())) {
+        if ("ConcurrentHashMap".equals(className)) {
             return (T) new ConcurrentHashMap<String, Object>(initialCapacity, loadFactor);
         }
 
         // TreeMap (initialCapacity, loadFactor 미지원)
-        if (clazz == TreeMap.class || "TreeMap".equals(clazz.getSimpleName())) {
+        if ("TreeMap".equals(className)) {
             return (T) new TreeMap<String, Object>();
         }
 
         // SharedMap
-        if ("SharedMap".equals(clazz.getSimpleName())) {
+        if ("SharedMap".equals(className)) {
             return (T) new SharedMap<String, Object>(initialCapacity, loadFactor);
         }
 
         // LinkedMap
-        if ("LinkedMap".equals(clazz.getSimpleName())) {
+        if ("LinkedMap".equals(className)) {
             return (T) new LinkedMap<String, Object>(initialCapacity, loadFactor);
         }
 
         // ThreadSafeLinkedMap
-        if ("ThreadSafeLinkedMap".equals(clazz.getSimpleName())) {
-        	return (T) new ThreadSafeLinkedMap<String, Object>(initialCapacity, loadFactor);
+        if ("ThreadSafeLinkedMap".equals(className)) {
+            return (T) new ThreadSafeLinkedMap<String, Object>(initialCapacity, loadFactor);
         }
- 
+
         try {
-       
             try {
                 return clazz.getConstructor(int.class, float.class)
                            .newInstance(initialCapacity, loadFactor);

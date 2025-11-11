@@ -5,6 +5,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Layout;
@@ -13,299 +14,420 @@ import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.async.RedisAsyncCommands;
-import io.lettuce.core.resource.ClientResources;
-import io.lettuce.core.resource.DefaultClientResources;
 import kr.tx24.lib.lang.SystemUtils;
 
 /**
- * - AtomicBoolean을 사용한 Thread-Safe 상태 관리
- * - 향상된 Shutdown Hook 처리
- * - Connection Pool 대신 Thread-Safe한 단일 연결 사용
- * - 비동기 명령어 사용으로 성능 최적화
- * - 예외 처리 강화
+ * Redis Appender for Logback
+ * 
+ * 비동기 Redis 연결로 초기 로그 손실 방지
+ * - Redis 연결을 백그라운드에서 비동기 처리
+ * - 연결 완료 전에도 로그를 Queue에 수집
+ * - 연결 완료 후 쌓인 로그부터 전송 시작
+ * - Connection 유효성 자동 확인 및 재연결
+ * - 3회 재시도 실패 시 Queue 초기화
  */
 public class RedisAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
-	private static volatile RedisClient client;
-    private static volatile ClientResources clientResources;
+    // Redis Resources (Single Connection)
+    private static volatile RedisClient client;
     private static volatile StatefulRedisConnection<String, String> connection;
     private static volatile RedisAsyncCommands<String, String> asyncCommands;
     
-    // 설정
+    // Configuration
     private static final int QUEUE_CAPACITY = 10000;
     private static final int SHUTDOWN_TIMEOUT_MS = 3000;
     private static final int POLL_TIMEOUT_MS = 1000;
-    private static final int FLUSH_POLL_TIMEOUT_MS = 100;
+    private static final int MAX_RETRY_COUNT = 3;
+    private static final int RECONNECT_DELAY_MS = 2000;
+    private static final int INIT_CHECK_INTERVAL_MS = 100;
     
-    //Shutdown 관련사항 
-    private static final String PROCESS_STARTED	 	= "#process started,";
-    private static final String PROCESS_STOPPED	 	= "#process shutdown,";
-    private static final long PROCESS_ID			= System.currentTimeMillis();
+    // Lifecycle Markers
+    private static final String PROCESS_STARTED = "#process started,";
+    private static final String PROCESS_STOPPED = "#process shutdown,";
+    private static final long PROCESS_ID = System.currentTimeMillis();
     
-    
-    // 로그 큐 및 상태 관리
+    // State Management
     private static final BlockingQueue<String> QUEUE = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
     private static final AtomicBoolean running = new AtomicBoolean(false);
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
-    
-    
+    private static final AtomicBoolean initializing = new AtomicBoolean(false);
+    private static final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     private static final AtomicBoolean shutdownHookRegistered = new AtomicBoolean(false);
-    private static volatile Thread shutdownHook;
+    private static final AtomicInteger consecutiveFailures = new AtomicInteger(0);
     
-    // Worker Thread
+    // Thread References
+    private static volatile Thread shutdownHook;
     private static volatile Thread workerThread;
+    private static volatile Thread initThread;
     private static volatile RedisAppender instance;
     
-    // Layout
+    // Instance Variable
     private Layout<ILoggingEvent> layout;
-    
-    
 
+    // ========================================================================
+    // Lifecycle Methods
+    // ========================================================================
+    
     @Override
     public void start() {
         if (instance == null) {
             instance = this;
         }
         
-        // 이미 초기화되어 있으면 시작만
-        if (initialized.compareAndSet(false, true)) {
-            initializeRedisClient();
-            registerShutdownHook();
-        }
-        
-        // Worker Thread 시작
+        // Worker Thread 먼저 시작 (로그 수집 즉시 시작)
         if (running.compareAndSet(false, true)) {
             startWorkerThread();
+        }
+        
+        // Redis 초기화는 비동기로 진행 (최초 1회)
+        if (!initialized.get() && initializing.compareAndSet(false, true)) {
+            startAsyncInitialization();
+            registerShutdownHook();
         }
         
         super.start();
     }
     
+    @Override
+    public void stop() {
+        if (!running.compareAndSet(true, false)) {
+            return;
+        }
+        
+        shuttingDown.set(true);
+        
+        // 초기화 스레드 중단
+        stopInitThread();
+        
+        // Worker Thread 종료
+        stopWorkerThread();
+        
+        // 남은 로그 전송
+        flushQueue();
+        
+        // Redis 리소스 정리
+        cleanupRedis();
+        
+        // ShutdownHook 제거
+        removeShutdownHook();
+        
+        initialized.set(false);
+        initializing.set(false);
+        super.stop();
+    }
+
+    // ========================================================================
+    // Async Initialization
+    // ========================================================================
     
-    private void initializeRedisClient() {
-        try {
-            SystemUtils.init();
-            String redisLogUri = SystemUtils.getRedisLogUri();
-            
-            // ClientResources 설정 (성능 최적화)
-            int cpuCount = Runtime.getRuntime().availableProcessors();
-            clientResources = DefaultClientResources.builder()
-                    .ioThreadPoolSize(Math.max(2, cpuCount / 2))
-                    .computationThreadPoolSize(Math.max(2, cpuCount / 2))
-                    .build();
-            
-            // RedisURI 설정
-            RedisURI uri = RedisURI.create(redisLogUri);
-            uri.setTimeout(Duration.ofSeconds(10));
-            
-            // Redis Client 생성
-            client = RedisClient.create(clientResources, uri);
-            connection = client.connect();
-            // Async 명령어 자동 flush 설정
-            connection.setAutoFlushCommands(true);
-            
-            asyncCommands = connection.async();
-            
-            
-            System.err.println("RedisAppender: initialized");
-            
-        } catch (Exception e) {
-            addError("RedisAppender initialization failed", e);
-            initialized.set(false);
+    /**
+     * Redis 초기화를 비동기로 시작
+     */
+    private void startAsyncInitialization() {
+        initThread = new Thread(() -> {
+            try {
+                SystemUtils.init();
+                
+                // 초기화 시도 (실패 시 재시도)
+                while (!initialized.get() && running.get() && !shuttingDown.get()) {
+                    if (initializeRedis()) {
+                        break;
+                    } else {
+                        try {
+                            Thread.sleep(RECONNECT_DELAY_MS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+                
+            } catch (Exception e) {
+                System.err.println("RedisAppender: async initialization failed - " + e.getMessage());
+            } finally {
+                initializing.set(false);
+            }
+        }, "RedisAppender-Init");
+        
+        initThread.setDaemon(true);
+        initThread.start();
+    }
+    
+    /**
+     * 초기화 스레드 중지
+     */
+    private void stopInitThread() {
+        if (initThread != null && initThread.isAlive()) {
+            try {
+                initThread.interrupt();
+                initThread.join(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
     
+    /**
+     * 초기화 스레드 중지 (ShutdownHook용 - 안전)
+     */
+    private void stopInitThreadSafe() {
+        try {
+            if (initThread != null && initThread.isAlive()) {
+                try {
+                    initThread.interrupt();
+                    initThread.join(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (NoClassDefFoundError e) {
+                    // 무시
+                }
+            }
+        } catch (NoClassDefFoundError e) {
+            // 무시
+        } catch (Throwable t) {
+            // 무시
+        }
+    }
+
+    // ========================================================================
+    // Redis Initialization
+    // ========================================================================
+    
+    private boolean initializeRedis() {
+        try {
+            String redisUri = SystemUtils.getRedisLogUri();
+            
+            if (redisUri == null || redisUri.trim().isEmpty()) {
+                System.err.println("RedisAppender: Redis URI is empty");
+                return false;
+            }
+            
+            // RedisURI 설정
+            RedisURI uri = RedisURI.create(redisUri);
+            uri.setTimeout(Duration.ofSeconds(10));
+            
+            // Redis Client 생성
+            client = RedisClient.create(uri);
+            
+            // 단일 Connection 생성
+            connection = client.connect();
+            connection.setAutoFlushCommands(true);
+            
+            // Async Commands
+            asyncCommands = connection.async();
+            
+            // 연속 실패 카운터 초기화
+            consecutiveFailures.set(0);
+            
+            // 초기화 완료
+            initialized.set(true);
+            
+            System.err.println("RedisAppender: initialized successfully");
+            
+            return true;
+            
+        } catch (Exception e) {
+            System.err.println("RedisAppender: initialization failed - " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Connection 유효성 확인
+     */
+    private boolean isConnectionValid() {
+        return connection != null && connection.isOpen() && asyncCommands != null;
+    }
+    
+    /**
+     * Redis 재연결 시도
+     */
+    private boolean reconnect() {
+        try {
+            // 기존 Connection 정리
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Exception e) {
+                    // 무시
+                }
+                connection = null;
+                asyncCommands = null;
+            }
+            
+            // 재연결 대기
+            Thread.sleep(RECONNECT_DELAY_MS);
+            
+            // 새로운 Connection 생성
+            connection = client.connect();
+            connection.setAutoFlushCommands(true);
+            asyncCommands = connection.async();
+            
+            // 성공 시 실패 카운터 초기화
+            consecutiveFailures.set(0);
+            
+            System.err.println("RedisAppender: reconnected successfully");
+            
+            return true;
+            
+        } catch (Exception e) {
+            System.err.println("RedisAppender: reconnect failed - " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Queue 초기화 및 누락 로그 warning 생성
+     */
+    private void clearQueueAndWarn() {
+        int droppedCount = QUEUE.size();
+        QUEUE.clear();
+        
+        // Warning 로그 생성
+        String warningLog = String.format("[WARN] %d개의 로그가 누락되었습니다. (Redis 연결 실패)", droppedCount);
+        
+        // 재연결 후 warning 로그 전송 시도
+        if (reconnect()) {
+            try {
+                asyncCommands.rpush(SystemUtils.REDIS_STORAGE_LOG, warningLog);
+            } catch (Exception e) {
+                // 무시
+            }
+        }
+        
+        // 콘솔에도 출력
+        System.err.println("RedisAppender: " + warningLog);
+    }
+    
+    // ========================================================================
+    // ShutdownHook Management
+    // ========================================================================
     
     private void registerShutdownHook() {
-        // 중복 등록 방지
         if (shutdownHookRegistered.compareAndSet(false, true)) {
-        	
-        	
+            
             shutdownHook = new Thread(() -> {
+                // 전체를 try-catch로 감싸서 어떤 에러도 밖으로 나가지 않도록
                 try {
-                    
-                    // 1. 실행 중지 플래그 설정
-                    running.set(false);
-                    
-                    // 2. 프로그램이 종료되면서 종료에 대한 TAG 를 로그로 전달
-                    addInfo(PROCESS_STOPPED+PROCESS_ID+","+System.currentTimeMillis());
-                    
-                    
-                    // 3. Worker Thread 종료 대기
-                    if (workerThread != null && workerThread.isAlive()) {
-                        try {
-                            workerThread.join(SHUTDOWN_TIMEOUT_MS);
-                            if (workerThread.isAlive()) {
-                                System.err.println("RedisAppender:  interrupting");
-                                workerThread.interrupt();
-                            }
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
+                    if (!shuttingDown.compareAndSet(false, true)) {
+                        return;
                     }
                     
-                    // 4. 남은 로그 강제 전송
-                    int queueSize = QUEUE.size();
-                    if (queueSize > 0) {
-                        flush();
+                    // running 플래그 설정
+                    try {
+                        running.set(false);
+                    } catch (Throwable t) {
+                        // 무시
                     }
                     
-                    // 5. Redis 리소스 정리
-                    cleanupRedisResources();
+                    // 종료 로그를 큐에 추가
+                    try {
+                        String shutdownLog = PROCESS_STOPPED + PROCESS_ID + "," + System.currentTimeMillis();
+                        QUEUE.offer(shutdownLog);
+                    } catch (Throwable t) {
+                        // 무시
+                    }
                     
+                    // 초기화 스레드 중지
+                    try {
+                        stopInitThreadSafe();
+                    } catch (Throwable t) {
+                        // 무시
+                    }
                     
-                } catch (Exception e) {
-                    System.err.println("RedisAppender: shutdownHook error - " + e.getMessage());
-                    e.printStackTrace();
+                    // Worker Thread 종료 대기
+                    try {
+                        waitForWorkerSafe();
+                    } catch (Throwable t) {
+                        // 무시
+                    }
+                    
+                    // 남은 로그 전송
+                    try {
+                        flushQueueSafely();
+                    } catch (Throwable t) {
+                        // 무시
+                    }
+                    
+                    // Redis 리소스 정리
+                    try {
+                        cleanupRedisSafely();
+                    } catch (Throwable t) {
+                        // 무시
+                    }
+                    
+                } catch (NoClassDefFoundError e) {
+                    // ClassLoader 언로드 - 조용히 종료
+                } catch (Throwable t) {
+                    // 모든 에러 무시
                 }
             }, "ShutdownHook-RedisAppender");
             
             try {
                 Runtime.getRuntime().addShutdownHook(shutdownHook);
-                //프로그램이 시작하면서 시작에 대한 TAG 를 로그로 전달
-                addInfo(PROCESS_STARTED+PROCESS_ID);
+                
+                // 시작 로그를 큐에 추가
+                String startLog = PROCESS_STARTED + PROCESS_ID;
+                QUEUE.offer(startLog);
+                
             } catch (IllegalStateException e) {
-                System.err.println("RedisAppender: Failed to register ShutdownHook - JVM already shutting down");
                 shutdownHookRegistered.set(false);
             }
         }
     }
     
-    /**
-     * ShutdownHook 제거
-     */
     private void removeShutdownHook() {
         if (shutdownHookRegistered.get() && shutdownHook != null) {
             try {
                 Runtime.getRuntime().removeShutdownHook(shutdownHook);
                 shutdownHookRegistered.set(false);
-                System.err.println("RedisAppender: ShutdownHook removed");
             } catch (IllegalStateException e) {
-                // JVM이 이미 종료 중인 경우 - 정상
+                // JVM이 이미 종료 중
             } catch (Exception e) {
-                System.err.println("RedisAppender: Failed to remove ShutdownHook - " + e.getMessage());
+                // 무시
             }
         }
     }
     
+    // ========================================================================
+    // Resource Cleanup
+    // ========================================================================
     
-    
-    private void cleanupRedisResources() {
-        // Connection 정리
-        if (connection != null) {
-            try {
-                connection.close();
-            } catch (Exception e) {
-            	System.err.println("RedisAppender: connection closed");
-                System.err.println("RedisAppender: error closing connection - " + e.getMessage());
-            } finally {
-                connection = null;
-                asyncCommands = null;
-            }
-        }
-        
-        // Client 정리
-        if (client != null) {
-            try {
-                client.shutdown(100, 1000, TimeUnit.MILLISECONDS);
-                System.err.println("RedisAppender: client shutdown");
-            } catch (Exception e) {
-                System.err.println("RedisAppender: error shutting down client - " + e.getMessage());
-            } finally {
-                client = null;
-            }
-        }
-        
-        // ClientResources 정리
-        if (clientResources != null) {
-            try {
-                clientResources.shutdown(100, 1000, TimeUnit.MILLISECONDS).get();
-                System.err.println("RedisAppender: client resources shutdown");
-            } catch (Exception e) {
-                System.err.println("RedisAppender: error shutting down client resources - " + e.getMessage());
-            } finally {
-                clientResources = null;
-            }
-        }
-        
-        initialized.set(false);
+    private void cleanupRedis() {
+        cleanupRedisSafely();
     }
     
+    private void cleanupRedisSafely() {
+        // ShutdownHook에서 호출 시 ClassLoader가 클래스를 언로드했을 수 있으므로
+        // 모든 Redis 관련 작업을 스킵하고 참조만 null로 설정
+        try {
+            // Connection 참조 제거
+            connection = null;
+            asyncCommands = null;
+            
+            // Client 참조 제거
+            client = null;
+            
+            // 초기화 플래그 리셋
+            initialized.set(false);
+            
+        } catch (Throwable t) {
+            // 어떤 에러든 무시
+        }
+    }
     
+    // ========================================================================
+    // Worker Thread Management
+    // ========================================================================
     
-    
-    /**
-     * Worker Thread 시작
-     */
     private void startWorkerThread() {
         workerThread = new Thread(this::processQueue, "RedisAppender-Worker");
         workerThread.setDaemon(true);
         workerThread.setPriority(Thread.NORM_PRIORITY - 1);
         workerThread.start();
     }
-
-
     
-    
-    @Override
-    protected void append(ILoggingEvent event) {
-        if (layout == null || !running.get() || !initialized.get()) {
-            return;
-        }
-        
-        try {
-            String log = layout.doLayout(event);
-            
-            // 큐가 가득 찬 경우 오래된 로그 제거
-            if (!QUEUE.offer(log)) {
-                QUEUE.poll(); // 가장 오래된 로그 제거
-                QUEUE.offer(log); // 새 로그 추가
-            }
-            
-        } catch (Exception e) {
-            addError("RedisAppender: append failed", e);
-        }
-    }
-    
-    
-    /**
-     * 큐의 로그를 Redis로 전송하는 Worker 프로세스
-     */
-    private void processQueue() {
-        
-        while (running.get() || !QUEUE.isEmpty()) {
-            try {
-                String log = QUEUE.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                
-                if (log != null && asyncCommands != null) {
-                    // 비동기로 Redis에 전송
-                    asyncCommands.rpush(SystemUtils.REDIS_STORAGE_LOG, log)
-                        .exceptionally(throwable -> {
-                            addError("RedisAppender: failed to send log to Redis", throwable);
-                            return null;
-                        });
-                }
-                
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } catch (Exception e) {
-                addError("RedisAppender: error processing queue", e);
-            }
-        }
-        
-        addInfo("RedisAppender: queue processing stopped");
-    }
-    
-    
-    
-    @Override
-    public void stop() {
-        if (!running.compareAndSet(true, false)) {
-            return; // 이미 중지됨
-        }
-        
-        // Worker Thread 종료 대기
+    private void stopWorkerThread() {
         if (workerThread != null && workerThread.isAlive()) {
             try {
                 workerThread.join(SHUTDOWN_TIMEOUT_MS);
@@ -316,109 +438,270 @@ public class RedisAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
                 Thread.currentThread().interrupt();
             }
         }
-        
-        // 남은 로그 플러시
-        flush();
-        
-        // Redis 리소스 정리
-        cleanupRedisResources();
-        
-        // ⭐ ShutdownHook 제거 (stop()이 명시적으로 호출된 경우)
-        removeShutdownHook();
-        
-        
-        initialized.set(false);
-        
-        super.stop();
-        
-        System.err.println("RedisAppender: stopped");
     }
     
 
-
-    public void setLayout(Layout<ILoggingEvent> layout) {
-        this.layout = layout;
-    }
-
     /**
-     * 즉시 flush: 큐에 남은 로그를 Redis로 전송
+     * Worker Thread 종료 대기 (ShutdownHook용 - 안전)
      */
-    public static void flush() {
-        if (!initialized.get() || asyncCommands == null) {
+    private void waitForWorkerSafe() {
+        try {
+            if (workerThread != null && workerThread.isAlive()) {
+                try {
+                    workerThread.join(SHUTDOWN_TIMEOUT_MS);
+                    if (workerThread.isAlive()) {
+                        workerThread.interrupt();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (NoClassDefFoundError e) {
+                    // 무시
+                }
+            }
+        } catch (NoClassDefFoundError e) {
+            // 무시
+        } catch (Throwable t) {
+            // 무시
+        }
+    }
+    
+    /**
+     * Queue 처리 - Redis 초기화를 기다린 후 로그 전송
+     */
+    private void processQueue() {
+        while (running.get() || !QUEUE.isEmpty()) {
+            try {
+                // Redis 초기화 대기
+                if (!initialized.get()) {
+                    Thread.sleep(INIT_CHECK_INTERVAL_MS);
+                    continue;
+                }
+                
+                String log = QUEUE.poll(POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                
+                if (log != null) {
+                    // Connection 유효성 확인
+                    if (!isConnectionValid()) {
+                        if (!reconnect()) {
+                            QUEUE.offer(log);
+                            
+                            int failures = consecutiveFailures.incrementAndGet();
+                            
+                            if (failures >= MAX_RETRY_COUNT) {
+                                clearQueueAndWarn();
+                            }
+                            
+                            Thread.sleep(RECONNECT_DELAY_MS);
+                            continue;
+                        }
+                    }
+                    
+                    // Redis로 전송
+                    try {
+                        asyncCommands.rpush(SystemUtils.REDIS_STORAGE_LOG, log);
+                        consecutiveFailures.set(0);
+                    } catch (Exception e) {
+                        QUEUE.offer(log);
+                        
+                        int failures = consecutiveFailures.incrementAndGet();
+                        
+                        if (failures >= MAX_RETRY_COUNT) {
+                            clearQueueAndWarn();
+                        }
+                    }
+                }
+                
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                // 무시
+            }
+        }
+    }
+    
+    // ========================================================================
+    // Appender Method
+    // ========================================================================
+    
+    @Override
+    protected void append(ILoggingEvent event) {
+        // 종료 중이 아니면 항상 Queue에 추가 (initialized 체크 안 함)
+        if (layout == null || !running.get() || shuttingDown.get()) {
             return;
         }
         
-        int flushedCount = 0;
-        int failedCount = 0;
+        try {
+            String log = layout.doLayout(event);
+            
+            // 큐가 가득 찬 경우 오래된 로그 제거
+            if (!QUEUE.offer(log)) {
+                QUEUE.poll();
+                QUEUE.offer(log);
+            }
+            
+        } catch (Exception e) {
+            // 무시
+        }
+    }
+    
+    public void setLayout(Layout<ILoggingEvent> layout) {
+        this.layout = layout;
+    }
+    
+    // ========================================================================
+    // Flush Operations
+    // ========================================================================
+    
+    private void flushQueue() {
+        if (!waitForInitialization()) {
+            return;
+        }
         
         while (!QUEUE.isEmpty()) {
             try {
-                String log = QUEUE.poll(FLUSH_POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                if (!isConnectionValid()) {
+                    if (!reconnect()) {
+                        int remaining = QUEUE.size();
+                        if (remaining > 0) {
+                            System.err.println("RedisAppender: flush failed - " + remaining + " logs remaining");
+                        }
+                        return;
+                    }
+                }
                 
+                String log = QUEUE.poll(100, TimeUnit.MILLISECONDS);
                 if (log != null) {
-                    // 동기 방식으로 확실하게 전송
                     asyncCommands.rpush(SystemUtils.REDIS_STORAGE_LOG, log)
                         .toCompletableFuture()
                         .get(1, TimeUnit.SECONDS);
-                    flushedCount++;
                 }
-                
             } catch (Exception e) {
-                failedCount++;
-                System.err.println("RedisAppender: flush error - " + e.getMessage());
+                // 무시
+            }
+        }
+    }
+    
+    private void flushQueueSafely() {
+        // ShutdownHook에서 호출 시 ClassLoader가 클래스를 언로드했을 수 있음
+        try {
+            // 초기화 완료 대기 (짧게)
+            if (!waitForInitializationQuick()) {
+                return;
+            }
+            
+            // Queue 처리
+            while (!QUEUE.isEmpty()) {
+                try {
+                    // Connection 체크도 NoClassDefFoundError 발생 가능
+                    if (!isConnectionValidSafe()) {
+                        break;
+                    }
+                    
+                    String log = QUEUE.poll(100, TimeUnit.MILLISECONDS);
+                    if (log != null) {
+                        asyncCommands.rpush(SystemUtils.REDIS_STORAGE_LOG, log)
+                            .toCompletableFuture()
+                            .get(1, TimeUnit.SECONDS);
+                    }
+                } catch (NoClassDefFoundError e) {
+                    // ClassLoader가 클래스 언로드 - 즉시 중단
+                    break;
+                } catch (Exception e) {
+                    // 기타 예외는 무시하고 계속
+                }
+            }
+        } catch (NoClassDefFoundError e) {
+            // 최상위 레벨에서도 NoClassDefFoundError 처리
+        } catch (Throwable t) {
+            // 모든 에러 무시
+        }
+    }
+    
+    /**
+     * Connection 유효성 확인 (ShutdownHook용 - 안전)
+     */
+    private boolean isConnectionValidSafe() {
+        try {
+            return connection != null && connection.isOpen() && asyncCommands != null;
+        } catch (NoClassDefFoundError e) {
+            return false;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+    
+    /**
+     * 초기화 완료 대기 (ShutdownHook용 - 짧게)
+     */
+    private boolean waitForInitializationQuick() {
+        int maxWait = 3000;  // 3초만 대기
+        int elapsed = 0;
+        
+        try {
+            while (!initialized.get() && elapsed < maxWait) {
+                try {
+                    Thread.sleep(INIT_CHECK_INTERVAL_MS);
+                    elapsed += INIT_CHECK_INTERVAL_MS;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+            
+            return initialized.get();
+        } catch (NoClassDefFoundError e) {
+            return false;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+    
+    /**
+     * 초기화 완료 대기 (최대 10초)
+     */
+    private boolean waitForInitialization() {
+        int maxWait = 10000;
+        int elapsed = 0;
+        
+        while (!initialized.get() && elapsed < maxWait) {
+            try {
+                Thread.sleep(INIT_CHECK_INTERVAL_MS);
+                elapsed += INIT_CHECK_INTERVAL_MS;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
             }
         }
         
-        if (flushedCount > 0 || failedCount > 0) {
-            System.out.println(String.format("RedisAppender: flushed %d logs (failed: %d)", 
-                flushedCount, failedCount));
+        return initialized.get();
+    }
+    
+    // ========================================================================
+    // Public API
+    // ========================================================================
+    
+    public static void flush() {
+        if (instance != null && instance.isStarted()) {
+            instance.flushQueue();
         }
     }
     
-    
-    /*
-     * 안전하게 종료시키기
-     */
     public static void shutdown() {
-        try {
-            if (instance != null && instance.isStarted()) {
-                System.out.println("RedisAppender: manual shutdown requested");
-                instance.stop();
-            }
-        } catch (Exception e) {
-            System.err.println("RedisAppender: shutdown error - " + e.getMessage());
-            e.printStackTrace();
+        if (instance != null && instance.isStarted()) {
+            instance.stop();
         }
     }
-
-
-    /**
-     * Appender 실행 상태 확인
-     */
+    
     public static boolean isRunning() {
         return running.get();
     }
 
-    /**
-     * 초기화 상태 확인
-     */
     public static boolean isInitialized() {
         return initialized.get();
     }
     
-    
-    /**
-     * ShutdownHook 등록 상태 확인
-     */
-    public static boolean isShutdownHookRegistered() {
-        return shutdownHookRegistered.get();
-    }
-    
-    /**
-     * 현재 큐에 있는 로그 개수 반환
-     */
     public static int getQueueSize() {
         return QUEUE.size();
     }
-
 }

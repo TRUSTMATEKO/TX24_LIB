@@ -39,6 +39,8 @@ public class Router {
             return;
         }
         
+        logger.info("Router initialization started for packages: {}", packageNames);
+        
         try {
             if (CommonUtils.isBlank(packageNames)) {
                 throw new IllegalArgumentException("Package name cannot be empty");
@@ -48,9 +50,7 @@ public class Router {
             for (String pkg : packages) {
                 String trimmed = pkg.trim();
                 if (!trimmed.isEmpty()) {
-                	if(SystemUtils.deepview()) {
-                		logger.info("Scanning package: {}", trimmed);
-                	}
+                    logger.info("Scanning package: {}", trimmed);
                     scanPackage(trimmed);
                 }
             }
@@ -58,12 +58,10 @@ public class Router {
             if (ROUTE_MAP.isEmpty()) {
                 logger.warn("No routes found in package: {}", packageNames);
             } else {
-            	if(SystemUtils.deepview()) {
-            		logger.info("Registered {} routes", ROUTE_MAP.size());
-            	}
+                logger.info("Registered {} routes", ROUTE_MAP.size());
             }
             
-            if (SystemUtils.deepview()) {
+            if (SystemUtils.deepview()) {	
                 printRouteMap();
             }
             
@@ -99,49 +97,103 @@ public class Router {
         ImmutableSet<ClassPath.ClassInfo> classes = 
                 classPath.getTopLevelClassesRecursive(packageName);
         
+
+        int controllerCount = 0;
         for (ClassPath.ClassInfo clp : classes) {
             try {
                 Class<?> clazz = Class.forName(clp.getName());
                 if (clazz.isAnnotationPresent(Controller.class)) {
+                    controllerCount++;
+                   
                     registerController(clazz);
                 }
             } catch (ClassNotFoundException e) {
                 logger.warn("Failed to load class: {}", clp.getName(), e);
+            } catch (Exception e) {
+                logger.error("Error processing class: {}", clp.getName(), e);
             }
+        }
+        
+        if(SystemUtils.deepview()) {
+        	logger.debug("Processed {} controllers in package: {}", controllerCount, packageName);
         }
     }
     
     private static void registerController(Class<?> clazz) {
-        String rootTarget = normalizeTarget(
-                clazz.getAnnotation(Controller.class).target());
+        Controller controllerAnnotation = clazz.getAnnotation(Controller.class);
+        String rootTarget = normalizeTarget(controllerAnnotation.target());
         
+        //logger.debug("Registering controller: {} with root target: '{}'", clazz.getSimpleName(), rootTarget);
+        
+        int routeCount = 0;
         for (Method method : clazz.getDeclaredMethods()) {
             if (method.isAnnotationPresent(Route.class)) {
-                registerRoute(clazz, method, rootTarget);
+                routeCount++;
+                try {
+                    registerRoute(clazz, method, rootTarget);
+                } catch (Exception e) {
+                    logger.error("Failed to register route for method: {}.{}", 
+                            clazz.getName(), method.getName(), e);
+                }
             }
+        }
+        
+        if (routeCount == 0) {
+            logger.warn("No @Route methods found in controller: {}", clazz.getName());
+        } else {
+            //logger.debug("Found {} route methods in controller: {}", routeCount, clazz.getSimpleName());
         }
     }
     
     private static void registerRoute(Class<?> clazz, Method method, String rootTarget) {
         Route route = method.getAnnotation(Route.class);
         
-        // RouteInvoker 생성 (메타데이터 캐싱)
-        RouteInvoker invoker = new RouteInvoker(method, clazz, route.loggable(),route.authRequired());
+        // target 배열 검증
+        String[] targets = route.target();
+        if (targets == null || targets.length == 0) {
+            logger.warn("Empty target array for method: {}.{}", 
+                    clazz.getName(), method.getName());
+            return;
+        }
         
-        for (String target : route.target()) {
+        // RouteInvoker 생성 (메타데이터 캐싱)
+        RouteInvoker invoker = new RouteInvoker(method, clazz, 
+                route.loggable(), route.authRequired());
+        
+        for (String target : targets) {
+            // 빈 target 체크
+            if (target == null || target.trim().isEmpty()) {
+                logger.warn("Empty target in route for method: {}.{}", 
+                        clazz.getName(), method.getName());
+                continue;
+            }
+            
             String fullTarget = rootTarget + normalizeTarget(target);
+            
+            // fullTarget이 빈 문자열인 경우 체크
+            if (fullTarget.isEmpty()) {
+                logger.warn("Resolved target is empty for method: {}.{}, rootTarget='{}', target='{}'", 
+                        clazz.getName(), method.getName(), rootTarget, target);
+                continue;
+            }
+            
             String normalizedTarget = fullTarget.toLowerCase();
             
+            // 중복 체크 및 등록
             RouteInvoker existing = ROUTE_MAP.putIfAbsent(normalizedTarget, invoker);
             if (existing != null) {
-                logger.info("Duplicate route: {} (overwritten)", normalizedTarget);
+                logger.warn("Duplicate route detected: '{}' - Overwriting {} with {}", 
+                        normalizedTarget, existing, invoker);
                 ROUTE_MAP.put(normalizedTarget, invoker);
-            } else {
-            	/*
-            	if(SystemUtils.deepview()) {
-            		logger.debug("Registered route: {} -> {}", normalizedTarget, invoker);
-            	}*/
             }
+            /*
+            logger.info("Registered route: '{}' -> {}.{} (loggable={}, authRequired={})", 
+                    normalizedTarget, 
+                    clazz.getSimpleName(), 
+                    method.getName(),
+                    invoker.isLoggable(),
+                    invoker.isAuthRequired());
+            */
         }
     }
     
@@ -152,7 +204,13 @@ public class Router {
         
         String normalized = target.toLowerCase().trim();
         
-        if (normalized.endsWith("/")) {
+        // 시작 슬래시 확인
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        
+        // 끝 슬래시 제거
+        if (normalized.length() > 1 && normalized.endsWith("/")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
         
@@ -171,7 +229,7 @@ public class Router {
             return null;
         }
         
-        String normalizedTarget = target.toLowerCase().trim();
+        String normalizedTarget = normalizeTarget(target);
         
         // 정확히 일치하는 라우트 찾기
         RouteInvoker invoker = ROUTE_MAP.get(normalizedTarget);
@@ -194,7 +252,12 @@ public class Router {
     }
     
     private static void printRouteMap() {
-        StringBuilder sb = new StringBuilder("\n========== Route Map ==========\n");
+        if (ROUTE_MAP.isEmpty()) {
+            logger.info("=Route Map is EMPTY =");
+            return;
+        }
+        
+        StringBuilder sb = new StringBuilder("\n= Route Map =\n");
         
         ROUTE_MAP.forEach((target, invoker) -> {
             sb.append(String.format("%-30s => %-40s (loggable: %s, authRequired: %s)\n",
@@ -204,7 +267,6 @@ public class Router {
                     invoker.isAuthRequired()));
         });
         
-        //sb.append("==============================");
         logger.info(sb.toString());
     }
     
@@ -237,18 +299,4 @@ public class Router {
     }
     
     private Router() {}
-	
-
-	
-
-	
-	
-	
-
-
-	
-	
-	
-
 }
-
