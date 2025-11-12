@@ -1,4 +1,4 @@
-package kr.tx24.was.util;
+package kr.tx24.lib.http.ua;
 
 public class UserAgent {
 

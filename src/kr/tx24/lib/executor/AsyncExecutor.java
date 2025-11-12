@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.lang.SystemUtils;
 
 /**
  * 비동기 작업 실행을 위한 Thread Pool Executor 래퍼
@@ -80,8 +81,9 @@ public class AsyncExecutor {
         thresholdMillies = CommonUtils.parseLong(System.getProperty(PROP_RUNNING_THRESHOLD_MILLIES,"5"));
         thresholdWarn 	 = Boolean.getBoolean(System.getProperty(PROP_RUNNING_THRESHOLD_WARN,"true"));
         
-        
-        logger.info("Creating AsyncExecutor: core={}, max={}", corePoolSize, maxPoolSize);
+        if(SystemUtils.deepview()) {
+        	logger.info("Creating AsyncExecutor: core={}, max={}", corePoolSize, maxPoolSize);
+        }
         
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
             corePoolSize,

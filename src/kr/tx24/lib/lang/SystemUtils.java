@@ -24,6 +24,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import kr.tx24.lib.conf.Configure;
 import kr.tx24.lib.lb.LoadBalancer;
+import kr.tx24.lib.lifecycle.JvmStatusManager;
 
 /**
  * 시스템 초기화 유틸리티
@@ -46,7 +47,6 @@ public class SystemUtils {
     private static final String PROPERTY_LOG_REDIS 	= "LOG_REDIS";
     private static final String PROPERTY_LOG_REDIS1	= "LOG_REDIS1";
     private static final String PROPERTY_LOG_REDIS2	= "LOG_REDIS2";
-    private static final String PROPERTY_JVM_MONITOR= "JVM_MONITOR";
     private static final String PROPERTY_DEEP_VIEW  = "SystemUtils.DEEP_VIEW";
 
     private static final String CONFIG_LOADBALANCE 	= "nlb.json";
@@ -60,6 +60,7 @@ public class SystemUtils {
 
     public static final String REDIS_STORAGE_LOG 	= "SYS_MSG_LOG";
     public static final String REDIS_STORAGE_TRX 	= "SYS_MSG_TRX";
+    public static final String REDIS_STORAGE_JVM 	= "SYS_MSG_JVM";
     public static final String REDIS_STORAGE_MESSAGE= "SYS_MSG_MESSAGE";
     public static final String REDIS_STORAGE_MESSAGE_RESULT = "SYS_MSG_MESSAGE_RESULT";
 
@@ -112,7 +113,6 @@ public class SystemUtils {
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_MAX	, "90");
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_LEVEL, "INFO");
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_REDIS, "");
-        CommonUtils.setSystemPropertyIfAbsent(PROPERTY_JVM_MONITOR, "false");
         
         isInitialized.set(true);
         
@@ -148,11 +148,7 @@ public class SystemUtils {
                 Thread.sleep(50);
                 synchronized (SystemUtils.class) {
                     if (!startLazyLoader) {
-                        
-                    	if (Boolean.getBoolean(PROPERTY_JVM_MONITOR)) {
-                        	JvmStatusUtils.start();
-                        }
-                        
+                        JvmStatusManager.initialize();
                         if(Files.exists(getLoadBalanceConfigPath())) {
                         	LoadBalancer.start();
                         }

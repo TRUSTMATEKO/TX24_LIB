@@ -7,11 +7,11 @@ import kr.tx24.lib.db.DBManager;
 import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.lang.CommonUtils;
-import kr.tx24.lib.lang.JvmStatusUtils;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.lib.logback.RedisAppender;
 import kr.tx24.lib.redis.Redis;
 import kr.tx24.lib.redis.RedisPubSub;
+import kr.tx24.was.main.Server;
 
 public class SystemManager extends Thread {
 
@@ -37,14 +37,16 @@ public class SystemManager extends Thread {
 	        
 	        // 각 컴포넌트를 안전하게 종료
 	        // 주의: 메서드 참조 대신 람다를 사용하여 지연 실행
-	        shutdownSafely("INet"			, () -> INet.shutdown());
-	        shutdownSafely("LoadBalancer"	, () -> LoadBalancer.shutdown());
-	        shutdownSafely("JvmStatusUtils"	, () -> JvmStatusUtils.shutdown());
-	        shutdownSafely("AsyncExecutor"	, () -> AsyncExecutor.shutdown());
-	        shutdownSafely("DBManager"		, () -> DBManager.shutdown());
-	        shutdownSafely("Redis"			, () -> Redis.shutdown());
-	        shutdownSafely("RedisPubSub"	, () -> RedisPubSub.shutdown());
-	        shutdownSafely("RedisAppender"	, () -> RedisAppender.shutdown());  // 마지막에 실행
+	        shutdownSafely("INetServer"			, () -> INet.shutdown());
+	        shutdownSafely("Tomcat Was"			, () -> Server.shutdown());
+	        shutdownSafely("INet"				, () -> INet.shutdown());
+	        shutdownSafely("LoadBalancer"		, () -> LoadBalancer.shutdown());
+	        shutdownSafely("JvmStatusManager"	, () -> JvmStatusManager.shutdown());
+	        shutdownSafely("AsyncExecutor"		, () -> AsyncExecutor.shutdown());
+	        shutdownSafely("DBManager"			, () -> DBManager.shutdown());
+	        shutdownSafely("Redis"				, () -> Redis.shutdown());
+	        shutdownSafely("RedisPubSub"		, () -> RedisPubSub.shutdown());
+	        shutdownSafely("RedisAppender"		, () -> RedisAppender.shutdown());  // 마지막에 실행
 	        
 	        sleep(100);
 	        System.out.println("system shutdown ... ");

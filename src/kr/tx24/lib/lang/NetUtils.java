@@ -127,21 +127,21 @@ public class NetUtils {
      * @return 연결 가능하면 true, 불가능하면 false
      */
     public static boolean isAlive(String host, int port, int timeoutMs) {
-        Socket socket = null;
-        try {
-            socket = new Socket();
+    	
+    	String checkHost = ("0.0.0.0".equals(host) || "::".equals(host)) ? "127.0.0.1" : host;
+    	
+    	try (java.net.Socket socket = new java.net.Socket()) {    
             // TCP 3-way handshake만 수행
-            socket.connect(new InetSocketAddress(host, port), timeoutMs);
+            socket.connect(new java.net.InetSocketAddress(checkHost, port), timeoutMs);
+            // Handshake 성공: 해당 주소/포트를 점유한 프로세스가 있음
             return true;
-        } catch (IOException e) {
+            
+        } catch (java.net.ConnectException e) {
+            // 연결 거부: 포트가 열려 있지 않음 (기대하는 정상 종료 케이스)
             return false;
-        } finally {
-            if (socket != null) {
-                try {
-                    socket.close();
-                } catch (IOException e) {
-                }
-            }
+        } catch (java.io.IOException e) {
+            // 기타 IOException (Timeout, UnknownHost 등): 점유 실패로 간주
+            return false;
         }
     }
     

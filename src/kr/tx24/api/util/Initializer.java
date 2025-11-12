@@ -4,9 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import kr.tx24.api.conf.ApiConfigLoader;
+import kr.tx24.lib.http.ua.UADetect;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.lib.redis.RedisUtils;
-import kr.tx24.was.util.UADetect;
 public class Initializer {
 
 	private static final Logger logger = LoggerFactory.getLogger(Initializer.class);

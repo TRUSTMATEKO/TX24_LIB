@@ -4,7 +4,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ch.qos.logback.classic.Level;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
@@ -15,6 +14,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.MultiThreadIoEventLoopGroup;
+import io.netty.channel.MultithreadEventLoopGroup;
 import io.netty.channel.WriteBufferWaterMark;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
@@ -28,11 +28,13 @@ import kr.tx24.inet.codec.INetEncoder;
 import kr.tx24.inet.conf.INetConfigLoader;
 import kr.tx24.inet.handler.INetHandler;
 import kr.tx24.inet.route.Router;
+import kr.tx24.lib.lang.MsgUtils;
+import kr.tx24.lib.lang.NetUtils;
 
-public class INetServer extends Thread{
+public class INetServer{
 
 	private static final Logger logger = LoggerFactory.getLogger(INetServer.class);
-	private static final int MAX_MESSAGE_SIZE = 100*1024*1024; //100 Mega
+	private static final int MAX_MESSAGE_SIZE = 10*1024*1024; //10 Mega
 	
 	// Write buffer water mark 설정 (백프레셔 제어)
 	// 대용량 패킷이 증가하면 (5% 이상): ~ 1MB / 4MB로 변경
@@ -40,12 +42,15 @@ public class INetServer extends Thread{
 	// 응답 시간이 중요하면: 	→ 2MB / 8MB로 확대
 	private static final int LOW_WATER_MARK = 512 * 1024;      // 512KB
     private static final int HIGH_WATER_MARK = 2 * 1024 * 1024; // 2MB
+    private static final int TCP_RCV_BUFFER_SIZE = 512 * 1024; // 512KB
+    private static final int TCP_SND_BUFFER_SIZE = 64 * 1024;  // 64KB
 	
-	private volatile  EventLoopGroup bossGroup 	= null;
-	private volatile  EventLoopGroup workerGroup 	= null;
+	private static volatile  EventLoopGroup bossGroup 	= null;
+	private static volatile  EventLoopGroup workerGroup 	= null;
 	
 	// 중복 shutdown 방지
-    private final AtomicBoolean isShutdown = new AtomicBoolean(false);
+    private static final AtomicBoolean isShutdown = new AtomicBoolean(false);
+    private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
 	
 	
 	
@@ -54,10 +59,24 @@ public class INetServer extends Thread{
 		Router.start(INetConfigLoader.getBasePackage());	
 	}
 	
-	@Override
-	public void run(){
+	
+	public void start(){
+		if (!isInitialized.compareAndSet(false, true)) {
+			logger.debug("INetServer is already initialized or starting");
+			return;
+		}
+	
+		run();
+	}
+	
+	
+	private void run(){
 		
-		
+		if(NetUtils.isAlive(INetConfigLoader.getHost(), INetConfigLoader.getPort())) {
+            System.err.println(MsgUtils.format("{},{} already bounded", INetConfigLoader.getHost(), INetConfigLoader.getPort()));
+            System.err.println("Please stop the already running process.");
+            System.exit(1);
+        }
 		
 		// Netty 4.2.x 최신 방식: MultiThreadIoEventLoopGroup with NioIoHandler
 		bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
@@ -77,8 +96,8 @@ public class INetServer extends Thread{
                     .childOption(ChannelOption.SO_KEEPALIVE, false)							//KeepAlive 설정
                     .childOption(ChannelOption.TCP_NODELAY, true)							//Nagle 알고리즘 비활성화
                     .childOption(ChannelOption.SO_LINGER, 0)								//소켓 닫기 시 대기 시간
-                    .childOption(ChannelOption.SO_SNDBUF, MAX_MESSAGE_SIZE)					//송신 버퍼 크기 
-                    .childOption(ChannelOption.SO_RCVBUF, MAX_MESSAGE_SIZE)					//수신 버퍼 크기
+                    .childOption(ChannelOption.SO_SNDBUF, TCP_SND_BUFFER_SIZE)
+                    .childOption(ChannelOption.SO_RCVBUF, TCP_RCV_BUFFER_SIZE)
                     .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)	//
                     .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(LOW_WATER_MARK, HIGH_WATER_MARK)) // Write buffer water mark - 백프레셔 제어
                     .childOption(ChannelOption.AUTO_READ, true)								//Auto read - 자동으로 읽기를 계속할지 여부
@@ -106,11 +125,10 @@ public class INetServer extends Thread{
 
             future.addListener((ChannelFutureListener) channelFuture -> {
                 if (channelFuture.isSuccess()) {
-                	 logger.info("Channel binded ...");
-                	 logger.info("Server started ... : [{}:{}]", INetConfigLoader.getHost(), INetConfigLoader.getPort());
-                     logger.info("Boss threads: 1, Worker threads: {}", Runtime.getRuntime().availableProcessors() * 2);
+                	 threadInfo();
+                	 logger.info("INetServer started ... : [{}:{}]", INetConfigLoader.getHost(), INetConfigLoader.getPort());
                 } else {
-                    logger.error("Failed to bind server", channelFuture.cause());
+                    logger.error("Failed to bind INetServer", channelFuture.cause());
                 }
             });
 
@@ -123,51 +141,42 @@ public class INetServer extends Thread{
 	}
 	
 	
+	private void threadInfo() {
+        try {
+            int bossThreads = (bossGroup instanceof MultithreadEventLoopGroup)
+                    ? ((MultithreadEventLoopGroup) bossGroup).executorCount() : 1;
+            int workerThreads = (workerGroup instanceof MultithreadEventLoopGroup)
+                    ? ((MultithreadEventLoopGroup) workerGroup).executorCount() : 1;
+            logger.info("Boss threads: {}, Worker threads: {}", bossThreads, workerThreads);
+        } catch (Exception ignore) {}
+    }
 	
-	public void shutdown() {
-		if (!isShutdown.compareAndSet(false, true)) {
-            logger.debug("Shutdown already in progress or completed");
+	
+	public static void shutdown() {
+		
+		//초기화 되지 않았을 경우는 필요가 없다 .
+		if (!isInitialized.get()) {
             return;
         }
 		
-		/*
-		try {
-            // Netty 패키지 전체 로거 비활성화
-            String[] nettyLoggers = {
-                "io.netty",
-                "io.netty.util",
-                "io.netty.util.concurrent",
-                "io.netty.util.internal",
-                "io.netty.channel",
-                "io.netty.handler",
-                "io.netty.bootstrap"
-            };
-            
-            for (String loggerName : nettyLoggers) {
-            	org.slf4j.Logger slf4jLogger = LoggerFactory.getLogger(loggerName);
-                
-                // ⭐ LogBack의 Logger로 캐스팅
-                if (slf4jLogger instanceof ch.qos.logback.classic.Logger) {
-                    ch.qos.logback.classic.Logger logbackLogger = 
-                        (ch.qos.logback.classic.Logger) slf4jLogger;
-                    logbackLogger.setLevel(Level.OFF);
-                }
-            }
-            
-        } catch (Throwable t) {
-            // 무시
+		if (!isShutdown.compareAndSet(false, true)) {
+            logger.debug("INetServer shutdown already in progress or completed");
+            return;
         }
-		*/
+		
         try {
+        	
+        	//각 worker, boss 는 0 : 즉시 다음 요청을 수신하지 않으며 3 초까지 현재의 처리를 대기한 후 종료한다.
+        	if (workerGroup != null) {
+            	workerGroup.shutdownGracefully(0, 3, java.util.concurrent.TimeUnit.SECONDS).sync();
+            }
             if (bossGroup != null) {
-            	bossGroup.shutdownGracefully().sync();
+            	bossGroup.shutdownGracefully(0, 3, java.util.concurrent.TimeUnit.SECONDS).sync();
             }
-            if (workerGroup != null) {
-            	workerGroup.shutdownGracefully().sync();
-            }
-           
+        	
+            isInitialized.set(false);
             
-            logger.info("... server stop! ...");
+            logger.info("INetSrver stopped successfully! ...");
         } catch (InterruptedException  ex) {
             logger.info("shutdown exception : {}", ex.getMessage(), ex);
         	Thread.currentThread().interrupt();

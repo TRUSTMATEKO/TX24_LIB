@@ -6,7 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.lang.CommonUtils;
-import kr.tx24.lib.lang.JvmStatusUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;
 
@@ -32,9 +31,6 @@ public class TomcatConfigLoader {
 						System.setProperty(key, tomcatConfig.parameter.get(key));
 					}
 				}
-				
-				JvmStatusUtils.setMaxThreads(tomcatConfig.maxThreads);
-				
 			} catch (Exception e) {
 				logger.error("server config read error : {} , {}",CONFIG_PATH, e.getMessage()); // System.exit(0) 대신 에러 로깅
 				System.exit(0);

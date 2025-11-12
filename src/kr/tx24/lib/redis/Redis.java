@@ -56,7 +56,7 @@ public final class Redis {
         
         // shutdown 중이면 초기화하지 않음
         if (isShuttingDown.get()) {
-            logger.debug("Redis is shutting down, skipping initialization");
+            //logger.debug("Redis is shutting down, skipping initialization");
             return;
         }
         

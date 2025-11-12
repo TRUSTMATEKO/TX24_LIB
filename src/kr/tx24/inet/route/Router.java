@@ -39,7 +39,7 @@ public class Router {
             return;
         }
         
-        logger.info("Router initialization started for packages: {}", packageNames);
+        logger.info("Router scan packages: {}", packageNames);
         
         try {
             if (CommonUtils.isBlank(packageNames)) {

@@ -33,19 +33,16 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         startTime = System.nanoTime();
-        logger.debug("Channel active: {}", ctx.channel().id().asShortText());
+        if(SystemUtils.deepview()) {
+        	logger.info("channel active: {}", ctx.channel().id().asShortText());
+        }
         super.channelActive(ctx);
     }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, INet inet) throws Exception {
-    	String extTrxId = IDUtils.getUnique("INET_");										// 트랜잭션 ID 생성
-        inet.data(INetUtils.EXT_TRX_ID, extTrxId);
-        
-        if (!inet.head().containsKey(INetUtils.EXT_TRX_ID)) {
-            inet.head().put(INetUtils.EXT_TRX_ID, extTrxId);
-        }
- 
+    	String extTrxId = System.currentTimeMillis()+ctx.channel().id().asShortText();// 트랜잭션 ID 생성
+        inet.head().put(INetUtils.EXT_TRX_ID, extTrxId);
         MDC.put("id", extTrxId);													// MDC에 트랜잭션 ID 설정
         
         

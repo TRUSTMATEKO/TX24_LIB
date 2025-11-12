@@ -17,8 +17,7 @@ import kr.tx24.lib.mapper.JacksonUtils;
 public class INetRespUtils {
 
 	private static final Logger logger = LoggerFactory.getLogger(INetRespUtils.class);
-    private static final ThreadLocal<JacksonUtils> jsonUtils = 
-            ThreadLocal.withInitial(JacksonUtils::new);
+    private static final ThreadLocal<JacksonUtils> jsonUtils = ThreadLocal.withInitial(JacksonUtils::new);
     
     private final ChannelHandlerContext ctx;
     private final INet resInet;
