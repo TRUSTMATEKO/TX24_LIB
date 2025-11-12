@@ -50,7 +50,7 @@ public class AsyncExecutor {
     private static final String PROP_RUNNING_THRESHOLD_MILLIES = "async.threshold.millies";
     
     private static volatile boolean thresholdWarn = true;
-    private static volatile long  thresholdMillies= -1;
+    private static volatile long  thresholdMillies= 5000;
     
     
     private static final Object EXECUTOR_LOCK = new Object();
@@ -78,7 +78,7 @@ public class AsyncExecutor {
         int maxPoolSize = corePoolSize * 2;
         
         
-        thresholdMillies = CommonUtils.parseLong(System.getProperty(PROP_RUNNING_THRESHOLD_MILLIES,"5"));
+        thresholdMillies = CommonUtils.parseLong(System.getProperty(PROP_RUNNING_THRESHOLD_MILLIES,"5000"));
         thresholdWarn 	 = Boolean.getBoolean(System.getProperty(PROP_RUNNING_THRESHOLD_WARN,"true"));
         
         if(SystemUtils.deepview()) {
@@ -551,7 +551,6 @@ public class AsyncExecutor {
     }
     
     private static void shutdownScheduler(ScheduledExecutorService scheduler) {
-        logger.info("Shutting down scheduler...");
         scheduler.shutdown();
         
         try {
@@ -580,7 +579,6 @@ public class AsyncExecutor {
     // ========== Scheduler (Lazy initialization) ==========
     
     private static ScheduledExecutorService createScheduler() {
-        logger.info("Creating scheduler...");
         return Executors.newScheduledThreadPool(
             4, 
             new CustomThreadFactory("scheduler")

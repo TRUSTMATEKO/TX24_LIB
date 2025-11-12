@@ -29,7 +29,7 @@ public class Router {
 	
     public static void start(String packageNames) {
         if (initialized.get()) {
-            logger.debug("Router already initialized");
+            logger.debug("already initialized");
             return;
         }
         
@@ -39,7 +39,7 @@ public class Router {
             return;
         }
         
-        logger.info("Router scan packages: {}", packageNames);
+        logger.info("scan packages: {}", packageNames);
         
         try {
             if (CommonUtils.isBlank(packageNames)) {

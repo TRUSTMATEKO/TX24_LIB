@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.executor.AsyncExecutor;
+import kr.tx24.lib.lang.BDUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.MapFactory;
@@ -24,7 +25,7 @@ public class JvmStatusManager {
 	
     private static final long SAMPLING_PERIOD_SECONDS = 60; 			// 데이터 샘플링 주기: 1분
     private static final long DEFAULT_REPORT_PERIOD_MINUTES = 5; 		// 보고 주기의 기본값 (5분)
-    private static final double HIGH_USAGE_THRESHOLD = 0.80;			// 메모리 사용량 경고 임계치 (80%)
+    private static final double HIGH_USAGE_THRESHOLD = 0.70;			// 메모리 사용량 경고 임계치 (80%)
     private static final String JVM_MONITOR_PROPERTY = "JVM_MONITOR";	// 상세 로깅 활성화 시스템 프로퍼티
     
     // 보고 주기 동안 관찰된 최대 지표 값을 저장하는 스냅샷
@@ -50,6 +51,7 @@ public class JvmStatusManager {
         volatile double used 	= 0.0;
         volatile double total 	= 0.0;  
         volatile double free 	= 0.0;
+        volatile double max 	= 0.0;
         // 스레드 최대값
         volatile int thread 	= 0;
         volatile int daemon 	= 0;
@@ -94,6 +96,7 @@ public class JvmStatusManager {
             LinkedMap<String, Object> memoryMap = getMemoryInfo();
             LinkedMap<String, Object> threadMap = getThreadInfo();
           
+            //logger.info("{}",new JacksonUtils().toJson(memoryMap));
             // 메모리 80% 사용 경고 (샘플링 시점에 즉시 경고)
             if (memoryMap.getDouble("rate") >= HIGH_USAGE_THRESHOLD) {
                 logger.warn("JVM_MEMORY_HIGH_USAGE: Current utilization is {}% ({}MB / {}MB).", 
@@ -117,36 +120,37 @@ public class JvmStatusManager {
     	// 현재 최대값 스냅샷을 가져오고 즉시 리셋할 새 스냅샷을 생성하여 초기화
     	MetricsSnapshot maxSnapshot = MAX_PERIOD_SNAPSHOT.getAndSet(new MetricsSnapshot());
     	
-        // System property가 true일 경우 상세 로깅 (최대값 기준)
-        if (Boolean.parseBoolean(System.getProperty(JVM_MONITOR_PROPERTY, "false"))) {
-        	
-        	LinkedMap<String,Object> map = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT);
-            
-            // 1. 최대값 기반 메모리 정보 재구성 ---
-            LinkedMap<String,Object> memoryMap = getMemoryInfo();
-            memoryMap.put("used"	, maxSnapshot.used); 	// 최대 사용 힙
-            memoryMap.put("rate"	, maxSnapshot.rate); 	// 최대 사용률
-            memoryMap.put("total"	, maxSnapshot.total); 	// 할당된 총 힙 메모리 최대값
-            memoryMap.put("free"	, maxSnapshot.free);   	// 여유 힙 메모리 최대값
-            
-            // 2. 최대값 기반 스레드 정보 재구성 ---
-            LinkedMap<String,Object> threadMap = getThreadInfo();
-            threadMap.put("active", maxSnapshot.thread); 	// 최대 활성 스레드 수
-            threadMap.put("daemon", maxSnapshot.daemon); 	// 최대 데몬 스레드 수
-            
-            
-            map.put("timestamp"	, System.currentTimeMillis()); 
-        	map.put("memory"	, memoryMap);
-        	map.put("thread"	, threadMap);
-            
-        	try {
+        
+        // 1. 최대값 기반 메모리 정보 재구성 ---
+        LinkedMap<String,Object> memoryMap = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT,5);
+        memoryMap.put("used"	, BDUtils.valueOf(maxSnapshot.used,2).doubleValue()); 	// 최대 사용 힙
+        memoryMap.put("rate"	, BDUtils.valueOf(maxSnapshot.rate,4).doubleValue()); 	// 최대 사용률
+        memoryMap.put("total"	, BDUtils.valueOf(maxSnapshot.total,2).doubleValue()); 	// 할당된 총 힙 메모리 최대값
+        memoryMap.put("free"	, BDUtils.valueOf(maxSnapshot.free,2).doubleValue());   	// 여유 힙 메모리 최대값
+        memoryMap.put("max"		, BDUtils.valueOf(maxSnapshot.max,2).doubleValue());   	// 여유 힙 메모리 최대값
+        
+        // 2. 최대값 기반 스레드 정보 재구성 ---
+        LinkedMap<String,Object> threadMap = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT,2);
+        threadMap.put("active", maxSnapshot.thread); 	// 최대 활성 스레드 수
+        threadMap.put("daemon", maxSnapshot.daemon); 	// 최대 데몬 스레드 수
+        
+        LinkedMap<String,Object> map = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT,3);
+        map.put("timestamp"	, System.currentTimeMillis()); 
+    	map.put("memory"	, memoryMap);
+    	map.put("thread"	, threadMap);
+        
+    	try {
+    		// System property가 true일 경우 상세 로깅 (최대값 기준)
+            if (Boolean.parseBoolean(System.getProperty(JVM_MONITOR_PROPERTY, "false"))) {
         		// Redis에 JSON 문자열로 저장
         		RedisUtils.rpush(SystemUtils.REDIS_STORAGE_JVM, new JacksonUtils().toJson(map));
-        		
-        	}catch(Exception e) {
-        		logger.info("RedisUtils.rpush failed for JVM monitoring data.", e);
-        	}
-        }
+            }else {
+            	logger.info("jvm status : {}",new JacksonUtils().toJson(map));
+            }
+    	}catch(Exception e) {
+    		logger.info("RedisUtils.rpush failed for JVM monitoring data.", e);
+    	}
+    
     }
 
     /**
@@ -158,7 +162,8 @@ public class JvmStatusManager {
             current.rate 	= Math.max(current.rate, memory.getDouble("rate"));
             current.used 	= Math.max(current.used, memory.getDouble("used"));
             current.total 	= Math.max(current.total, memory.getDouble("total")); 
-            current.free 	= Math.max(current.free, memory.getDouble("free"));  
+            current.free 	= Math.max(current.free, memory.getDouble("free"));
+            current.max 	= Math.max(current.free, memory.getDouble("max")); 
 
             // Thread Peaks
             current.thread 	= Math.max(current.thread, thread.getInt("total"));
@@ -183,13 +188,13 @@ public class JvmStatusManager {
         double total 			= totalMemoryBytes / (double) MB; 	// JVM에 할당된 총 힙메모리
         double free 			= freeMemoryBytes / (double) MB; 	// JVM에 할당된 여유 공간
         double used 			= usedMemoryBytes / (double) MB; 	// 사용중 힙 메모리
-        double system 			= maxMemoryBytes / (double) MB; 	// 최대 사용 가능 힙 메모리 (Xmx)
+        double max 				= maxMemoryBytes / (double) MB; 	// 최대 사용 가능 힙 메모리 (Xmx)
         
         LinkedMap<String,Object> memoryMap = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT);
         memoryMap.put("used"	, used);
         memoryMap.put("free"	, free);
         memoryMap.put("total"	, total);
-        memoryMap.put("system"	, system);
+        memoryMap.put("max"		, max);
         memoryMap.put("rate"	, used/total);
         return memoryMap;
     }

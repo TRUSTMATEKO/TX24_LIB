@@ -192,7 +192,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         if (LOG_APPENDER[1]) {
             PatternLayoutEncoder fileEncoder = new PatternLayoutEncoder();
             fileEncoder.setContext(ctx);
-            fileEncoder.setPattern("%d{HH:mm:ss.SSS} [%.7thread] %-5level %logger{16} -%mdc:%masked%n");
+            fileEncoder.setPattern("%d{HH:mm:ss.SSS} %-5level %logger{16} -%mdc:%masked%n");
             fileEncoder.start();
 
             RollingFileAppender<ILoggingEvent> fileAppender = new RollingFileAppender<>();

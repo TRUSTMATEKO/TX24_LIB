@@ -307,7 +307,7 @@ public final class Redis {
         
         // 초기화되지 않았으면 바로 리턴 (중요!)
         if (!isInitialized.get()) {
-            logger.debug("Redis was not initialized, skipping shutdown");
+        	//logger.debug("Redis was not initialized, skipping shutdown");
             return;
         }
         

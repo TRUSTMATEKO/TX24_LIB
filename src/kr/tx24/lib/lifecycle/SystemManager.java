@@ -34,6 +34,7 @@ public class SystemManager extends Thread {
 	public void run() {
 	    try {
 	        logger.info("{}{},{}", PROCESS_STOPPED, PROCESS_ID, System.currentTimeMillis());
+	        logger.info("{}","\n\n\n");
 	        
 	        // 각 컴포넌트를 안전하게 종료
 	        // 주의: 메서드 참조 대신 람다를 사용하여 지연 실행

@@ -143,7 +143,9 @@ public class INetConfigLoader {
 					    });
 					}
 					
-					logger.info("Config reloaded: {}", CONFIG_PATH.toAbsolutePath());
+					if(SystemUtils.deepview()) {
+						logger.info("Config loaded: {}", CONFIG_PATH.toAbsolutePath());
+					}
 					
 				}catch(Exception e) {
 					logger.warn("Failed to load config {} : {}",CONFIG_PATH.toAbsolutePath(),e.getMessage());
