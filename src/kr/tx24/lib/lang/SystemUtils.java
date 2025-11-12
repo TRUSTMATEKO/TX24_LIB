@@ -47,7 +47,6 @@ public class SystemUtils {
     private static final String PROPERTY_LOG_REDIS 	= "LOG_REDIS";
     private static final String PROPERTY_LOG_REDIS1	= "LOG_REDIS1";
     private static final String PROPERTY_LOG_REDIS2	= "LOG_REDIS2";
-    private static final String PROPERTY_DEEP_VIEW  = "SystemUtils.DEEP_VIEW";
 
     private static final String CONFIG_LOADBALANCE 	= "nlb.json";
     private static final String CONFIG_DATABASE 	= "db.json";
@@ -77,6 +76,7 @@ public class SystemUtils {
     private static volatile boolean startLazyLoader = false;
 
     private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
+    private static final AtomicBoolean enabledDeepView  = new AtomicBoolean(false);
     
     
     // JVM 로딩 시 즉시 초기화
@@ -172,27 +172,27 @@ public class SystemUtils {
             boolean fileExists = Files.exists(deepViewPath);
             
             // 현재 설정된 값
-            boolean currentValue = Boolean.getBoolean(PROPERTY_DEEP_VIEW);
+            boolean currentValue = enabledDeepView.get();
             
             // 파일 존재 여부에 따라 설정 변경
             if(fileExists) {
                 if(!currentValue) {
                     // false → true 변경
-                    System.setProperty(PROPERTY_DEEP_VIEW, "true");
+                	enabledDeepView.set(true);
                     setLogLevel(Level.DEBUG);
                     System.err.println("deepview enabled ");
                 }
             } else {
                 if(currentValue) {
                     // true → false 변경
-                    System.setProperty(PROPERTY_DEEP_VIEW, "false");
+                	enabledDeepView.set(false);
                     setLogLevel(Level.INFO);
                     System.err.println("deepview disabled ");
                 }
             }
             
         } catch (Exception e) {
-            System.setProperty(PROPERTY_DEEP_VIEW, "false");
+        	enabledDeepView.set(false);
             System.err.println("error checking deep.view: " + e.getMessage());
         }
     }
@@ -204,7 +204,7 @@ public class SystemUtils {
         } catch (Exception e) {}
     }
 
-    public static boolean deepview() { return Boolean.getBoolean(PROPERTY_DEEP_VIEW); }
+    public static boolean deepview() { return enabledDeepView.get(); }
 
     
     public static String getConfigDirectory() {

@@ -10,7 +10,7 @@ set -e
 # 설정 변수
 #==============================================================================
 # 프로세스 설정
-PROC_NAME="TX24_NAVERWORKS"
+PROC_NAME="TX24_LIB"
 MAIN_CLASS="kr.tx24.inet.server.INetServer"
 
 # 디렉토리 설정 (bin 기준)
@@ -23,7 +23,7 @@ CLASSES_DIR="${BASE_DIR}/classes"
 DIST_DIR="${BASE_DIR}/dist"
 
 # Fat JAR 설정 (기본 Production 모드)
-FAT_JAR_NAME="TX24_NAVERWORKS.jar"
+FAT_JAR_NAME="${PROC_NAME}.jar"
 FAT_JAR="${DIST_DIR}/${FAT_JAR_NAME}"
 
 # PID 파일
@@ -54,7 +54,7 @@ REDIS_HOST="127.0.0.1:6379/0"
 LOG_LEVEL="INFO"
 LOG_MAXDAY="90"
 LOGGER="false,true,true"        # console,file,remote
-JVM_MONITOR="false"             # JVM Monitoring
+JVM_REPORT="false"             # JVM 모니터링 결과 전달여부 ( redis set)
 
 #==============================================================================
 # 프로그램 옵션 - 선택 설정 (필요시 주석 해제)
@@ -110,7 +110,7 @@ PRG_OPTS=""
 [ -n "$LOG_LEVEL" ] && PRG_OPTS="${PRG_OPTS} -DLOG_LEVEL=${LOG_LEVEL}"
 [ -n "$LOG_MAXDAY" ] && PRG_OPTS="${PRG_OPTS} -DLOG_MAXDAY=${LOG_MAXDAY}"
 [ -n "$LOGGER" ] && PRG_OPTS="${PRG_OPTS} -DLOGGER=${LOGGER}"
-[ -n "$JVM_MONITOR" ] && PRG_OPTS="${PRG_OPTS} -DJVM_MONITOR=${JVM_MONITOR}"
+[ -n "$JVM_REPORT" ] && PRG_OPTS="${PRG_OPTS} -DJVM_REPORT=${JVM_REPORT}"
 
 # Redis 옵션
 [ -n "$REDIS_HOST" ] && PRG_OPTS="${PRG_OPTS} -DREDIS=${REDIS_HOST}"
@@ -265,9 +265,10 @@ start_application() {
 # Main
 #==============================================================================
 main() {
-    print_options
-    
+    #동일한 프로그램이 동작하는지 여부 확인
     check_process
+    #프로그램 구동 옵션 확인
+    print_options
     
     if ! start_application; then
         exit 1
