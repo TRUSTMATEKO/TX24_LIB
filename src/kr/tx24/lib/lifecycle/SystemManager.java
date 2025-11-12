@@ -16,8 +16,8 @@ import kr.tx24.was.main.Server;
 public class SystemManager extends Thread {
 
 	protected static Logger logger = LoggerFactory.getLogger(SystemManager.class);
-	public static final String PROCESS_STARTED	 	= "#process started,";
-	public static final String PROCESS_STOPPED	 	= "#process shutdown,";
+	public static final String PROCESS_STARTED	 	= "#started,";
+	public static final String PROCESS_STOPPED	 	= "#shutdown,";
 	private static long PROCESS_ID	= System.currentTimeMillis();
 	
 	public SystemManager(){
