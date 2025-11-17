@@ -6,6 +6,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import kr.tx24.inet.server.INetServer;
 import kr.tx24.lib.db.DBManager;
 import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.inter.INet;
@@ -56,15 +57,21 @@ public class SystemManager extends Thread {
 	        
 	        // 각 컴포넌트를 안전하게 종료
 	        // 주의: 메서드 참조 대신 람다를 사용하여 지연 실행
-	        shutdownSafely("INetServer"			, () -> INet.shutdown());
+	        shutdownSafely("INetServer"			, () -> INetServer.shutdown());
 	        shutdownSafely("Tomcat Was"			, () -> Server.shutdown());
 	        shutdownSafely("INet"				, () -> INet.shutdown());
 	        shutdownSafely("LoadBalancer"		, () -> LoadBalancer.shutdown());
+	        
+	        sleep(200);
+	        
 	        shutdownSafely("JvmStatusManager"	, () -> JvmStatusManager.shutdown());
 	        shutdownSafely("AsyncExecutor"		, () -> AsyncExecutor.shutdown());
 	        shutdownSafely("DBManager"			, () -> DBManager.shutdown());
 	        shutdownSafely("Redis"				, () -> Redis.shutdown());
 	        shutdownSafely("RedisPubSub"		, () -> RedisPubSub.shutdown());
+	        
+	        sleep(100);
+	        
 	        shutdownSafely("RedisAppender"		, () -> RedisAppender.shutdown());  // 마지막에 실행
 	        
 	        sleep(100);
