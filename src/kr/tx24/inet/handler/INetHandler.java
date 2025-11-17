@@ -25,7 +25,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
     
     private static final Logger logger = LoggerFactory.getLogger(INetHandler.class);
     
-    private static final ThreadLocal<JacksonUtils> jsonUtils = 	ThreadLocal.withInitial(JacksonUtils::new);
+    private static final JacksonUtils jsonUtils = new JacksonUtils();
     
     private long startTime = 0L;
     
@@ -232,9 +232,9 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
         if (invoker.isLoggable() || SystemUtils.deepview()) {
             StringBuilder sb =new StringBuilder()
             .append("\nrequest \n")
-            .append("head : ").append(jsonUtils.get().toJson(inet.head()))
+            .append("head : ").append(jsonUtils.toJson(inet.head()))
             .append("\n")
-            .append("data : ").append(jsonUtils.get().toJson(inet.data()));
+            .append("data : ").append(jsonUtils.toJson(inet.data()));
             logger.info(sb.toString());
             
             

@@ -95,13 +95,13 @@ public class INetServer{
                     // Child options - 각 클라이언트 연결에 적용되는 옵션들
                     .childOption(ChannelOption.SO_KEEPALIVE, false)							//KeepAlive 설정
                     .childOption(ChannelOption.TCP_NODELAY, true)							//Nagle 알고리즘 비활성화
-                    .childOption(ChannelOption.SO_LINGER, 0)								//소켓 닫기 시 대기 시간
+                    .childOption(ChannelOption.SO_LINGER, 3)								//소켓 닫기 시 대기 시간
                     .childOption(ChannelOption.SO_SNDBUF, TCP_SND_BUFFER_SIZE)
                     .childOption(ChannelOption.SO_RCVBUF, TCP_RCV_BUFFER_SIZE)
                     .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)	//
                     .childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(LOW_WATER_MARK, HIGH_WATER_MARK)) // Write buffer water mark - 백프레셔 제어
                     .childOption(ChannelOption.AUTO_READ, true)								//Auto read - 자동으로 읽기를 계속할지 여부
-                    .childOption(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)				// Connection timeout
+                    .childOption(ChannelOption.CONNECT_TIMEOUT_MILLIS, 3000)				// Connection timeout
                     .childOption(ChannelOption.MESSAGE_SIZE_ESTIMATOR,io.netty.channel.DefaultMessageSizeEstimator.DEFAULT) // Message size estimator - 메시지 크기 추정 (메모리 관리)
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
@@ -110,7 +110,7 @@ public class INetServer{
                             if (INetConfigLoader.enableLoggingHandler()) {
                                 p.addLast(new LoggingHandler(LogLevel.INFO)); //로그 확인 시
                             }
-                            p.addLast("idleStateHandler", new IdleStateHandler(30, 30, 0));
+                            p.addLast("idleStateHandler", new IdleStateHandler(15, 120, 0));
                             p.addLast("inetDecoder", new INetDecoder());
                             p.addLast("chunkedWriter", new ChunkedWriteHandler());
                             p.addLast("inetEncoder", new INetEncoder());

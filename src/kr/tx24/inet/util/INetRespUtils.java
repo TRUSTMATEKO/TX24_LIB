@@ -17,7 +17,7 @@ import kr.tx24.lib.mapper.JacksonUtils;
 public class INetRespUtils {
 
 	private static final Logger logger = LoggerFactory.getLogger(INetRespUtils.class);
-    private static final ThreadLocal<JacksonUtils> jsonUtils = ThreadLocal.withInitial(JacksonUtils::new);
+	private static final JacksonUtils jsonUtils = new JacksonUtils();
     
     private final ChannelHandlerContext ctx;
     private final INet resInet;
@@ -90,7 +90,7 @@ public class INetRespUtils {
     
     public INetRespUtils dataFromJson(String key, Object object) {
         if (object != null) {
-        	resInet.data(key, jsonUtils.get().toJson(object));
+        	resInet.data(key, jsonUtils.toJson(object));
         }
         return this;
     }
@@ -202,9 +202,9 @@ public class INetRespUtils {
         if (enableLogging || SystemUtils.deepview()) {
             StringBuilder sb =new StringBuilder()
             .append("\nresponse\n")
-            .append("head : ").append(jsonUtils.get().toJson(resInet.head()))
+            .append("head : ").append(jsonUtils.toJson(resInet.head()))
             .append("\n")
-            .append("data : ").append(jsonUtils.get().toJson(resInet.data()));
+            .append("data : ").append(jsonUtils.toJson(resInet.data()));
             logger.info(sb.toString());
         }
     }

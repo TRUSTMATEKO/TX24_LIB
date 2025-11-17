@@ -1,5 +1,8 @@
 package kr.tx24.lib.lifecycle;
 
+import java.util.LinkedList;
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +23,8 @@ public class SystemManager extends Thread {
 	public static final String PROCESS_STOPPED	 	= "#shutdown,";
 	private static long PROCESS_ID	= System.currentTimeMillis();
 	
+	private static final List<ShutdownManager> PRIORITY_SHUTDOWN_HOOKS = new LinkedList<>();
+	
 	public SystemManager(){
 		try {
 	        Thread.sleep(100);
@@ -30,11 +35,24 @@ public class SystemManager extends Thread {
 		
 	}
 	
+	
+	public static void registerShutdownHook(ShutdownManager hook) {
+        if (hook != null) {
+            ((LinkedList<ShutdownManager>) PRIORITY_SHUTDOWN_HOOKS).addFirst(hook); 
+            logger.debug("Registered shutdown hook: {}", hook.getClass().getName());
+        }
+	}
+	
 	@Override
 	public void run() {
 	    try {
 	        logger.info("{}{},{}", PROCESS_STOPPED, PROCESS_ID, System.currentTimeMillis());
 	        logger.info("{}","\n\n\n");
+	        
+	        for (ShutdownManager hook : PRIORITY_SHUTDOWN_HOOKS) {
+                String componentName = hook.getClass().getSimpleName();
+                shutdownSafely(componentName, () -> hook.shutdown());
+            }
 	        
 	        // 각 컴포넌트를 안전하게 종료
 	        // 주의: 메서드 참조 대신 람다를 사용하여 지연 실행
