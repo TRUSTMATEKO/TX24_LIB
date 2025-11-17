@@ -29,8 +29,7 @@ public class RedisPubSubExample {
         // 예시 5: 패턴 구독 (와일드카드)
         example5_PatternSubscribe();
         
-        // 예시 6: 구독자 수 확인
-        example6_CheckSubscribers();
+ 
         
         // 정리
         RedisPubSub.shutdown();
@@ -158,33 +157,7 @@ public class RedisPubSubExample {
         System.out.println();
     }
 
-    /**
-     * 예시 6: 구독자 수 확인
-     * - 특정 채널의 활성 구독자 수 조회
-     */
-    private static void example6_CheckSubscribers() throws InterruptedException {
-        System.out.println("--- 예시 6: 구독자 수 확인 ---");
-        
-        // 구독자 2명 생성
-        RedisPubSub.Subscriber sub1 = RedisPubSub.subscribe("channel:test", msg -> {});
-        RedisPubSub.Subscriber sub2 = RedisPubSub.subscribe("channel:test", msg -> {});
-        
-        Thread.sleep(500);
-        
-        // 구독자 수 확인
-        Long count = RedisPubSub.countSubscribers("channel:test");
-        System.out.println("channel:test의 구독자 수: " + count);
-        
-        // 활성 채널 목록
-        var channels = RedisPubSub.getActiveChannels();
-        System.out.println("활성 채널 목록: " + channels);
-        
-        // 정리
-        sub1.close();
-        sub2.close();
-        
-        System.out.println();
-    }
+    
 
     // ========== 테스트용 DTO ==========
     

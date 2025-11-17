@@ -16,7 +16,6 @@ import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.util.AttributeKey;
-import kr.tx24.api.util.ApiConstants;
 
 /**
  * Netty Utility 클래스
@@ -29,6 +28,9 @@ import kr.tx24.api.util.ApiConstants;
  */
 public class NettyUtils {
 
+	private static final String X_REAL_IP 					= "X-Real-IP";
+	private static final String X_FORWARDED_FOR				= "X-Forwarded-For";
+	
     private NettyUtils() {
     }
 
@@ -164,13 +166,13 @@ public class NettyUtils {
     public static String getClientIp(Channel channel, FullHttpRequest request) {
 
         // X-Forwarded-For 헤더 체크
-        String forwardedFor = request.headers().get(ApiConstants.X_FORWARDED_FOR);
+        String forwardedFor = request.headers().get(X_FORWARDED_FOR);
         if (forwardedFor != null && !forwardedFor.isEmpty()) {
             return forwardedFor.split(",")[0].trim();
         }
 
         // X-Real-IP 헤더 체크
-        String xRealIp = request.headers().get(ApiConstants.X_REAL_IP);
+        String xRealIp = request.headers().get(X_REAL_IP);
         if (xRealIp != null && !xRealIp.isEmpty()) {
             return xRealIp.trim();
         }
