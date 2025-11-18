@@ -122,7 +122,7 @@ public class DBManager {
 	    }
 
 	    SharedMap<String, Object> map = new JacksonUtils().fromJson(configPath, TypeRegistry.MAP_SHAREDMAP_OBJECT);
-
+	    logger.info(map.toJson());
 	    if (map != null && map.containsKey("password")) {
 	        String password = map.getString("password");
 	        if (password != null && password.startsWith("ENC:")) {

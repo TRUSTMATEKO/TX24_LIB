@@ -4,6 +4,9 @@ package kr.tx24.lib.redis;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,6 +16,7 @@ import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import io.lettuce.core.codec.RedisCodec;
+import kr.tx24.lib.lang.CommonUtils;
 
 /**
  * 타입 정보를 자동으로 보존하는 Redis Codec
@@ -43,6 +47,7 @@ import io.lettuce.core.codec.RedisCodec;
  */
 public class TypedRedisCodec implements RedisCodec<String, Object> {
 
+	private static final Logger logger = LoggerFactory.getLogger(Redis.class);
     private static final ObjectMapper MAPPER = createObjectMapper();
 
     /**
@@ -90,19 +95,27 @@ public class TypedRedisCodec implements RedisCodec<String, Object> {
      */
     @Override
     public Object decodeValue(ByteBuffer bytes) {
+    	
+    	byte[] array = null;
+    	
         try {
             if (!bytes.hasRemaining()) {
                 return null;
             }
             
-            byte[] array = new byte[bytes.remaining()];
+            array = new byte[bytes.remaining()];
             bytes.get(array);
             
             // Jackson이 타입 정보를 읽고 자동으로 적절한 타입으로 역직렬화
             return MAPPER.readValue(array, Object.class);
             
         } catch (Exception e) {
-            throw new RuntimeException("Failed to decode value", e);
+        	//logger.info("redis decode value error : {}",CommonUtils.getExceptionMessage(e));
+        	if(array != null) {
+        		return new String(array, StandardCharsets.UTF_8);
+        	}else {
+        		return array;
+        	}
         }
     }
 
@@ -130,6 +143,7 @@ public class TypedRedisCodec implements RedisCodec<String, Object> {
             return ByteBuffer.wrap(bytes);
             
         } catch (JsonProcessingException e) {
+        	//logger.info("redis encode value error : {}",CommonUtils.getExceptionMessage(e));
             throw new RuntimeException("Failed to encode value: " + value.getClass().getName(), e);
         }
     }

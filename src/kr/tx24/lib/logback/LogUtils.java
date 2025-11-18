@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.lang.DateUtils;
+import kr.tx24.lib.mapper.JacksonUtils;
 
 public class LogUtils {
 	
@@ -72,7 +73,7 @@ public class LogUtils {
 		String[] fields = log.split(Pattern.quote(LOG_DELIMITER), -1);
 
         if (fields.length != FIELD_COUNT) {
-        	logger.warn("Mismatched log field count. Expected: {},  Actual:{}. Log :{}",FIELD_COUNT,fields.length,log);
+        	logger.warn("Mismatched log field count. Expected: {},  Actual:{}. Log :{}",FIELD_COUNT,fields.length,log.replace(LOG_DELIMITER," "));
         	return null;
         }
 
@@ -126,17 +127,17 @@ public class LogUtils {
             if (fields.length != FIELD_COUNT) {
                 throw new IllegalArgumentException("Field count mismatch during LogEntry creation.");
             }
-            this.procName 	= fields[PROC_NAME];
-            this.procId 	= fields[PROC_ID];
-            this.host 		= fields[HOST];
-            this.day 		= fields[DATE];
-            this.time 		= fields[TIME];
+            this.procName 	= fields[PROC_NAME].trim();
+            this.procId 	= fields[PROC_ID].trim();
+            this.host 		= fields[HOST].trim();
+            this.day 		= fields[DATE].trim();
+            this.time 		= fields[TIME].trim();
             this.regDate 	= DateUtils.toTimestamp(this.day+this.time,"yyyyMMddHHmmssSSS");
-            this.thread 	= fields[THREAD];
-            this.level 		= fields[LEVEL];
+            this.thread 	= fields[THREAD].trim();
+            this.level 		= fields[LEVEL].trim();
             this.levelInt 	= LEVEL_MAP.get(this.level);
-            this.clz 		= fields[CLZ];
-            this.mdc 		= fields[MDC];
+            this.clz 		= fields[CLZ].trim();
+            this.mdc 		= fields[MDC].trim();
             String job = "";
             String msg = fields[MESSAGE];
             

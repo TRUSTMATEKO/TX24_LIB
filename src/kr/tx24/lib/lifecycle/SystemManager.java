@@ -53,7 +53,7 @@ public class SystemManager extends Thread {
 	@Override
 	public void run() {
 	    try {
-	        logger.info("{}{},{}", PROCESS_STOPPED, PROCESS_ID, System.currentTimeMillis()/1000);
+	        logger.info("{}{}", PROCESS_STOPPED, PROCESS_ID);
 	        logger.info("{}","\n\n\n");
 	        
 	        for (ShutdownManager hook : PRIORITY_SHUTDOWN_HOOKS) {
