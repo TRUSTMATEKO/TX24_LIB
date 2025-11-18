@@ -553,7 +553,7 @@ public class INet implements java.io.Serializable{
                 if (clazz == String.class || clazz == Integer.class || clazz == Long.class ||
                     clazz == Double.class || clazz == Float.class || clazz == Boolean.class ||
                     clazz == Byte.class || clazz == Short.class || clazz == Character.class ||
-                    clazz == BigDecimal.class || clazz == BigInteger.class ||
+                    clazz == BigDecimal.class || clazz == BigInteger.class || clazz == Number.class || 
                     clazz == java.sql.Timestamp.class || clazz == java.util.Date.class ||
                     clazz == java.util.LinkedHashMap.class) {
                     return ObjectInputFilter.Status.ALLOWED;
@@ -578,7 +578,7 @@ public class INet implements java.io.Serializable{
             this.message = msg;
             return this;
         } catch (EOFException e) {
-            throw new InvalidObjectException("Malformed serialized data: " + e.getMessage());
+            throw new InvalidObjectException("Malformed deserialized data: " + e.getMessage());
         }
 	}
 	

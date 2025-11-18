@@ -145,7 +145,7 @@ public class SystemUtils {
     	
         scheduler.execute(() -> {
             try {
-                Thread.sleep(50);
+                Thread.sleep(200);
                 synchronized (SystemUtils.class) {
                     if (!startLazyLoader) {
                         JvmStatusManager.initialize();

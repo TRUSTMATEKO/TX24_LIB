@@ -68,11 +68,17 @@ public class SystemManager extends Thread {
 	        shutdownSafely("INet"				, () -> INet.shutdown());
 	        shutdownSafely("LoadBalancer"		, () -> LoadBalancer.shutdown());
 	        
-	        sleep(200);
+	        sleep(300);
 	        
 	        shutdownSafely("JvmStatusManager"	, () -> JvmStatusManager.shutdown());
 	        shutdownSafely("AsyncExecutor"		, () -> AsyncExecutor.shutdown());
+	        
+	        sleep(200);
+	        
 	        shutdownSafely("DBManager"			, () -> DBManager.shutdown());
+	        
+	        sleep(200);
+	        
 	        shutdownSafely("Redis"				, () -> Redis.shutdown());
 	        shutdownSafely("RedisPubSub"		, () -> RedisPubSub.shutdown());
 	        

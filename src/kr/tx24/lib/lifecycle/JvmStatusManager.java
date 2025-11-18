@@ -125,7 +125,7 @@ public class JvmStatusManager {
     	
     	map.put("id"		, SystemManager.getProcessId());
     	map.put("regDay"	, DateUtils.getCurrentDay());
-        map.put("regDate"	, System.currentTimeMillis()/1000);
+        map.put("regDate"	, DateUtils.getCurrentTimestamp());
         
         // 1. 최대값 기반 메모리 정보 재구성 ---
         map.put("mem_used"	, BDUtils.valueOf(maxSnapshot.used,2).doubleValue()); 	// 최대 사용 힙
@@ -138,11 +138,17 @@ public class JvmStatusManager {
         map.put("th_active", maxSnapshot.thread); 	// 최대 활성 스레드 수
         map.put("th_daemon", maxSnapshot.daemon); 	// 최대 데몬 스레드 수
         
+        
+        //0.1 로 기록된 경우는 배제한다.
+        if(map.getDouble("mem_used") < 0.1) {
+        	return;
+        }
+        
     	try {
     		// System property가 true일 경우 상세 로깅 (최대값 기준)
             if (Boolean.parseBoolean(System.getProperty(JVM_REPORT_PROPERTY, "false"))) {
         		// Redis에 JSON 문자열로 저장
-        		RedisUtils.rpush(SystemUtils.REDIS_STORAGE_JVM, new JacksonUtils().toJson(map));
+        		RedisUtils.rpush(SystemUtils.REDIS_STORAGE_JVM, map);
             }else {
             	logger.info("jvm status : {}",new JacksonUtils().toJson(map));
             }

@@ -151,20 +151,26 @@ public class DBManager {
 	
 	public static void shutdown() {
 		if (ds != null) {
-           
-			try {
+	        try {
+	            // HikariCP가 이미 닫혔는지 확인
 	            if (ds.isClosed()) {
 	                ds = null;
+	                initialized = false;
 	                return;
 	            }
 	            ds.close();
+	           
+	            Thread.sleep(300);
 	            
+	        } catch (InterruptedException e) {
+	            Thread.currentThread().interrupt();
 	        } catch (NoClassDefFoundError e) {
 	        } catch (Exception e) {
 	        } finally {
 	            ds = null;
-	        }	
-		}
+	            initialized = false;
+	        }
+	    }
 	}
 	
 	public static HikariDataSource getDataSource()throws DBException{

@@ -3,6 +3,7 @@ package kr.tx24.lib.redis;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,14 +57,17 @@ public class TypedRedisCodec implements RedisCodec<String, Object> {
     private static ObjectMapper createObjectMapper() {
         ObjectMapper mapper = new ObjectMapper();
         
+        // 1. java.sql.Timestamp (및 java.util.Date)의 직렬화 포맷을 지정합니다.
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        mapper.setDateFormat(dateFormat);
+        
         // JavaTimeModule 등록 (LocalDateTime 등 지원)
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         
         // 알 수 없는 속성 무시 (하위 호환성)
         mapper.configure(
-            com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, 
-            false
+            com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,false
         );
         
         //DefaultTyping 활성화 (타입 정보 자동 저장)
