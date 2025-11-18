@@ -1,10 +1,10 @@
 package kr.tx24.lib.logback;
 
 import java.io.File;
-import java.util.Arrays;
-import java.util.Queue;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Queue;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.SubstituteLoggerFactory;
@@ -20,10 +20,10 @@ import ch.qos.logback.core.ConsoleAppender;
 import ch.qos.logback.core.rolling.RollingFileAppender;
 import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
 import ch.qos.logback.core.spi.ContextAwareBase;
+import ch.qos.logback.core.status.OnConsoleStatusListener;
 import ch.qos.logback.core.status.Status;
 import ch.qos.logback.core.status.StatusListener;
 import ch.qos.logback.core.status.StatusManager;
-import ch.qos.logback.core.status.OnConsoleStatusListener;
 import kr.tx24.lib.lang.MsgUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.lifecycle.SystemManager;
@@ -217,8 +217,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
 
         // Redis Appender
         if (LOG_APPENDER[2]) {
-            String redisPattern = String.join(LogUtils.LOG_DELIMITER_V2,
-                    "V2",
+            String redisPattern = String.join(LogUtils.LOG_DELIMITER,
                     SystemUtils.getLocalProcessName(),
                     SystemUtils.getLocalProcessId(),
                     SystemUtils.getLocalHostname() + "," + SystemUtils.getLocalAddress(),
@@ -226,7 +225,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
                     "%d{HHmmssSSS}",
                     "%thread",
                     "%-5level",
-                    "%logger{16}",
+                    "%logger{64}",
                     "%mdc",
                     "%masked"
             );
@@ -258,7 +257,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         
         return ExecutionStatus.DO_NOT_INVOKE_NEXT_IF_ANY;
     }
-
+ 
     private void setExternalLogLevel(LoggerContext ctx) {
         ctx.getLogger("ch.qos.logback.classic").setLevel(Level.OFF);
         ctx.getLogger("javax.activation").setLevel(Level.INFO);

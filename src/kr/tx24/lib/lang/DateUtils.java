@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 날짜 및 시간 처리 유틸리티
@@ -179,6 +180,17 @@ public class DateUtils {
     public static String toString(Timestamp ts) {
         if (ts == null) return "";
         return DTF_DATE.format(ts.toLocalDateTime());
+    }
+    
+    
+    public static String toString(Timestamp ts,String pattern) {
+        if (ts == null) return "";
+        if(CommonUtils.isEmpty(pattern)) {
+        	pattern = DATE_PATTERN;
+        }
+        
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(pattern);
+        return ts.toLocalDateTime().format(formatter);
     }
 
     /**

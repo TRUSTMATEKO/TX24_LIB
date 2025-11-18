@@ -76,5 +76,13 @@
                 <attribute name="Last-Updated-Date" value="${time}"/>
             </manifest>
         </jar>
+		<jar destfile="${dist.dir}\tx24_task_${jardate}.jar" basedir="${classes.dir}" includes="kr/tx24/task/**" excludes="kr/tx24/test/**">
+            <manifest>
+                <attribute name="Built-By" value="TX24"/>
+                <attribute name="Jar-Title" value="Tx24 Task Library"/>
+                <attribute name="Jar-Version" value="${jardate}"/>
+                <attribute name="Last-Updated-Date" value="${time}"/>
+            </manifest>
+        </jar>
 	</target>
 </project>

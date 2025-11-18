@@ -22,7 +22,7 @@ public class SystemManager extends Thread {
 	protected static Logger logger = LoggerFactory.getLogger(SystemManager.class);
 	public static final String PROCESS_STARTED	 	= "#started,";
 	public static final String PROCESS_STOPPED	 	= "#shutdown,";
-	private static long PROCESS_ID	= System.currentTimeMillis();
+	private static long PROCESS_ID	= System.currentTimeMillis()/1000;
 	
 	private static final List<ShutdownManager> PRIORITY_SHUTDOWN_HOOKS = new LinkedList<>();
 	
@@ -37,6 +37,12 @@ public class SystemManager extends Thread {
 	}
 	
 	
+	public static long getProcessId() {
+		return PROCESS_ID;
+	}
+	
+	
+	
 	public static void registerShutdownHook(ShutdownManager hook) {
         if (hook != null) {
             ((LinkedList<ShutdownManager>) PRIORITY_SHUTDOWN_HOOKS).addFirst(hook); 
@@ -47,7 +53,7 @@ public class SystemManager extends Thread {
 	@Override
 	public void run() {
 	    try {
-	        logger.info("{}{},{}", PROCESS_STOPPED, PROCESS_ID, System.currentTimeMillis());
+	        logger.info("{}{},{}", PROCESS_STOPPED, PROCESS_ID, System.currentTimeMillis()/1000);
 	        logger.info("{}","\n\n\n");
 	        
 	        for (ShutdownManager hook : PRIORITY_SHUTDOWN_HOOKS) {

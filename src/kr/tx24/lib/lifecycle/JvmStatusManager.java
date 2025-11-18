@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.BDUtils;
+import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.MapFactory;
@@ -120,24 +121,22 @@ public class JvmStatusManager {
     	// 현재 최대값 스냅샷을 가져오고 즉시 리셋할 새 스냅샷을 생성하여 초기화
     	MetricsSnapshot maxSnapshot = MAX_PERIOD_SNAPSHOT.getAndSet(new MetricsSnapshot());
     	
+    	LinkedMap<String,Object> map = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT,3);
+    	
+    	map.put("id"		, SystemManager.getProcessId());
+    	map.put("regDay"	, DateUtils.getCurrentDay());
+        map.put("regDate"	, System.currentTimeMillis()/1000);
         
         // 1. 최대값 기반 메모리 정보 재구성 ---
-        LinkedMap<String,Object> memoryMap = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT,5);
-        memoryMap.put("used"	, BDUtils.valueOf(maxSnapshot.used,2).doubleValue()); 	// 최대 사용 힙
-        memoryMap.put("rate"	, BDUtils.valueOf(maxSnapshot.rate,4).doubleValue()); 	// 최대 사용률
-        memoryMap.put("total"	, BDUtils.valueOf(maxSnapshot.total,2).doubleValue()); 	// 할당된 총 힙 메모리 최대값
-        memoryMap.put("free"	, BDUtils.valueOf(maxSnapshot.free,2).doubleValue());   	// 여유 힙 메모리 최대값
-        memoryMap.put("max"		, BDUtils.valueOf(maxSnapshot.max,2).doubleValue());   	// 여유 힙 메모리 최대값
+        map.put("mem_used"	, BDUtils.valueOf(maxSnapshot.used,2).doubleValue()); 	// 최대 사용 힙
+        map.put("mem_rate"	, BDUtils.valueOf(maxSnapshot.rate,4).doubleValue()); 	// 최대 사용률
+        map.put("mem_total"	, BDUtils.valueOf(maxSnapshot.total,2).doubleValue()); 	// 할당된 총 힙 메모리 최대값
+        map.put("mem_free"	, BDUtils.valueOf(maxSnapshot.free,2).doubleValue());   	// 여유 힙 메모리 최대값
+        map.put("mem_max"	, BDUtils.valueOf(maxSnapshot.max,2).doubleValue());   	// 여유 힙 메모리 최대값
         
         // 2. 최대값 기반 스레드 정보 재구성 ---
-        LinkedMap<String,Object> threadMap = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT,2);
-        threadMap.put("active", maxSnapshot.thread); 	// 최대 활성 스레드 수
-        threadMap.put("daemon", maxSnapshot.daemon); 	// 최대 데몬 스레드 수
-        
-        LinkedMap<String,Object> map = MapFactory.createObjectMap(TypeRegistry.MAP_LINKEDMAP_OBJECT,3);
-        map.put("timestamp"	, System.currentTimeMillis()); 
-    	map.put("memory"	, memoryMap);
-    	map.put("thread"	, threadMap);
+        map.put("th_active", maxSnapshot.thread); 	// 최대 활성 스레드 수
+        map.put("th_daemon", maxSnapshot.daemon); 	// 최대 데몬 스레드 수
         
     	try {
     		// System property가 true일 경우 상세 로깅 (최대값 기준)
