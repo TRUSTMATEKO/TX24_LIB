@@ -8,7 +8,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,27 +26,41 @@ import kr.tx24.lib.mapper.JacksonUtils;
 public class DBManager {
 	
 	private static Logger logger = LoggerFactory.getLogger(DBManager.class);
+	private static volatile boolean initialized = false;
 	private static HikariDataSource ds		= null;
 	private String error					= "";
 	public static boolean injectionFilter	= false;
 	
-	private static final AtomicBoolean shutdownHookRegistered = new AtomicBoolean(false);
-	
+
 	public DBManager() throws Exception {
 		init();
+		
+		if(ds == null || !initialized) {
+            throw new Exception("Database initialization failed - DataSource is null");
+        }
 	}
 	
 
 	
 	
-	private synchronized void init() {
+	private synchronized void init() throws Exception{
 		if(ds != null) {
 			return;
 		}else {
 			try {
+				
+				
 				HikariConfig config = null;
 				
 				SharedMap<String,Object> dbMap = loadConfig();	
+				
+				
+				try {
+					Class.forName(dbMap.getString("driver"));
+				} catch(ClassNotFoundException e) {
+					throw new Exception("jdbc driver not installed "+dbMap.getString("driver"), e);
+				}
+				
 				
 				config = new HikariConfig();
 				config.setJdbcUrl(dbMap.getString("jdbcurl"));
@@ -86,12 +99,10 @@ public class DBManager {
 				DBManager.injectionFilter = dbMap.isTrue("injectionFilter");
 				
 				ds = new HikariDataSource(config);
+				
+				initialized = true; 
 				System.out.print("Jdbc        : Pool initialized");
-				
-				
-				registerShutdownHook();
-				
-			
+
 				
 			}catch(Exception e) {
 				System.out.print("Jdbc        : initalize exception "+e.getMessage());
@@ -101,18 +112,7 @@ public class DBManager {
 	}
 	
 	
-	private void registerShutdownHook() {
-		if (shutdownHookRegistered.compareAndSet(false, true)) {
-			Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-				try {
-					DBManager.shutdown(); 
-					 System.err.println("Jdbc         : connection shutdown ");
-				} catch (Exception e) {
-					logger.error("ShutdownHook - Failed to close datasource", e);
-				}
-			}, "ShutdownHook-DBManager"));
-		}
-	}
+
 	
 	private static SharedMap<String,Object> loadConfig() throws Exception{
 		Path configPath = SystemUtils.getDatabaseConfigPath();
@@ -122,7 +122,7 @@ public class DBManager {
 	    }
 
 	    SharedMap<String, Object> map = new JacksonUtils().fromJson(configPath, TypeRegistry.MAP_SHAREDMAP_OBJECT);
-	    logger.info(map.toJson());
+	
 	    if (map != null && map.containsKey("password")) {
 	        String password = map.getString("password");
 	        if (password != null && password.startsWith("ENC:")) {
@@ -151,8 +151,19 @@ public class DBManager {
 	
 	public static void shutdown() {
 		if (ds != null) {
-            ds.close();
-            ds = null;
+           
+			try {
+	            if (ds.isClosed()) {
+	                ds = null;
+	                return;
+	            }
+	            ds.close();
+	            
+	        } catch (NoClassDefFoundError e) {
+	        } catch (Exception e) {
+	        } finally {
+	            ds = null;
+	        }	
 		}
 	}
 	

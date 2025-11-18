@@ -245,7 +245,7 @@ public class Create {
 			
 			
 			conn.setAutoCommit(false);
-			DBUtils.setValues(pstmt,record.values());
+			DBUtils.setValues(pstmt,record);
 			result  	= pstmt.executeUpdate();
 			
 			conn.commit();
@@ -324,7 +324,7 @@ public class Create {
 			conn		= db.getConnection();
 			pstmt		= conn.prepareStatement(query,Statement.RETURN_GENERATED_KEYS);
 			
-			DBUtils.setValues(pstmt,record.values());
+			DBUtils.setValues(pstmt,record);
 			
 
 			result 	= pstmt.executeUpdate();
@@ -429,7 +429,7 @@ public class Create {
                 conn.setAutoCommit(false);
                 
                 pstmt = conn.prepareStatement(query);
-                DBUtils.setValues(pstmt, snapshot.values());
+                DBUtils.setValues(pstmt, snapshot);
                 result = pstmt.executeUpdate();
                 
                 conn.commit();

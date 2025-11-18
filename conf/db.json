@@ -1,7 +1,7 @@
 {
   "jdbcurl"     : "jdbc:mariadb://112.175.48.155:13306",
-  "username"    : "mik",
-  "password"    : "mik1016!",
+  "username"    : "tx24",
+  "password"    : "tm_1qa2ws!",
   "driver"      : "org.mariadb.jdbc.Driver",
   "pool"        : "POOLNAME",
   "max"         : 10,

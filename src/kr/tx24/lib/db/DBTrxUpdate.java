@@ -109,7 +109,7 @@ public class DBTrxUpdate{
 				
 				if(data.hasValue()) {
 					pstmt = conn.prepareStatement(data.query);
-					DBUtils.setValues(pstmt,data.record.values());
+					DBUtils.setValues(pstmt,data.record);
 					result[i]  = pstmt.executeUpdate();
 					pstmt.close();
 				}else {

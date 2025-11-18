@@ -115,7 +115,7 @@ public class DBTrx{
 		long startTime = System.nanoTime();
 		try {
 			pstmt		= conn.prepareStatement(query);			
-			DBUtils.setValues(pstmt,update.getRecord().values());
+			DBUtils.setValues(pstmt,update.getRecord());
 			result  	= pstmt.executeUpdate();
 		}catch(SQLException t){
 			throw new DBException("Failed to execute update", query, t);
@@ -185,7 +185,7 @@ public class DBTrx{
 		long startTime = System.nanoTime();
 		try {
 			pstmt		= conn.prepareStatement(query);			
-			DBUtils.setValues(pstmt,create.getRecord().values());
+			DBUtils.setValues(pstmt,create.getRecord());
 			result  	= pstmt.executeUpdate();
 		}catch(SQLException t){
 			throw new DBException("Failed to execute insert", query, t);
@@ -270,7 +270,7 @@ public class DBTrx{
 		long startTime = System.nanoTime();
 		try {
 			pstmt		= conn.prepareStatement(query);
-			DBUtils.setValues(pstmt, values.toArray());
+			DBUtils.setValues(pstmt, values);
 			rset		= pstmt.executeQuery();
 			if(rset != null) {
 				records = new RecordSet(rset);

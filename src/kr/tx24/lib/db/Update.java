@@ -408,7 +408,7 @@ public class Update {
 			conn		= db.getConnection();
 			pstmt		= conn.prepareStatement(query);
 			
-			DBUtils.setValues(pstmt,record.values());
+			DBUtils.setValues(pstmt,record);
 			
 			/* 아래 코드도 정상 동작할 것이다. 그러나 정확한 형변환을하기 위하여 위의 방법을 사용한다.
 			List<Object> list = new ArrayList<>(record.values());
@@ -455,7 +455,7 @@ public class Update {
 			conn		= db.getConnection();
 			pstmt		= conn.prepareStatement(query);
 			
-			DBUtils.setValues(pstmt,record.values());
+			DBUtils.setValues(pstmt,record);
 			
 			/* 아래 코드도 정상 동작할 것이다. 그러나 정확한 형변환을하기 위하여 위의 방법을 사용한다.
 			List<Object> list = new ArrayList<>(record.values());
@@ -549,7 +549,7 @@ public class Update {
                 conn.setAutoCommit(false);
                 
                 pstmt = conn.prepareStatement(query);
-                DBUtils.setValues(pstmt, snapshot.values());
+                DBUtils.setValues(pstmt, snapshot);
                 result = pstmt.executeUpdate();
                 
                 conn.commit();

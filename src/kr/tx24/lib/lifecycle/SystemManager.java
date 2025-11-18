@@ -84,7 +84,7 @@ public class SystemManager extends Thread {
 	        System.out.println("system shutdown ... ");
 	        
 	    } catch (Throwable t) {
-	        System.err.println("shutdown error " + CommonUtils.getExceptionMessage(t));
+	        //System.err.println("shutdown error " + CommonUtils.getExceptionMessage(t));
 	    } finally {
 	        System.out.println("system exit ");
 	    }

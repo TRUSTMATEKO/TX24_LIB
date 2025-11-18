@@ -534,95 +534,174 @@ public class DBUtils {
 		return result;
 	}
 	
+	
+	/**
+     * PreparedStatement에 가변인자로 값 설정
+     * @param ps PreparedStatement
+     * @param args 바인딩할 값들
+     */
 	public static void setValues(PreparedStatement ps, Object... args) throws SQLException {
-	    if (args == null || args.length == 0) {
-	        return; // 값이 없으면 바로 종료
-	    }
-
-	    int idx = 1;
-
-	    for (Object arg : args) {
-	        try {
-	            if (arg == null) {
-	                ps.setObject(idx, null);
-	            } else if (arg instanceof String s) {
-	                if (DBManager.injectionFilter) {
-	                	ps.setString(idx, DBManager.injectionFilter ? SecurityUtils.escapeHtml(s) : s);
-	                } else {
-	                    ps.setString(idx, s);
-	                }
-	            } else if (arg instanceof Integer i) {
-	                ps.setInt(idx, i);
-	            } else if (arg instanceof Long l) {
-	                ps.setLong(idx, l);
-	            } else if (arg instanceof Double d) {
-	                ps.setDouble(idx, d);
-	            } else if (arg instanceof Float f) {
-	                ps.setFloat(idx, f);
-	            } else if (arg instanceof BigInteger bi) {
-	            	ps.setBigDecimal(idx, SecurityUtils.toBigDecimal(bi));
-	            } else if (arg instanceof BigDecimal bd) {
-	                ps.setBigDecimal(idx, bd);
-	            } else if (arg instanceof Timestamp ts) {
-	                ps.setTimestamp(idx, ts);
-	            } else if (arg instanceof java.sql.Date sqlDate) {
-	                ps.setDate(idx, sqlDate);
-	            } else if (arg instanceof java.util.Date utilDate) {
-	                ps.setTimestamp(idx, new Timestamp(utilDate.getTime()));
-	            } else if (arg instanceof Time t) {
-	                ps.setTime(idx, t);
-	            } else if (arg instanceof Byte b) {
-	                ps.setByte(idx, b);
-	            } else if (arg instanceof byte[] bytes) {
-	                ps.setBytes(idx, bytes);
-	            } else {
-	                ps.setObject(idx, arg);
-	                
-	                logger.info("PreparedStatement fallback: type [{}] mapped using setObject()", arg.getClass().getName());
-	            }
-	        } catch (Exception e) {
-	        	logger.warn("Failed to bind parameter at index {} with value [{}] (type {}). Using setObject() fallback. Cause: {}",
-	        			idx,
-                        (arg == null ? "null" : arg.toString()),
-                        (arg == null ? "null" : arg.getClass().getName()),
-                        e.toString());
-	            ps.setObject(idx, arg); // 최종 fallback
-	        }
-	        idx++;
-	    }
-	}
-	
-	
-	public static void setValues(PreparedStatement ps, Map<String, ?> record) throws SQLException {
-        if (ps == null) throw new IllegalArgumentException("PreparedStatement is null");
-        if (record == null || record.isEmpty()) return;
-
-        // Runtime check for order-preserving map types
-        boolean ordered =
-                (record instanceof LinkedHashMap) ||
-                (record instanceof SortedMap) ||
-                record.getClass().getName().contains("LinkedMap"); // e.g. LinkedMap
-
-        if (!ordered) {
-            throw new IllegalArgumentException("Record Map must be order-preserving (e.g. LinkedHashMap, SortedMap or LinkedMap). Provided: "
-                    + record.getClass().getName());
+        if (args == null || args.length == 0) {
+            return;
         }
 
-        // 모든 값을 Object[]로 변환 후 한 번에 바인딩
-        setValues(ps, record.values().toArray());
+        int idx = 1;
+        for (Object arg : args) {
+            bindValue(ps, idx++, arg);
+        }
     }
 	
 	
-	public static void setValues(PreparedStatement ps, LinkedMap<String, ?> record) throws SQLException {
-        if (ps == null) throw new IllegalArgumentException("PreparedStatement is null");
-        if (record == null || record.isEmpty()) return;
+	
+	/**
+     * PreparedStatement에 Map의 값들을 순서대로 설정
+     * @param ps PreparedStatement
+     * @param record 순서가 보장되는 Map (LinkedHashMap, SortedMap, LinkedMap)
+     */
+	public static void setValues(PreparedStatement ps, Map<String, ?> record) throws SQLException {
+        if (ps == null) {
+            throw new IllegalArgumentException("PreparedStatement is null");
+        }
+        if (record == null || record.isEmpty()) {
+            return;
+        }
 
-        // 모든 값을 Object[]로 변환 후 한 번에 바인딩
-        setValues(ps, record.values().toArray());
+        // 순서 보장 Map 타입 체크
+        boolean ordered = (record instanceof LinkedHashMap) ||
+                         (record instanceof SortedMap) ||
+                         record.getClass().getName().contains("LinkedMap");
+
+        if (!ordered) {
+            throw new IllegalArgumentException(
+                "Record Map must be order-preserving (e.g. LinkedHashMap, SortedMap or LinkedMap). " +
+                "Provided: " + record.getClass().getName()
+            );
+        }
+
+        int idx = 1;
+        for (Object value : record.values()) {
+            bindValue(ps, idx++, value);
+        }
     }
 	
 	
+	/**
+     * PreparedStatement에 LinkedMap의 값들을 순서대로 설정
+     * @param ps PreparedStatement
+     * @param record LinkedMap
+     */
+    public static void setValues(PreparedStatement ps, LinkedMap<String, ?> record) throws SQLException {
+        if (ps == null) {
+            throw new IllegalArgumentException("PreparedStatement is null");
+        }
+        if (record == null || record.isEmpty()) {
+            return;
+        }
+
+        int idx = 1;
+        for (Object value : record.values()) {
+            bindValue(ps, idx++, value);
+        }
+    }
 	
+    /**
+     * PreparedStatement에 Collection의 값들을 순서대로 설정
+     * @param ps PreparedStatement
+     * @param values Collection
+     */
+    public static void setValues(PreparedStatement ps, Collection<?> values) throws SQLException {
+        if (ps == null) {
+            throw new IllegalArgumentException("PreparedStatement is null");
+        }
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+
+        int idx = 1;
+        for (Object value : values) {
+            bindValue(ps, idx++, value);
+        }
+    }
+    
+    /**
+     * 단일 값을 PreparedStatement의 지정된 인덱스에 바인딩
+     * @param ps PreparedStatement
+     * @param idx 파라미터 인덱스 (1부터 시작)
+     * @param arg 바인딩할 값
+     */
+    private static void bindValue(PreparedStatement ps, int idx, Object arg) throws SQLException {
+        try {
+            if (arg == null) {
+                ps.setObject(idx, null);
+                
+            } else if (arg instanceof String s) {
+                if (DBManager.injectionFilter) {
+                    ps.setString(idx, SecurityUtils.escapeHtml(s));
+                } else {
+                    ps.setString(idx, s);
+                }
+                
+            } else if (arg instanceof Integer i) {
+                ps.setInt(idx, i);
+                
+            } else if (arg instanceof Long l) {
+                ps.setLong(idx, l);
+                
+            } else if (arg instanceof Double d) {
+                ps.setDouble(idx, d);
+                
+            } else if (arg instanceof Float f) {
+                ps.setFloat(idx, f);
+                
+            } else if (arg instanceof BigInteger bi) {
+                ps.setBigDecimal(idx, SecurityUtils.toBigDecimal(bi));
+                
+            } else if (arg instanceof BigDecimal bd) {
+                ps.setBigDecimal(idx, bd);
+                
+            } else if (arg instanceof Timestamp ts) {
+                ps.setTimestamp(idx, ts);
+                
+            } else if (arg instanceof java.sql.Date sqlDate) {
+                ps.setDate(idx, sqlDate);
+                
+            } else if (arg instanceof java.util.Date utilDate) {
+                ps.setTimestamp(idx, new Timestamp(utilDate.getTime()));
+                
+            } else if (arg instanceof Time t) {
+                ps.setTime(idx, t);
+                
+            } else if (arg instanceof Boolean bool) {
+                ps.setBoolean(idx, bool);
+                
+            } else if (arg instanceof Byte b) {
+                ps.setByte(idx, b);
+                
+            } else if (arg instanceof byte[] bytes) {
+                ps.setBytes(idx, bytes);
+                
+            } else {
+                // 알 수 없는 타입은 setObject로 처리
+                ps.setObject(idx, arg);
+                
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Parameter at index {} (type {}) bound using setObject()", 
+                                idx, arg.getClass().getName());
+                }
+            }
+            
+        } catch (SQLException e) {
+            logger.warn("Failed to bind parameter at index {} with value [{}] (type {}). " +
+                       "Using setObject() fallback. Cause: {}",
+                       idx,
+                       arg,
+                       arg.getClass().getName(),
+                       e.toString());
+            
+            // 최종 fallback
+            ps.setObject(idx, arg);
+        }
+    }
 
 }
 
