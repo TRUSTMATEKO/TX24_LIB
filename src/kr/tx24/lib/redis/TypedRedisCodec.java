@@ -17,7 +17,6 @@ import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import io.lettuce.core.codec.RedisCodec;
-import kr.tx24.lib.lang.CommonUtils;
 
 /**
  * 타입 정보를 자동으로 보존하는 Redis Codec

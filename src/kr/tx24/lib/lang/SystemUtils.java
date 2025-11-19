@@ -61,6 +61,7 @@ public class SystemUtils {
     public static final String REDIS_STORAGE_TRX 	= "SYS_MSG_TRX";
     public static final String REDIS_STORAGE_JVM 	= "SYS_MSG_JVM";
     public static final String REDIS_STORAGE_MESSAGE= "SYS_MSG_MESSAGE";
+    public static final String REDIS_STORAGE_MESSAGE_QUEUE= "SYS_MSG_MESSAGE_QUEUE";
     public static final String REDIS_STORAGE_MESSAGE_RESULT = "SYS_MSG_MESSAGE_RESULT";
 
    
@@ -145,12 +146,12 @@ public class SystemUtils {
     	
         scheduler.execute(() -> {
             try {
-                Thread.sleep(200);
+                Thread.sleep(100);
                 synchronized (SystemUtils.class) {
                     if (!startLazyLoader) {
                         JvmStatusManager.initialize();
                         if(Files.exists(getLoadBalanceConfigPath())) {
-                        	LoadBalancer.start();
+                        	LoadBalancer.start(getLoadBalanceConfigPath());
                         }
                         startLazyLoader = true;
                     }

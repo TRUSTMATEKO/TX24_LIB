@@ -1028,6 +1028,10 @@ public final class RedisUtils {
     public static Object lpop(String key) {
         return Redis.sync().lpop(key);
     }
+    
+    public static Object lpop(String key,long count) {
+        return Redis.sync().lpop(key,count);
+    }
 
     /**
      * List 오른쪽에서 값 제거 및 반환 (RPOP)
@@ -1044,6 +1048,11 @@ public final class RedisUtils {
     public static Object rpop(String key) {
         return Redis.sync().rpop(key);
     }
+    
+    public static Object rpop(String key,long count) {
+        return Redis.sync().rpop(key,count);
+    }
+    
 
     /**
      * List 범위 조회 (LRANGE)

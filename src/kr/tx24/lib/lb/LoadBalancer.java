@@ -21,14 +21,13 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 
-import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;
 
 public class LoadBalancer {
 
     private static final Logger logger = LoggerFactory.getLogger(LoadBalancer.class);
 
-    private static final Path LB_CONF = SystemUtils.getLoadBalanceConfigPath();
+
     private static ConcurrentHashMap<String, ConcurrentHashMap<String, Integer>> SERVER_POOLS;
     private static ConcurrentHashMap<String, List<String>> SERVER_LIST;
     private static ConcurrentHashMap<String, AtomicInteger> SERVER_POSITION;
@@ -45,13 +44,13 @@ public class LoadBalancer {
         return enabled;
     }
 
-    public static void start() {
-        start(DEFAULT_INTERVAL);
+    public static void start(Path lbConfigPath) {
+        start(DEFAULT_INTERVAL,lbConfigPath);
     }
     
     
 
-    public static void start(int intervalSeconds) {
+    public static void start(int intervalSeconds,Path lbConfigPath) {
         synchronized (START_LOCK) {
             if (started) {
                 logger.warn("LoadBalancer is already started. Ignoring duplicate start() call.");
@@ -68,13 +67,13 @@ public class LoadBalancer {
             lastConfigModified = 0;
             scheduler = Executors.newSingleThreadScheduledExecutor();
             
-            File configFile = LB_CONF.toFile();
-            if(!Files.exists(LB_CONF)) {
-                logger.error("LoadBalancer config not found: {}", LB_CONF);
+            File configFile = lbConfigPath.toFile();
+            if(!Files.exists(lbConfigPath)) {
+                logger.error("LoadBalancer config not found: {}", lbConfigPath);
                 return;
             }
 
-            logger.info("LoadBalancer config: {}", LB_CONF);
+            logger.info("LoadBalancer config: {}", lbConfigPath);
             
             // 즉시 초기 설정 로드   
             reloadConfigIfModified(configFile);

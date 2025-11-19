@@ -10,11 +10,11 @@ import kr.tx24.inet.server.INetServer;
 import kr.tx24.lib.db.DBManager;
 import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.inter.INet;
-import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.lib.logback.RedisAppender;
 import kr.tx24.lib.redis.Redis;
 import kr.tx24.lib.redis.RedisPubSub;
+import kr.tx24.lib.redis.RedisText;
 import kr.tx24.was.main.Server;
 
 public class SystemManager extends Thread {
@@ -80,6 +80,7 @@ public class SystemManager extends Thread {
 	        sleep(200);
 	        
 	        shutdownSafely("Redis"				, () -> Redis.shutdown());
+	        shutdownSafely("RedisText"			, () -> RedisText.shutdown());
 	        shutdownSafely("RedisPubSub"		, () -> RedisPubSub.shutdown());
 	        
 	        sleep(100);
