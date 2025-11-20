@@ -61,6 +61,7 @@ public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
         YAMLMapper yamlMapper = new YAMLMapper();
         yamlMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
         yamlMapper.enable(SerializationFeature.INDENT_OUTPUT);
+        yamlMapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         return yamlMapper;
     }
 

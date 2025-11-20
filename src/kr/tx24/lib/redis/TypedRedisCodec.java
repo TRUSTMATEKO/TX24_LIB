@@ -64,6 +64,8 @@ public class TypedRedisCodec implements RedisCodec<String, Object> {
         mapper.registerModule(new JavaTimeModule());
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         
+        
+        mapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         // 알 수 없는 속성 무시 (하위 호환성)
         mapper.configure(
             com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,false

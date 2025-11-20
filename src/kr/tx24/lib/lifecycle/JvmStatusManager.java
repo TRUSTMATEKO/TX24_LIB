@@ -26,7 +26,7 @@ public class JvmStatusManager {
 	
     private static final long SAMPLING_PERIOD_SECONDS = 60; 			// 데이터 샘플링 주기: 1분
     private static final long DEFAULT_REPORT_PERIOD_MINUTES = 5; 		// 보고 주기의 기본값 (5분)
-    private static final double HIGH_USAGE_THRESHOLD = 0.70;			// 메모리 사용량 경고 임계치 (80%)
+    private static final double HIGH_USAGE_THRESHOLD = 0.90;			// 메모리 사용량 경고 임계치 (90%)
     private static final String JVM_REPORT_PROPERTY = "JVM_REPORT";	// 상세 로깅 활성화 시스템 프로퍼티
     
     // 보고 주기 동안 관찰된 최대 지표 값을 저장하는 스냅샷

@@ -14,6 +14,7 @@ import kr.tx24.inet.route.Router;
 import kr.tx24.inet.util.INetRespUtils;
 import kr.tx24.inet.util.INetUtils;
 import kr.tx24.lib.inter.INet;
+import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;
 
@@ -233,7 +234,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
             .append("\nrequest \n")
             .append("head : ").append(jsonUtils.toJson(inet.head()))
             .append("\n")
-            .append("data : ").append(jsonUtils.toJson(inet.data()));
+            .append("data : ").append(CommonUtils.cut(jsonUtils.toJson(inet.data()),1024));
             logger.info(sb.toString());
             
             

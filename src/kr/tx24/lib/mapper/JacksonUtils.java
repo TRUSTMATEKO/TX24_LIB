@@ -159,6 +159,7 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
         ObjectMapper mapper = new ObjectMapper();
         mapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
         mapper.enable(SerializationFeature.INDENT_OUTPUT); // 기본 pretty format
+        mapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         return mapper;
     }
     

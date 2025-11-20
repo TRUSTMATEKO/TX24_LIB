@@ -98,6 +98,7 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
         XmlMapper xmlMapper = new XmlMapper();
         xmlMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
         xmlMapper.enable(SerializationFeature.INDENT_OUTPUT);
+        xmlMapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         return xmlMapper;
     }
 

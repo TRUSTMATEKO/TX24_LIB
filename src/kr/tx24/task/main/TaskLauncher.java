@@ -5,7 +5,6 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.task.config.TaskConfig;
 
@@ -23,8 +22,11 @@ public class TaskLauncher {
     
     private static TaskScheduler scheduler;
     
-    public static void main(String[] args) {
-        
+    public TaskLauncher() {
+    }
+    
+    
+    public void start() {
     	logger.info("Task Scheduler System");
         
         try {
@@ -62,6 +64,11 @@ public class TaskLauncher {
             logger.warn("Fatal error in TaskLauncher / TaskLauncher에서 치명적 오류 발생", e);
             System.exit(1);
         }
+    }
+    
+    public static void main(String[] args) {
+        new TaskLauncher().start();
+    	
     }
     
 

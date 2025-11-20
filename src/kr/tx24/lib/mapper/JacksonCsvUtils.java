@@ -147,6 +147,7 @@ public class JacksonCsvUtils {
         CsvMapper csvMapper = new CsvMapper();
         csvMapper.setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL);
         csvMapper.disable(SerializationFeature.INDENT_OUTPUT);
+        csvMapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         return csvMapper;
     }
     
