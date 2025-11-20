@@ -9,7 +9,7 @@ import io.netty.channel.ChannelHandlerContext;
 import kr.tx24.inet.mapper.Autowired;
 import kr.tx24.inet.mapper.Data;
 import kr.tx24.inet.mapper.Head;
-import kr.tx24.lib.inter.INetB;
+import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.map.LinkedMap;
 
 public class RouteInvoker {
@@ -39,7 +39,7 @@ public class RouteInvoker {
     /**
      * 라우트 메서드 실행
      */
-    public Object invoke(ChannelHandlerContext ctx, INetB inet) throws Exception {
+    public Object invoke(ChannelHandlerContext ctx, INet inet) throws Exception {
         // 1. 컨트롤러 인스턴스 생성
         Object controller = createController(ctx, inet);
         
@@ -51,7 +51,7 @@ public class RouteInvoker {
     }
     
     
-    private Object createController(ChannelHandlerContext ctx, INetB inet) throws Exception {
+    private Object createController(ChannelHandlerContext ctx, INet inet) throws Exception {
         Constructor<?>[] constructors = controllerClass.getDeclaredConstructors();
         
         // @Autowired 생성자 개수 확인
@@ -95,7 +95,7 @@ public class RouteInvoker {
 
     private Object instantiateWithAutowired(Constructor<?> constructor, 
                                            ChannelHandlerContext ctx, 
-                                           INetB inet) throws Exception {
+                                           INet inet) throws Exception {
         constructor.setAccessible(true);
         
         Class<?>[] paramTypes = constructor.getParameterTypes();
@@ -118,7 +118,7 @@ public class RouteInvoker {
     
     
     
-    private Object[] prepareArguments(ChannelHandlerContext ctx, INetB inet) {
+    private Object[] prepareArguments(ChannelHandlerContext ctx, INet inet) {
         Object[] args = new Object[parameterSuppliers.length];
         
         ThreadLocalContext.set(ctx, inet);
@@ -137,7 +137,7 @@ public class RouteInvoker {
         Class<?> type = param.getType();
         
         // INet 타입
-        if (INetB.class.isAssignableFrom(type)) {
+        if (INet.class.isAssignableFrom(type)) {
             return () -> ThreadLocalContext.getINet();
         }
         
@@ -174,10 +174,10 @@ public class RouteInvoker {
         };
     }
     
-    private Object resolveParameter(Class<?> type, ChannelHandlerContext ctx, INetB inet) 
+    private Object resolveParameter(Class<?> type, ChannelHandlerContext ctx, INet inet) 
             throws Exception {
         
-        if (INetB.class.isAssignableFrom(type)) {
+        if (INet.class.isAssignableFrom(type)) {
             return inet;
         } else if (ChannelHandlerContext.class.isAssignableFrom(type)) {
             return ctx;

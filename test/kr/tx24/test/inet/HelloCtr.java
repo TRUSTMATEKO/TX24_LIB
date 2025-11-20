@@ -10,7 +10,7 @@ import kr.tx24.inet.mapper.Data;
 import kr.tx24.inet.mapper.Head;
 import kr.tx24.inet.mapper.Route;
 import kr.tx24.inet.util.INetRespUtils;
-import kr.tx24.lib.inter.INetB;
+import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.mapper.JacksonUtils;
 
@@ -21,7 +21,7 @@ public class HelloCtr {
 	
 	
 	@Autowired
-	private INetB inet;
+	private INet inet;
 	
 	@Autowired
 	private ChannelHandlerContext ctx;
@@ -33,14 +33,14 @@ public class HelloCtr {
 	 * @Autowired가 있으면 → 그 생성자 사용 , 없으면 → 기본 생성자 사용 , 둘 다 없으면 → 에러
 	 */
 	@Autowired
-	public HelloCtr(ChannelHandlerContext ctx, INetB inet) {
+	public HelloCtr(ChannelHandlerContext ctx, INet inet) {
 		this.ctx = ctx;
 		this.inet = inet;
 	}
 	
 	
 	@Route(target ="/")
-	public INetB init() {
+	public INet init() {
 		
 		logger.info("Autowhired INet : \nhead : {},\ndata:{}", new JacksonUtils().toJson(this.inet.head()), new JacksonUtils().toJson(this.inet.data()));
 		
@@ -51,26 +51,26 @@ public class HelloCtr {
 	
 	
 	@Route(target ="/head")
-	public INetB head(@Head LinkedMap<String,Object> head) {
+	public INet head(@Head LinkedMap<String,Object> head) {
 		
 		logger.info("Autowhired INet : \nhead : {},\ndata:{}", new JacksonUtils().toJson(this.inet.head()), new JacksonUtils().toJson(this.inet.data()));
 		
 		logger.info("Autowhired head : \nhead : {}", new JacksonUtils().toJson(head));
 		
-		INetB resInet = new INetB();
+		INet resInet = new INet();
 		resInet.head(head);
 		return resInet;
 	}
 	
 	
 	@Route(target ="/data")
-	public INetB data(@Data LinkedMap<String,Object> data) {
+	public INet data(@Data LinkedMap<String,Object> data) {
 		
 		logger.info("Autowhired INet : \nhead : {},\ndata:{}", new JacksonUtils().toJson(this.inet.head()), new JacksonUtils().toJson(this.inet.data()));
 		
 		logger.info("Autowhired head : \ndata : {}", new JacksonUtils().toJson(data));
 		
-		INetB resInet = new INetB();
+		INet resInet = new INet();
 		resInet.head(data);
 		return resInet;
 	}

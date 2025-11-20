@@ -315,7 +315,7 @@ public class INet implements java.io.Serializable {
 	}
 	
 
-	private INMessage connectLb(String server, int timeout) {
+	public INMessage connectLb(String server, int timeout) {
 		INMessage send = new INMessage();
 		send.head().putAll(this.headMap);
 		send.data().putAll(this.dataMap);
@@ -348,7 +348,7 @@ public class INet implements java.io.Serializable {
 			send.message("loadbalance not found, "+server);
 			return send;
 		}
-
+         
 		INMessage recv = execute(send, host, port, timeout);
 		
 		//통신장애에 의한 실패의 경우 브로큰 서버로 등록한다.
