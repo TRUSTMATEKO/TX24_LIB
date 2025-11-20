@@ -354,9 +354,9 @@ public class INet implements java.io.Serializable {
 		//통신장애에 의한 실패의 경우 브로큰 서버로 등록한다.
 		if(!recv.successful() && recv.head.isEquals("message", TIMEOUT_CONNECT)) {
 			LoadBalancer.setBrokenServer(server, endPoint);
-			logger.info("connect failure , reconnect other server");
+			//logger.info("connect failure , reconnect other server");
 			//Broken 서버가 아닌 곳으로 다시 통신하여 결과를 전달한다.
-			return connectLb(server,timeout);
+			//return connectLb(server,timeout);
 			
 		}
 
@@ -547,7 +547,7 @@ public class INet implements java.io.Serializable {
 
 		try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
 			 ObjectInputStream in = new ObjectInputStream(bis)) {
-
+			/*
 			ObjectInputFilter filter = info -> {
 				Class<?> clazz = info.serialClass();
 				if (clazz == null) return ObjectInputFilter.Status.UNDECIDED;
@@ -575,7 +575,7 @@ public class INet implements java.io.Serializable {
 				return ObjectInputFilter.Status.REJECTED;
 			};
 			in.setObjectInputFilter(filter);
-
+			 */
 			Object obj = in.readObject();
 			if (!(obj instanceof INMessage msg)) {
 				throw new InvalidObjectException(
