@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.lib.lang.MsgUtils;
+import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.task.annotation.Task.ScheduleType;
 import kr.tx24.task.config.TaskConfig;
 
@@ -309,12 +310,12 @@ public class TaskScheduler {
             task.run();
             
             long duration = ChronoUnit.MILLIS.between(startTime, LocalDateTime.now(zoneId));
-            
-            logger.info("\n#Task {}\n - complete , Duration :{}ms\n - next scheduled : {}", 
-                taskConfig.name(),
-                duration,
-                DateUtils.toString(nextRun, "yyyy-MM-dd HH:mm:ss"));
-                
+            if(SystemUtils.deepview()) {
+	            logger.info("\n#Task {}\n - complete , Duration :{}ms\n - next scheduled : {}", 
+	                taskConfig.name(),
+	                duration,
+	                DateUtils.toString(nextRun, "yyyy-MM-dd HH:mm:ss"));
+            }
         } catch (Exception e) {
             logger.warn("Task execution failed : '{}' , Error : {}", 
                 taskConfig.name(), e.getMessage(), e);

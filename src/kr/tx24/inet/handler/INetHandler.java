@@ -13,7 +13,7 @@ import kr.tx24.inet.route.RouteInvoker;
 import kr.tx24.inet.route.Router;
 import kr.tx24.inet.util.INetRespUtils;
 import kr.tx24.inet.util.INetUtils;
-import kr.tx24.lib.inter.INet;
+import kr.tx24.lib.inter.INetB;
 import kr.tx24.lib.lang.IDUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;
@@ -21,7 +21,7 @@ import kr.tx24.lib.mapper.JacksonUtils;
 /**
  * INet 프로토콜 핸들러
  */
-public class INetHandler extends SimpleChannelInboundHandler<INet> {
+public class INetHandler extends SimpleChannelInboundHandler<INetB> {
     
     private static final Logger logger = LoggerFactory.getLogger(INetHandler.class);
     
@@ -40,7 +40,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, INet inet) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, INetB inet) throws Exception {
     	String extTrxId = System.currentTimeMillis()+ctx.channel().id().asShortText();// 트랜잭션 ID 생성
         inet.head().put(INetUtils.EXT_TRX_ID, extTrxId);
         MDC.put("id", extTrxId);													// MDC에 트랜잭션 ID 설정
@@ -68,9 +68,9 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
         }
     }
 
-    private void processRequest(ChannelHandlerContext ctx, RouteInvoker invoker,INet inet, String extTrxId) {
+    private void processRequest(ChannelHandlerContext ctx, RouteInvoker invoker,INetB inet, String extTrxId) {
     	
-		INet resInet = new INet()													// 기본 응답 객체 생성
+		INetB resInet = new INetB()													// 기본 응답 객체 생성
 				.head("id", ctx.channel().id().asShortText())
 				.head("result", true)
 				.head("message", "successful");
@@ -131,7 +131,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
         if (returnObj instanceof String) {
             responseUtils.data("response", returnObj);
             
-        } else if (returnObj instanceof INet inet) {
+        } else if (returnObj instanceof INetB inet) {
             responseUtils.head(inet.head());
             responseUtils.data(inet.data());
             
@@ -216,7 +216,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
      * 에러 응답 전송
      */
     private void sendError(ChannelHandlerContext ctx, String message) {
-        INet errorInet = new INet()
+        INetB errorInet = new INetB()
                 .head("result", false)
                 .head("message", message);
 
@@ -228,7 +228,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
     }
     
     
-    private void logRequest(RouteInvoker invoker, INet inet) {
+    private void logRequest(RouteInvoker invoker, INetB inet) {
         if (invoker.isLoggable() || SystemUtils.deepview()) {
             StringBuilder sb =new StringBuilder()
             .append("\nrequest \n")

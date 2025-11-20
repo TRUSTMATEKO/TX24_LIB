@@ -257,6 +257,11 @@ public final class MapFactory {
 	public static <T extends Map<String,Object>> T createObjectMap(TypeRegistry typeRegistry) {
 	    return createObjectMap(typeRegistry,DEFAULT_INITIAL_CAPACITY);
 	}
+	
+	
+	public static <T extends Map<String,String>> T createStringMap(TypeRegistry typeRegistry) {
+	    return createStringMap(typeRegistry,DEFAULT_INITIAL_CAPACITY);
+	}
     
     /**
      * TypeRegistry를 기반으로 초기 용량을 지정하여 Map&lt;String, Object&gt; 인스턴스 생성
@@ -283,20 +288,30 @@ public final class MapFactory {
 	            return (T) new ConcurrentHashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_TREEMAP_OBJECT:
 	            return (T) new TreeMap<String, Object>();
+	        default:
+	            throw new IllegalArgumentException("Unsupported TypeRegistry: " + typeRegistry);
+	    }
+	}
+    
+    
+    @SuppressWarnings("unchecked")
+	public static <T extends Map<String,String>> T createStringMap(TypeRegistry typeRegistry, int initialCapacity) {
+	    switch (typeRegistry) {
+	       
 	        case MAP_STRING:
-	            return (T) new java.util.HashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	            return (T) new java.util.HashMap<String, String>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_LINKEDHASHMAP_STRING:
-	            return (T) new LinkedHashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	            return (T) new LinkedHashMap<String, String>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_CONCURRENTHASHMAP_STRING:
-	            return (T) new ConcurrentHashMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	            return (T) new ConcurrentHashMap<String, String>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_TREEMAP_STRING:
-	            return (T) new TreeMap<String, Object>();
+	            return (T) new TreeMap<String, String>();
 	        case MAP_SHAREDMAP_STRING:
-	            return (T) new SharedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	            return (T) new SharedMap<String, String>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_LINKEDMAP_STRING:
-	            return (T) new LinkedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	            return (T) new LinkedMap<String, String>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        case MAP_THREADSAFE_LINKEDMAP_STRING:
-	            return (T) new ThreadSafeLinkedMap<String, Object>(initialCapacity, DEFAULT_LOAD_FACTOR);
+	            return (T) new ThreadSafeLinkedMap<String, String>(initialCapacity, DEFAULT_LOAD_FACTOR);
 	        default:
 	            throw new IllegalArgumentException("Unsupported TypeRegistry: " + typeRegistry);
 	    }

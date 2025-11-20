@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import kr.tx24.lib.inter.INet;
+import kr.tx24.lib.inter.INetB;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;
 
@@ -20,14 +20,14 @@ public class INetRespUtils {
 	private static final JacksonUtils jsonUtils = new JacksonUtils();
     
     private final ChannelHandlerContext ctx;
-    private final INet resInet;
+    private final INetB resInet;
     private boolean autoClose = true;
     private long delayBeforeClose = 100L; // ms
     private boolean enableLogging = false;
     
     private INetRespUtils(ChannelHandlerContext ctx) {
         this.ctx = ctx;
-        this.resInet = new INet()
+        this.resInet = new INetB()
             .head("id", ctx.channel().id().asShortText())
             .head("result", true)
             .head("message", "successful");
@@ -47,7 +47,7 @@ public class INetRespUtils {
     }
     
 
-    public static INetRespUtils custom(ChannelHandlerContext ctx, INet inet) {
+    public static INetRespUtils custom(ChannelHandlerContext ctx, INetB inet) {
     	INetRespUtils utils = new INetRespUtils(ctx);
         utils.resInet.head().putAll(inet.head());
         utils.resInet.data().putAll(inet.data());
@@ -186,7 +186,7 @@ public class INetRespUtils {
     
     
     
-    public INet build() {
+    public INetB build() {
         return resInet;
     }
     

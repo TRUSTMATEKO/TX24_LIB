@@ -21,7 +21,6 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
-import io.netty.handler.stream.ChunkedWriteHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import kr.tx24.inet.codec.INetDecoder;
 import kr.tx24.inet.codec.INetEncoder;
@@ -34,16 +33,15 @@ import kr.tx24.lib.lang.NetUtils;
 public class INetServer{
 
 	private static final Logger logger = LoggerFactory.getLogger(INetServer.class);
-	private static final int MAX_MESSAGE_SIZE = 10*1024*1024; //10 Mega
 	
 	// Write buffer water mark 설정 (백프레셔 제어)
 	// 대용량 패킷이 증가하면 (5% 이상): ~ 1MB / 4MB로 변경
 	// 연결 수가 급증하면 (500개 이상): ~ 256KB / 1MB로 축소
-	// 응답 시간이 중요하면: 	→ 2MB / 8MB로 확대
-	private static final int LOW_WATER_MARK = 512 * 1024;      // 512KB
-    private static final int HIGH_WATER_MARK = 2 * 1024 * 1024; // 2MB
-    private static final int TCP_RCV_BUFFER_SIZE = 512 * 1024; // 512KB
-    private static final int TCP_SND_BUFFER_SIZE = 64 * 1024;  // 64KB
+	// 10M 이상을 주로 수신한다면: 	→ 2MB / 8MB로 확대
+	private static final int LOW_WATER_MARK  = 1 * 1024 * 1024;      // 1MB
+	private static final int HIGH_WATER_MARK = 4 * 1024 * 1024;      // 4MB
+	private static final int TCP_RCV_BUFFER_SIZE = 512 * 1024;       // 512KB
+	private static final int TCP_SND_BUFFER_SIZE = 64 * 1024;        // 64KB
 	
 	private static volatile  EventLoopGroup bossGroup 	= null;
 	private static volatile  EventLoopGroup workerGroup 	= null;
@@ -112,7 +110,6 @@ public class INetServer{
                             }
                             p.addLast("idleStateHandler", new IdleStateHandler(15, 120, 0));
                             p.addLast("inetDecoder", new INetDecoder());
-                            p.addLast("chunkedWriter", new ChunkedWriteHandler());
                             p.addLast("inetEncoder", new INetEncoder());
                             p.addLast("handler", new INetHandler());
                         }

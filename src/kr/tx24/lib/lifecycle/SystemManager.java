@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import kr.tx24.inet.server.INetServer;
 import kr.tx24.lib.db.DBManager;
 import kr.tx24.lib.executor.AsyncExecutor;
-import kr.tx24.lib.inter.INet;
+import kr.tx24.lib.inter.INetB;
 import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.lib.logback.RedisAppender;
 import kr.tx24.lib.redis.Redis;
@@ -65,7 +65,7 @@ public class SystemManager extends Thread {
 	        // 주의: 메서드 참조 대신 람다를 사용하여 지연 실행
 	        shutdownSafely("INetServer"			, () -> INetServer.shutdown());
 	        shutdownSafely("Tomcat Was"			, () -> Server.shutdown());
-	        shutdownSafely("INet"				, () -> INet.shutdown());
+	        shutdownSafely("INet"				, () -> INetB.shutdown());
 	        shutdownSafely("LoadBalancer"		, () -> LoadBalancer.shutdown());
 	        
 	        sleep(300);
