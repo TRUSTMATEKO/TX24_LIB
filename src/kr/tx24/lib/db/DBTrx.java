@@ -30,7 +30,7 @@ import kr.tx24.lib.lang.SystemUtils;
  * }
  */
 public class DBTrx{
-	private static Logger logger = LoggerFactory.getLogger(DBManager.class);
+	private static Logger logger = LoggerFactory.getLogger(DBTrx.class);
 	private boolean deepview 	= false;
 	private Connection conn		= null;
 	
@@ -300,7 +300,9 @@ public class DBTrx{
 			if(conn != null) {
 				conn.commit();
 			}
-			logger.info("commit transaction");
+			if(SystemUtils.deepview()) {
+				logger.info("commit transaction");
+			}
 		}catch(SQLException e){
 			logger.warn("db transaction commit failed: ",CommonUtils.getExceptionMessage(e));
 		}finally {
