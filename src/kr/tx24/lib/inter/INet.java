@@ -106,7 +106,7 @@ import kr.tx24.lib.map.TypeRegistry;
  * INMessage response = new INet("출발시스템명", "도착시스템명")
  *     .head("customKey", "customValue")
  *     .data("requestData", dataObject)
- *     .retry(3)  // 실패 시 최대 3회 재시도
+ *     .retry(3)  // 실패 시 최대 3회 재시도 , retry(3,3000) 3회 3초 delay 
  *     .connectLb("backend-service", 120000);
  * }</pre>
  * <h3>메시지 구조</h3>
@@ -175,7 +175,8 @@ public class INet implements java.io.Serializable {
 	private static volatile EventLoopGroup workerGroup;
 	private static final Object lock = new Object();
 
-	private final AtomicInteger maxRetryCount = new AtomicInteger(1);
+	private final AtomicInteger maxRetryCount 	= new AtomicInteger(1);	//기본 1회 retry
+	private final AtomicLong retryDelay 		= new AtomicLong(2000); //retry 시 sleep 
 	
 	private final INMap headMap = new INMap();
 	private final INMap dataMap = new INMap();
@@ -237,10 +238,23 @@ public class INet implements java.io.Serializable {
 	/**
 	 * connectLb 실패 시 재시도 횟수 설정
 	 * 기본 1회 재시도로 설정됨 , 재시도 안할 경우 0으로 설정 바람.
+	 * 기본 지연 시간 2초 설정 
 	 * @param retryCount 재시도 횟수 (0이면 재시도 안함, 최대 5회)
 	 * @return INet 인스턴스 (메서드 체이닝용)
 	 */
 	public INet retry(int retryCount) {
+		return retry(retryCount,this.retryDelay.get());
+	}
+	
+	/**
+	 * connectLb 실패 시 재시도 횟수 설정
+	 * 기본 1회 재시도로 설정됨 , 재시도 안할 경우 0으로 설정 바람.
+	 * 기본 지연 시간 2초 설정 , 최대 10초까지 허용함.
+	 * @param retryCount
+	 * @param delay
+	 * @return
+	 */
+	public INet retry(int retryCount, long delay) {
 		if (retryCount < 0) {
 			this.maxRetryCount.set(0);
 		} else if (retryCount > 5) {
@@ -254,7 +268,17 @@ public class INet implements java.io.Serializable {
 			logger.info("Retry count set to {}", this.maxRetryCount.get());
 		}
 		
+		if (delay < 0) {
+			this.retryDelay.set(0);
+		} else if (delay > 10000) {  // 최대 10초
+			logger.info("Retry delay {} exceeds maximum 10000ms, set to 10000", delay);
+			this.retryDelay.set(10000);
+		} else {
+			this.retryDelay.set(delay);
+		}
+		
 		return this;
+		
 	}
 	
 
@@ -391,9 +415,18 @@ public class INet implements java.io.Serializable {
 			LoadBalancer.setBrokenServer(server, endPoint);
 			
 			for (int attempt = 1; attempt <= retryCount; attempt++) {
-				if (SystemUtils.deepview()) {
-					logger.info("Retry attempt {}/{} for server {}", attempt, retryCount, server);
+				
+				try {
+					TimeUnit.MILLISECONDS.sleep(retryDelay.get()); //기본 2초의 Sleep
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					logger.warn("Retry sleep interrupted on attempt {} for server {}", attempt, server);
+					//인터럽트 발생시 retry 중지하고 리턴한다.
+					break;
 				}
+				
+				logger.info("Retry attempt {}/{} for server {}", attempt, retryCount, server);
+				
 				
 				// 새로운 서버 엔드포인트 조회
 				endPoint = LoadBalancer.getExcludeBrokenServer(server);
