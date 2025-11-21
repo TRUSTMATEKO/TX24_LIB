@@ -7,7 +7,6 @@ import java.io.Externalizable;
 import java.io.IOException;
 import java.io.InvalidObjectException;
 import java.io.ObjectInput;
-import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
@@ -102,6 +101,14 @@ import kr.tx24.lib.map.TypeRegistry;
  *     .connectLb("backend-service", 120000);
  * }</pre>
  * 
+ * <p><b>3. 로드밸런서 + 재시도 설정</b></p>
+ * <pre>{@code
+ * INMessage response = new INet("출발시스템명", "도착시스템명")
+ *     .head("customKey", "customValue")
+ *     .data("requestData", dataObject)
+ *     .retry(3)  // 실패 시 최대 3회 재시도
+ *     .connectLb("backend-service", 120000);
+ * }</pre>
  * <h3>메시지 구조</h3>
  * 
  * <p><b>Head 영역</b> (메타데이터)</p>
@@ -168,6 +175,8 @@ public class INet implements java.io.Serializable {
 	private static volatile EventLoopGroup workerGroup;
 	private static final Object lock = new Object();
 
+	private final AtomicInteger maxRetryCount = new AtomicInteger(1);
+	
 	private final INMap headMap = new INMap();
 	private final INMap dataMap = new INMap();
 
@@ -224,6 +233,30 @@ public class INet implements java.io.Serializable {
 	    headMap.putAll(message.head());
 	    dataMap.putAll(message.data());
 	}
+	
+	/**
+	 * connectLb 실패 시 재시도 횟수 설정
+	 * 기본 1회 재시도로 설정됨 , 재시도 안할 경우 0으로 설정 바람.
+	 * @param retryCount 재시도 횟수 (0이면 재시도 안함, 최대 5회)
+	 * @return INet 인스턴스 (메서드 체이닝용)
+	 */
+	public INet retry(int retryCount) {
+		if (retryCount < 0) {
+			this.maxRetryCount.set(0);
+		} else if (retryCount > 5) {
+			logger.info("Retry count {} exceeds maximum 5, set to 5", retryCount);
+			this.maxRetryCount.set(5);  // 최대 10회로 제한
+		} else {
+			this.maxRetryCount.set(retryCount);
+		}
+		
+		if (SystemUtils.deepview()) {
+			logger.info("Retry count set to {}", this.maxRetryCount.get());
+		}
+		
+		return this;
+	}
+	
 
 	public INet head(String key, Object value) {
 		this.headMap.put(key, value);
@@ -349,14 +382,57 @@ public class INet implements java.io.Serializable {
 			return send;
 		}
          
+	
+		int retryCount = this.maxRetryCount.get();
 		INMessage recv = execute(send, host, port, timeout);
 		
-		//통신장애에 의한 실패의 경우 브로큰 서버로 등록한다.
+		// 통신장애에 의한 실패의 경우 브로큰 서버로 등록하고 재시도
 		if(!recv.successful() && recv.head.isEquals("message", TIMEOUT_CONNECT)) {
 			LoadBalancer.setBrokenServer(server, endPoint);
-			//logger.info("connect failure , reconnect other server");
-			//Broken 서버가 아닌 곳으로 다시 통신하여 결과를 전달한다.
-			//return connectLb(server,timeout);
+			
+			for (int attempt = 1; attempt <= retryCount; attempt++) {
+				if (SystemUtils.deepview()) {
+					logger.info("Retry attempt {}/{} for server {}", attempt, retryCount, server);
+				}
+				
+				// 새로운 서버 엔드포인트 조회
+				endPoint = LoadBalancer.getExcludeBrokenServer(server);
+				if (endPoint == null || endPoint.trim().equals("")) {
+					logger.info("No available server for retry attempt {}", attempt);
+					send.message("No available server after " + attempt + " retry attempts");
+					break;
+				}
+				
+				// 서버 정보 파싱
+				String[] endPoints = endPoint.split(":");
+				host = endPoints[0];
+				if (endPoints.length > 1) {
+					port = Integer.parseInt(endPoints[1]);
+				} else {
+					logger.info("Invalid endpoint format for retry: {}", endPoint);
+					continue;
+				}
+				// 재시도 실행
+				recv = execute(send, host, port, timeout);
+				
+				// 성공하면 즉시 반환
+				if (recv.successful()) {
+					if (SystemUtils.deepview()) {
+						logger.info("Retry succeeded on attempt {}/{}", attempt, retryCount);
+					}
+					return recv;
+				}
+				
+				// 연결 실패 시 해당 서버도 브로큰으로 등록
+				if (recv.head.isEquals("message", TIMEOUT_CONNECT)) {
+					LoadBalancer.setBrokenServer(server, endPoint);
+				}
+			}
+			
+			// 모든 재시도 실패
+			if (!recv.successful() && SystemUtils.deepview()) {
+				logger.info("All {} retry attempts failed for server {}", retryCount, server);
+			}
 			
 		}
 
