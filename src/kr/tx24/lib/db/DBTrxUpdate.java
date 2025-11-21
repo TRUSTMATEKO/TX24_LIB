@@ -24,7 +24,7 @@ import kr.tx24.lib.map.LinkedMap;
  * trx.executeWithResult();
  */
 public class DBTrxUpdate{
-	private static Logger logger = LoggerFactory.getLogger(DBManager.class);
+	private static Logger logger = LoggerFactory.getLogger(DBTrxUpdate.class);
 	
 	
 	private List<DBSet> list = null;
