@@ -168,7 +168,7 @@ public class JvmStatusManager {
             current.used 	= Math.max(current.used, memory.getDouble("used"));
             current.total 	= Math.max(current.total, memory.getDouble("total")); 
             current.free 	= Math.max(current.free, memory.getDouble("free"));
-            current.max 	= Math.max(current.free, memory.getDouble("max")); 
+            current.max 	= Math.max(current.max, memory.getDouble("max")); 
 
             // Thread Peaks
             current.thread 	= Math.max(current.thread, thread.getInt("total"));

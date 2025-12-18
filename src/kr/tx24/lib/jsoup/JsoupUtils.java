@@ -1,9 +1,7 @@
 package kr.tx24.lib.jsoup;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -15,6 +13,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.TypeRegistry;
 
 /**
@@ -46,13 +45,13 @@ import kr.tx24.lib.map.TypeRegistry;
  * Document doc = Jsoup.parse(htmlString);
  * 
  * // ID로 테이블 찾기 (Map)
- * List<Map<String, Object>> data = HtmlUtils.parseTableById(doc, "userTable");
+ * List<LinkedMap<String, Object>> data = HtmlUtils.parseTableById(doc, "userTable");
  * 
  * // Class로 테이블 찾기 (객체)
  * List<User> users = HtmlUtils.parseTableByClass(doc, "data-table", User.class);
  * 
  * // TypeRegistry 사용
- * List<Map<String, Object>> data = HtmlUtils.parseTable(doc, "table", TypeRegistry.MAP_OBJECT);
+ * List<LinkedMap<String, Object>> data = HtmlUtils.parseTable(doc, "table", TypeRegistry.MAP_OBJECT);
  * 
  * // TypeReference 사용
  * List<User> users = HtmlUtils.parseTable(doc, "table", new TypeReference<List<User>>(){});
@@ -65,7 +64,7 @@ public class JsoupUtils {
     private static final Logger logger = LoggerFactory.getLogger(JsoupUtils.class);
     private static final ObjectMapper mapper = new ObjectMapper();
     
-    // ==================== Map<String, Object> 반환 ====================
+    // ==================== LinkedMap<String, Object> 반환 ====================
     
     /**
      * CSS 선택자로 테이블을 찾아서 파싱 (Map 반환)
@@ -73,14 +72,14 @@ public class JsoupUtils {
      * <p><b>사용 예:</b></p>
      * <pre>
      * Document doc = Jsoup.parse(html);
-     * List<Map<String, Object>> data = HtmlUtils.parseTable(doc, "#userTable");
+     * List<LinkedMap<String, Object>> data = HtmlUtils.parseTable(doc, "#userTable");
      * </pre>
      * 
      * @param doc Jsoup Document
      * @param selector CSS 선택자
-     * @return 파싱된 데이터 (List<Map<String, Object>>)
+     * @return 파싱된 데이터 (List<LinkedMap<String, Object>>)
      */
-    public static List<Map<String, Object>> parseTable(Document doc, String selector) {
+    public static List<LinkedMap<String, Object>> parseTable(Document doc, String selector) {
         if (doc == null || selector == null || selector.isEmpty()) {
             return new ArrayList<>();
         }
@@ -105,14 +104,14 @@ public class JsoupUtils {
      * <p><b>사용 예:</b></p>
      * <pre>
      * Document doc = Jsoup.parse(html);
-     * List<Map<String, Object>> data = HtmlUtils.parseTableById(doc, "userTable");
+     * List<LinkedMap<String, Object>> data = HtmlUtils.parseTableById(doc, "userTable");
      * </pre>
      * 
      * @param doc Jsoup Document
      * @param id 테이블 ID
      * @return 파싱된 데이터
      */
-    public static List<Map<String, Object>> parseTableById(Document doc, String id) {
+    public static List<LinkedMap<String, Object>> parseTableById(Document doc, String id) {
         if (doc == null || id == null || id.isEmpty()) {
             return new ArrayList<>();
         }
@@ -126,14 +125,14 @@ public class JsoupUtils {
      * <p><b>사용 예:</b></p>
      * <pre>
      * Document doc = Jsoup.parse(html);
-     * List<Map<String, Object>> data = HtmlUtils.parseTableByClass(doc, "data-table");
+     * List<LinkedMap<String, Object>> data = HtmlUtils.parseTableByClass(doc, "data-table");
      * </pre>
      * 
      * @param doc Jsoup Document
      * @param className 테이블 class명
      * @return 파싱된 데이터
      */
-    public static List<Map<String, Object>> parseTableByClass(Document doc, String className) {
+    public static List<LinkedMap<String, Object>> parseTableByClass(Document doc, String className) {
         if (doc == null || className == null || className.isEmpty()) {
             return new ArrayList<>();
         }
@@ -148,13 +147,13 @@ public class JsoupUtils {
      * <pre>
      * Document doc = Jsoup.parse(html);
      * Element table = doc.selectFirst("table");
-     * List<Map<String, Object>> data = HtmlUtils.parseTableElement(table);
+     * List<LinkedMap<String, Object>> data = HtmlUtils.parseTableElement(table);
      * </pre>
      * 
      * @param table 테이블 Element
      * @return 파싱된 데이터
      */
-    public static List<Map<String, Object>> parseTableElement(Element table) {
+    public static List<LinkedMap<String, Object>> parseTableElement(Element table) {
         if (table == null) {
             return new ArrayList<>();
         }
@@ -168,11 +167,11 @@ public class JsoupUtils {
             }
             
             // 데이터 행 추출
-            List<Map<String, Object>> result = new ArrayList<>();
+            List<LinkedMap<String, Object>> result = new ArrayList<>();
             Elements dataRows = extractDataRows(table);
             
             for (Element row : dataRows) {
-                Map<String, Object> rowData = parseRow(row, headers);
+                LinkedMap<String, Object> rowData = parseRow(row, headers);
                 if (!rowData.isEmpty()) {
                     result.add(rowData);
                 }
@@ -197,7 +196,7 @@ public class JsoupUtils {
      * Document doc = Jsoup.parse(html);
      * 
      * // Map으로
-     * List<Map<String, Object>> data = HtmlUtils.parseTable(doc, "#userTable", TypeRegistry.MAP_OBJECT);
+     * List<LinkedMap<String, Object>> data = HtmlUtils.parseTable(doc, "#userTable", TypeRegistry.MAP_OBJECT);
      * 
      * // List<String>으로
      * List<List<String>> data = HtmlUtils.parseTable(doc, "#userTable", TypeRegistry.LIST_STRING);
@@ -210,7 +209,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTable(Document doc, String selector, TypeRegistry typeRegistry) {
-        List<Map<String, Object>> mapList = parseTable(doc, selector);
+        List<LinkedMap<String, Object>> mapList = parseTable(doc, selector);
         return convertToType(mapList, typeRegistry);
     }
     
@@ -219,7 +218,7 @@ public class JsoupUtils {
      * 
      * <p><b>사용 예:</b></p>
      * <pre>
-     * List<Map<String, Object>> data = HtmlUtils.parseTableById(doc, "userTable", TypeRegistry.MAP_OBJECT);
+     * List<LinkedMap<String, Object>> data = HtmlUtils.parseTableById(doc, "userTable", TypeRegistry.MAP_OBJECT);
      * </pre>
      * 
      * @param <T> 반환 타입
@@ -229,7 +228,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableById(Document doc, String id, TypeRegistry typeRegistry) {
-        List<Map<String, Object>> mapList = parseTableById(doc, id);
+        List<LinkedMap<String, Object>> mapList = parseTableById(doc, id);
         return convertToType(mapList, typeRegistry);
     }
     
@@ -238,7 +237,7 @@ public class JsoupUtils {
      * 
      * <p><b>사용 예:</b></p>
      * <pre>
-     * List<Map<String, Object>> data = HtmlUtils.parseTableByClass(doc, "data-table", TypeRegistry.MAP_OBJECT);
+     * List<LinkedMap<String, Object>> data = HtmlUtils.parseTableByClass(doc, "data-table", TypeRegistry.MAP_OBJECT);
      * </pre>
      * 
      * @param <T> 반환 타입
@@ -248,7 +247,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableByClass(Document doc, String className, TypeRegistry typeRegistry) {
-        List<Map<String, Object>> mapList = parseTableByClass(doc, className);
+        List<LinkedMap<String, Object>> mapList = parseTableByClass(doc, className);
         return convertToType(mapList, typeRegistry);
     }
     
@@ -258,7 +257,7 @@ public class JsoupUtils {
      * <p><b>사용 예:</b></p>
      * <pre>
      * Element table = doc.selectFirst("table");
-     * List<Map<String, Object>> data = HtmlUtils.parseTableElement(table, TypeRegistry.MAP_OBJECT);
+     * List<LinkedMap<String, Object>> data = HtmlUtils.parseTableElement(table, TypeRegistry.MAP_OBJECT);
      * </pre>
      * 
      * @param <T> 반환 타입
@@ -267,7 +266,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableElement(Element table, TypeRegistry typeRegistry) {
-        List<Map<String, Object>> mapList = parseTableElement(table);
+        List<LinkedMap<String, Object>> mapList = parseTableElement(table);
         return convertToType(mapList, typeRegistry);
     }
     
@@ -289,7 +288,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTable(Document doc, String selector, Class<T> type) {
-        List<Map<String, Object>> mapList = parseTable(doc, selector);
+        List<LinkedMap<String, Object>> mapList = parseTable(doc, selector);
         return convertToType(mapList, type);
     }
     
@@ -308,7 +307,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableById(Document doc, String id, Class<T> type) {
-        List<Map<String, Object>> mapList = parseTableById(doc, id);
+        List<LinkedMap<String, Object>> mapList = parseTableById(doc, id);
         return convertToType(mapList, type);
     }
     
@@ -327,7 +326,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableByClass(Document doc, String className, Class<T> type) {
-        List<Map<String, Object>> mapList = parseTableByClass(doc, className);
+        List<LinkedMap<String, Object>> mapList = parseTableByClass(doc, className);
         return convertToType(mapList, type);
     }
     
@@ -346,7 +345,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableElement(Element table, Class<T> type) {
-        List<Map<String, Object>> mapList = parseTableElement(table);
+        List<LinkedMap<String, Object>> mapList = parseTableElement(table);
         return convertToType(mapList, type);
     }
     
@@ -368,7 +367,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTable(Document doc, String selector, TypeReference<List<T>> typeRef) {
-        List<Map<String, Object>> mapList = parseTable(doc, selector);
+        List<LinkedMap<String, Object>> mapList = parseTable(doc, selector);
         return convertToType(mapList, typeRef);
     }
     
@@ -387,7 +386,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableById(Document doc, String id, TypeReference<List<T>> typeRef) {
-        List<Map<String, Object>> mapList = parseTableById(doc, id);
+        List<LinkedMap<String, Object>> mapList = parseTableById(doc, id);
         return convertToType(mapList, typeRef);
     }
     
@@ -406,7 +405,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableByClass(Document doc, String className, TypeReference<List<T>> typeRef) {
-        List<Map<String, Object>> mapList = parseTableByClass(doc, className);
+        List<LinkedMap<String, Object>> mapList = parseTableByClass(doc, className);
         return convertToType(mapList, typeRef);
     }
     
@@ -425,7 +424,7 @@ public class JsoupUtils {
      * @return 파싱된 데이터
      */
     public static <T> List<T> parseTableElement(Element table, TypeReference<List<T>> typeRef) {
-        List<Map<String, Object>> mapList = parseTableElement(table);
+        List<LinkedMap<String, Object>> mapList = parseTableElement(table);
         return convertToType(mapList, typeRef);
     }
     
@@ -437,24 +436,24 @@ public class JsoupUtils {
      * 
      * <p><b>사용 예:</b></p>
      * <pre>
-     * List<List<Map<String, Object>>> allTables = HtmlUtils.parseAllTables(doc, "table.data");
+     * List<List<LinkedMap<String, Object>>> allTables = HtmlUtils.parseAllTables(doc, "table.data");
      * </pre>
      * 
      * @param doc Jsoup Document
      * @param selector CSS 선택자
      * @return 각 테이블의 파싱된 데이터 리스트
      */
-    public static List<List<Map<String, Object>>> parseAllTables(Document doc, String selector) {
+    public static List<List<LinkedMap<String, Object>>> parseAllTables(Document doc, String selector) {
         if (doc == null || selector == null || selector.isEmpty()) {
             return new ArrayList<>();
         }
         
         try {
             Elements tables = doc.select(selector);
-            List<List<Map<String, Object>>> result = new ArrayList<>();
+            List<List<LinkedMap<String, Object>>> result = new ArrayList<>();
             
             for (Element table : tables) {
-                List<Map<String, Object>> tableData = parseTableElement(table);
+                List<LinkedMap<String, Object>> tableData = parseTableElement(table);
                 if (!tableData.isEmpty()) {
                     result.add(tableData);
                 }
@@ -515,14 +514,14 @@ public class JsoupUtils {
      * @param typeRegistry TypeRegistry
      * @return 변환된 리스트
      */
-    private static <T> List<T> convertToType(List<Map<String, Object>> mapList, TypeRegistry typeRegistry) {
+    private static <T> List<T> convertToType(List<LinkedMap<String, Object>> mapList, TypeRegistry typeRegistry) {
         if (mapList == null || mapList.isEmpty()) {
             return new ArrayList<>();
         }
         
         try {
             List<T> result = new ArrayList<>();
-            for (Map<String, Object> map : mapList) {
+            for (LinkedMap<String, Object> map : mapList) {
                 T converted = mapper.convertValue(map, typeRegistry.get());
                 result.add(converted);
             }
@@ -541,14 +540,14 @@ public class JsoupUtils {
      * @param type 변환할 클래스
      * @return 변환된 리스트
      */
-    private static <T> List<T> convertToType(List<Map<String, Object>> mapList, Class<T> type) {
+    private static <T> List<T> convertToType(List<LinkedMap<String, Object>> mapList, Class<T> type) {
         if (mapList == null || mapList.isEmpty()) {
             return new ArrayList<>();
         }
         
         try {
             List<T> result = new ArrayList<>();
-            for (Map<String, Object> map : mapList) {
+            for (LinkedMap<String, Object> map : mapList) {
                 T converted = mapper.convertValue(map, type);
                 result.add(converted);
             }
@@ -567,7 +566,7 @@ public class JsoupUtils {
      * @param typeRef TypeReference
      * @return 변환된 리스트
      */
-    private static <T> List<T> convertToType(List<Map<String, Object>> mapList, TypeReference<List<T>> typeRef) {
+    private static <T> List<T> convertToType(List<LinkedMap<String, Object>> mapList, TypeReference<List<T>> typeRef) {
         if (mapList == null || mapList.isEmpty()) {
             return new ArrayList<>();
         }
@@ -713,10 +712,10 @@ public class JsoupUtils {
      * 
      * @param row 행 Element
      * @param headers 헤더 리스트
-     * @return Map<String, Object>
+     * @return LinkedMap<String, Object>
      */
-    private static Map<String, Object> parseRow(Element row, List<String> headers) {
-        Map<String, Object> rowData = new LinkedHashMap<>();
+    private static LinkedMap<String, Object> parseRow(Element row, List<String> headers) {
+        LinkedMap<String, Object> rowData = new LinkedMap<>();
         
         Elements cells = row.select("td, th");
         

@@ -3,6 +3,7 @@ package kr.tx24.lib.map;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
@@ -176,6 +177,34 @@ public class LinkedMap<K, V> extends LinkedHashMap<K, V> {
         
         return null;
     }
+    
+    
+    @SuppressWarnings("unchecked")
+    public List<LinkedMap<String,Object>> getMapList(String key) {
+    	Object val = super.get(key);
+        if (val == null) {
+            return null;
+        }
+        
+        if (!(val instanceof java.util.List)) {
+            return null;
+        }
+        
+        java.util.List<?> rawList = (java.util.List<?>) val;
+        List<LinkedMap<String, Object>> result = new java.util.ArrayList<>(rawList.size());
+        
+        for (Object item : rawList) {
+            if (item instanceof LinkedMap) {
+                result.add((LinkedMap<String, Object>) item);
+            } else if (item instanceof Map) {
+                // LinkedHashMap -> LinkedMap 변환
+                LinkedMap<String, Object> linkedMap = new LinkedMap<>((Map<String, Object>) item);
+                result.add(linkedMap);
+            }
+        }
+        
+        return result;
+    }
 
     public BigDecimal getBigDecimal(String key) {
         V val = super.get(key);
@@ -221,6 +250,10 @@ public class LinkedMap<K, V> extends LinkedHashMap<K, V> {
 
     public boolean isEquals(String key, Object value) {
         return CommonUtils.equals(super.get(key), value);
+    }
+    
+    public boolean isNotEquals(String key, Object value) {
+        return !CommonUtils.equals(super.get(key), value);
     }
 
     public boolean equalsIgnoreCase(String key, Object value) {

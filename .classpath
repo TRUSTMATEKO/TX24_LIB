@@ -59,5 +59,6 @@
 	<classpathentry kind="lib" path="lib/fst-3.0.4-jdk17.jar"/>
 	<classpathentry kind="lib" path="lib/jjwt-0.13.0-fat.jar"/>
 	<classpathentry kind="lib" path="lib/okhttp-5.3.0-fat.jar"/>
+	<classpathentry kind="lib" path="lib/caffeine-3.2.2.jar"/>
 	<classpathentry kind="output" path="classes"/>
 </classpath>

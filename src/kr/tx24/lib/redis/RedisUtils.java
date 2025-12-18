@@ -26,6 +26,8 @@ import io.lettuce.core.TransactionResult;
 import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
 import kr.tx24.lib.db.Retrieve;
+import kr.tx24.lib.lang.DateUtils;
+import kr.tx24.lib.lang.MsgUtils;
 import kr.tx24.lib.map.SharedMap;
 import kr.tx24.lib.map.TypeRegistry;
 
@@ -462,6 +464,14 @@ public final class RedisUtils {
      */
     public static Long del(String... keys) {
         return Redis.sync().del(keys);
+    }
+    
+    
+    public static Long del(List<String> keys) {
+    	if(keys == null || keys.isEmpty()) {
+    		return 0L;
+    	}
+    	return Redis.sync().del(keys.toArray(new String[0]));
     }
 
     /**
@@ -1032,6 +1042,34 @@ public final class RedisUtils {
     public static Object lpop(String key,long count) {
         return Redis.sync().lpop(key,count);
     }
+    
+    public static Object blpop(String key, long maxWaitSeconds) {
+    	final long startTime = System.currentTimeMillis();
+        final long MAX_WAIT_MS = maxWaitSeconds * 1000L;
+        
+        //서버에 요청할 짧은 BLPOP 대기 시간 (클라이언트 10초보다 짧게 설정한다.)
+        final long SERVER_TIMEOUT_SECONDS = 5;
+        
+        while(System.currentTimeMillis() - startTime < MAX_WAIT_MS) {
+            try {
+                // 서버에 5초 대기 요청
+                KeyValue<String, Object> result = Redis.sync().blpop(SERVER_TIMEOUT_SECONDS, key);
+                
+                // 데이터 수신 성공 시 즉시 반환
+                if (result != null && result.getValue() != null) {
+                    return result.getValue(); 
+                }
+                // null 반환: 5초 서버 타임아웃 발생 -> 루프 재시작하여 경과 시간 체크
+                
+            } catch (Exception e) {
+                // 10초 클라이언트 Timeout 발생에 대한 예외 처리 (RedisCommandTimeoutException)
+            }
+        }
+        
+        return null;
+    }
+  
+    
 
     /**
      * List 오른쪽에서 값 제거 및 반환 (RPOP)
@@ -1051,6 +1089,39 @@ public final class RedisUtils {
     
     public static Object rpop(String key,long count) {
         return Redis.sync().rpop(key,count);
+    }
+    
+    /**
+     * KEY 와 초단위 값 전달 
+     * @param key
+     * @param timeout
+     * @return
+     */
+    public static Object brpop(String key, long maxWaitSeconds) {
+    	final long startTime = System.currentTimeMillis();
+        final long MAX_WAIT_MS = maxWaitSeconds * 1000L;
+        
+        //서버에 요청할 짧은 BLPOP 대기 시간 (클라이언트 10초보다 짧게 설정한다.)
+        final long SERVER_TIMEOUT_SECONDS = 5;
+        
+        while(System.currentTimeMillis() - startTime < MAX_WAIT_MS) {
+            try {
+                // 서버에 5초 대기 요청
+                KeyValue<String, Object> result = Redis.sync().brpop(SERVER_TIMEOUT_SECONDS, key);
+                
+                // 데이터 수신 성공 시 즉시 반환
+                if (result != null && result.getValue() != null) {
+                    return result.getValue(); 
+                }
+                // null 반환: 5초 서버 타임아웃 발생 -> 루프 재시작하여 경과 시간 체크
+                
+            } catch (Exception e) {
+                // 10초 클라이언트 Timeout 발생에 대한 예외 처리 (RedisCommandTimeoutException)
+            }
+        }
+        
+        return null;
+		 
     }
     
 
@@ -1979,7 +2050,7 @@ public final class RedisUtils {
         }
         
         // 2. DB 조회
-        SharedMap<String, Object> map = retrieve.select().getRowFirst();
+        SharedMap<String, Object> map = retrieve.select().getRow(0);
         
         // 3. 캐시 저장 (데이터가 있을 때만)
         if (map != null && !map.isEmpty()) {

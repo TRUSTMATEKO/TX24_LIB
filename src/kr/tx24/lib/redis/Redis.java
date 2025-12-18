@@ -40,6 +40,7 @@ public final class Redis {
     private static volatile ClientResources clientResources;
     private static volatile StatefulRedisConnection<String, Object> connection;
     private static volatile boolean reconnecting = false;
+    private static String redisUri = "";
     
     // 초기화 상태 추적 플래그 추가
     private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
@@ -62,7 +63,7 @@ public final class Redis {
         
         try {
             SystemUtils.init();
-            String redisUri = SystemUtils.getRedisSystemUri();
+            redisUri = SystemUtils.getRedisSystemUri();
             
             if (SystemUtils.REDIS_INITIAL.equals(redisUri)) {
                 throw new IllegalStateException("NOT_SET");
@@ -97,6 +98,7 @@ public final class Redis {
             }
             
             RedisURI uri = RedisURI.create(redisUri);
+            
             uri.setTimeout(Duration.ofSeconds(10));  // Connection timeout
             
             // Redis Client 생성
@@ -294,6 +296,13 @@ public final class Redis {
         }
         return client;
     }
+    
+    public static String getUriString() {
+    	if (redisUri.equals("")) {
+            getConnection();
+        }
+        return redisUri;
+    }
 
     /**
      * ⭐⭐ Redis 리소스 정리 (애플리케이션 종료 시에만!)
@@ -396,4 +405,7 @@ public final class Redis {
     public static boolean isShuttingDown() {
         return isShuttingDown.get();
     }
+    
+    
+
 }

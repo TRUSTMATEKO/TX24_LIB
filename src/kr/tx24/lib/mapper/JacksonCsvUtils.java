@@ -3,6 +3,7 @@ package kr.tx24.lib.mapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,7 @@ import com.fasterxml.jackson.dataformat.csv.CsvMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;
 
 import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.map.LinkedMap;
 import kr.tx24.lib.map.TypeRegistry;
 
 /**
@@ -417,6 +419,8 @@ public class JacksonCsvUtils {
        }
    }
    
+   
+   
    /**
     * 단일 객체를 CSV 문자열로 변환 (1행)
     * 
@@ -437,6 +441,9 @@ public class JacksonCsvUtils {
        if (value == null) return "";
        return toCsv(List.of(value), type);
    }
+   
+   
+
    
    
    // ==================== Serialization (한글 헤더) ====================
@@ -693,6 +700,43 @@ public class JacksonCsvUtils {
            return Collections.emptyList();
        }
    }
+   
+   
+   public List<LinkedMap<String, Object>> fromCsvList(String csv) {
+	    if (csv == null || csv.isEmpty()) return Collections.emptyList();
+	    try {
+	        CsvSchema schema = CsvSchema.emptySchema();
+	        if (withHeader) {
+	            schema = schema.withHeader();
+	        }
+	        schema = schema.withColumnSeparator(separator);
+	        
+	        com.fasterxml.jackson.databind.MappingIterator<Map<String, String>> iterator = 
+	            mapper.readerFor(Map.class)
+	                  .with(schema)
+	                  .readValues(csv);
+	        
+	        List<LinkedMap<String, Object>> result = new ArrayList<>();
+	        while (iterator.hasNext()) {
+	            Map<String, String> raw = iterator.next();
+	            if(CommonUtils.isNotEmpty(raw)) {
+		            LinkedMap<String, Object> map = new LinkedMap<>();
+		            raw.forEach(map::put);
+		            result.add(map);
+	            }
+	        }
+	        return result;
+	    } catch (Exception e) {
+	        logger.warn("CSV 역직렬화 실패 : {}", CommonUtils.getExceptionMessage(e));
+	        return Collections.emptyList();
+	    }
+	}
+   
+   
+   public List<LinkedMap<String, Object>> fromCsvList(byte[] csv) {
+	    if (csv == null || csv.length == 0) return Collections.emptyList();
+	    return fromCsvList(new String(csv, java.nio.charset.StandardCharsets.UTF_8));
+	}
    
    
    // ==================== byte[] CSV → List (한글 헤더) ====================

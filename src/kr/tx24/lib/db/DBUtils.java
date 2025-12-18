@@ -702,6 +702,21 @@ public class DBUtils {
             ps.setObject(idx, arg);
         }
     }
+    
+    
+    
+    
+    public static int countBatchResult(int[] results) {
+	    int success = 0;
+	    for (int r : results) {
+	        if (r >= 0) {
+	            success += r;
+	        } else if (r == Statement.SUCCESS_NO_INFO) {
+	            success += 1;
+	        }
+	    }
+	    return success;
+	}
 
 }
 

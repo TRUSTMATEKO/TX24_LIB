@@ -111,6 +111,13 @@ public class IDUtils {
 	}
 	
 	
+	public static String getRandom(int length) {
+		String uuid = getUUID().replace("-", "");
+        String body = uuid.length() >= length ? uuid.substring(0, length) : uuid;
+        return body;
+	}
+	
+	
 
 	
 	

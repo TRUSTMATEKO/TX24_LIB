@@ -3,6 +3,7 @@ package kr.tx24.lib.map;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
@@ -177,6 +178,34 @@ public class SharedMap<K, V> extends ConcurrentHashMap<K, V> {
         
         return null;
     }
+    
+    
+    @SuppressWarnings("unchecked")
+    public List<SharedMap<String,Object>> getMapList(String key) {
+    	Object val = super.get(key);
+        if (val == null) {
+            return null;
+        }
+        
+        if (!(val instanceof java.util.List)) {
+            return null;
+        }
+        
+        java.util.List<?> rawList = (java.util.List<?>) val;
+        List<SharedMap<String, Object>> result = new java.util.ArrayList<>(rawList.size());
+        
+        for (Object item : rawList) {
+            if (item instanceof SharedMap) {
+                result.add((SharedMap<String, Object>) item);
+            } else if (item instanceof Map) {
+                // LinkedHashMap -> LinkedMap 변환
+            	SharedMap<String, Object> linkedMap = new SharedMap<>((Map<String, Object>) item);
+                result.add(linkedMap);
+            }
+        }
+        
+        return result;
+    }
 
     public BigDecimal getBigDecimal(String key) {
         V val = super.get(key);
@@ -224,6 +253,10 @@ public class SharedMap<K, V> extends ConcurrentHashMap<K, V> {
 
     public boolean isEquals(String key, Object value) {
         return CommonUtils.equals(super.get(key), value);
+    }
+    
+    public boolean isNotEquals(String key, Object value) {
+        return !CommonUtils.equals(super.get(key), value);
     }
 
     public boolean equalsIgnoreCase(String key, Object value) {

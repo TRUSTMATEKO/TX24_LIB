@@ -254,6 +254,14 @@ public final class RedisTextUtils {
     public static long del(String... keys) {
         return RedisText.sync().del(keys);
     }
+    
+    
+    public static Long del(List<String> keys) {
+    	if(keys == null || keys.isEmpty()) {
+    		return 0L;
+    	}
+    	return Redis.sync().del(keys.toArray(new String[0]));
+    }
 
     /**
      * 키 존재 확인
@@ -570,6 +578,33 @@ public final class RedisTextUtils {
     public static List<String> lpop(String key, long count) {
         return RedisText.sync().lpop(key, count);
     }
+    
+    
+    public static String blpop(String key, long maxWaitSeconds) {
+    	final long startTime = System.currentTimeMillis();
+        final long MAX_WAIT_MS = maxWaitSeconds * 1000L;
+        
+        //서버에 요청할 짧은 BLPOP 대기 시간 (클라이언트 10초보다 짧게 설정한다.)
+        final long SERVER_TIMEOUT_SECONDS = 5;
+        
+        while(System.currentTimeMillis() - startTime < MAX_WAIT_MS) {
+            try {
+                // 서버에 5초 대기 요청
+                KeyValue<String, String> result = RedisText.sync().blpop(SERVER_TIMEOUT_SECONDS, key);
+                
+                // 데이터 수신 성공 시 즉시 반환
+                if (result != null && result.getValue() != null) {
+                    return result.getValue(); 
+                }
+                // null 반환: 5초 서버 타임아웃 발생 -> 루프 재시작하여 경과 시간 체크
+                
+            } catch (Exception e) {
+                // 10초 클라이언트 Timeout 발생에 대한 예외 처리 (RedisCommandTimeoutException)
+            }
+        }
+        
+        return "";
+    }
 
 
     /**
@@ -584,6 +619,33 @@ public final class RedisTextUtils {
     
     public static List<String> rpop(String key, long count) {
         return RedisText.sync().rpop(key, count);
+    }
+    
+    
+    public static String brpop(String key, long maxWaitSeconds) {
+    	final long startTime = System.currentTimeMillis();
+        final long MAX_WAIT_MS = maxWaitSeconds * 1000L;
+        
+        //서버에 요청할 짧은 BLPOP 대기 시간 (클라이언트 10초보다 짧게 설정한다.)
+        final long SERVER_TIMEOUT_SECONDS = 5;
+        
+        while(System.currentTimeMillis() - startTime < MAX_WAIT_MS) {
+            try {
+                // 서버에 5초 대기 요청
+                KeyValue<String, String> result = RedisText.sync().brpop(SERVER_TIMEOUT_SECONDS, key);
+                
+                // 데이터 수신 성공 시 즉시 반환
+                if (result != null && result.getValue() != null) {
+                    return result.getValue(); 
+                }
+                // null 반환: 5초 서버 타임아웃 발생 -> 루프 재시작하여 경과 시간 체크
+                
+            } catch (Exception e) {
+                // 10초 클라이언트 Timeout 발생에 대한 예외 처리 (RedisCommandTimeoutException)
+            }
+        }
+        
+        return "";
     }
     
 

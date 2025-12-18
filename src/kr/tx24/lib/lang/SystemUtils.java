@@ -197,6 +197,18 @@ public class SystemUtils {
             System.err.println("error checking deep.view: " + e.getMessage());
         }
     }
+    
+    public static void enableDeepView() {
+    	enabledDeepView.set(true);
+        setLogLevel(Level.DEBUG);
+        System.err.println("deepview enabled ");
+    }
+    
+    public static void disableDeepView() {
+    	enabledDeepView.set(false);
+        setLogLevel(Level.INFO);
+        System.err.println("deepview disabled ");
+    }
 
     public static void setLogLevel(Level level) {
         try {
@@ -207,21 +219,6 @@ public class SystemUtils {
 
     public static boolean deepview() { return enabledDeepView.get(); }
 
-    
-    public static String getConfigDirectory() {
-        return System.getProperty(PROPERTY_CONFIG, getRootDirectory() + File.separator + "conf");
-    }
-    
-    
-    public static Path getConfigPath(String configFile) {
-    	return Paths.get(getConfigDirectory(),configFile);
-    }
-    
-
-    public static String getRootDirectory() {
-        String dir = System.getProperty("user.dir");
-        return dir != null ? dir : ".";
-    }
 
     public static String getRedisSystemUri() {
         
@@ -335,6 +332,27 @@ public class SystemUtils {
             if (mx != null) return mx.getName().split("@")[0];
         } catch (Exception e) {}
         return PROPERTY_NONE;
+    }
+    
+    
+    public static String getBinDirectory() {
+        return System.getProperty(PROPERTY_CONFIG, getRootDirectory() + File.separator + "bin");
+    }
+    
+    
+    public static String getConfigDirectory() {
+        return System.getProperty(PROPERTY_CONFIG, getRootDirectory() + File.separator + "conf");
+    }
+    
+    
+    public static Path getConfigPath(String configFile) {
+    	return Paths.get(getConfigDirectory(),configFile);
+    }
+    
+
+    public static String getRootDirectory() {
+        String dir = System.getProperty("user.dir");
+        return dir != null ? dir : ".";
     }
 
     
