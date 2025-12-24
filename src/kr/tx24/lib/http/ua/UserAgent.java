@@ -15,5 +15,5 @@ public class UserAgent {
 	public UserAgent() {
 		// TODO Auto-generated constructor stub
 	}
-
+ 
 }

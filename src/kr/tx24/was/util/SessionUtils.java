@@ -60,6 +60,17 @@ public class SessionUtils {
 		SessionUtils.PERSISTENT_SESSION_EXPIRE_HOUR = hour;
 	}
 	
+	
+	public static int getSessionExpireMinute() {
+		return SESSION_EXPIRE_MINUTE;
+	}
+	
+	
+	public static int getSessionPersistentExpireHour() {
+		return PERSISTENT_SESSION_EXPIRE_HOUR;
+	}
+	
+	
 	/**
 	 * 세션 키 (sessionKey) 생성 후 세션 Store( REDIS ) 에 저장 후 반환  
 	 * session id 는 자동 생성되어 반환된다.

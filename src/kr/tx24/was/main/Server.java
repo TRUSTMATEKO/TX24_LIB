@@ -341,7 +341,7 @@ public class Server {
             logger.warn("Error during resource cleanup: {}", e.getMessage());
         }
     }
-    
+     
     /**
      * 강제 종료 (긴급시 사용)
      */

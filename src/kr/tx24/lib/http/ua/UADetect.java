@@ -94,7 +94,7 @@ public final class UADetect {
 	private UADetect() {
         throw new UnsupportedOperationException("This is a utility class and cannot be instantiated");
     }
-	
+	 
 	public static void initialize() {
         if (parser == null) {
             synchronized (UADetect.class) {

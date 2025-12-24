@@ -22,7 +22,7 @@ public class CookieUtils {
 
 	
 	public static Cookie get(HttpServletRequest request){
-		return get(request,Was.SESSION_ID);
+		return get(request,SessionUtils.SESSION_KEY);
 	}
 	
 	
@@ -54,7 +54,7 @@ public class CookieUtils {
 	
 	
 	public static String getValue(HttpServletRequest request){
-		return getValue(request,Was.SESSION_ID);
+		return getValue(request,SessionUtils.SESSION_KEY);
 	}
 	
 	public static String getValue(HttpServletRequest request,String name){
@@ -83,7 +83,7 @@ public class CookieUtils {
 	}
 	
 	public static void remove(HttpServletResponse response){
-		remove(response,Was.SESSION_ID);
+		remove(response,SessionUtils.SESSION_KEY);
 	}
 	
 	

@@ -1,5 +1,6 @@
 package kr.tx24.was.interceptor;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -118,7 +119,7 @@ public class SessionInterceptor implements HandlerInterceptor{
 	        // Ajax 요청 여부 확인
 	        boolean isAjax = Was.getHeader(request, HEADER_AJAX).toLowerCase().equals(AJAX_VALUE) || Was.getHeader(request, HEADER_FROM_AJAX).equals(AJAX_TRUE);
 	        
-	        SharedMap<String,Object> sessionMap = SessionUtils.getBySessionId(CookieUtils.getValue(request, Was.SESSION_ID));	
+	        SharedMap<String,Object> sessionMap = SessionUtils.getSession(CookieUtils.getValue(request, SessionUtils.SESSION_KEY),false);	
 	        
 	        // 2. 세션 검증 및 처리
 	        if (sessionMap == null) {	
@@ -173,7 +174,7 @@ public class SessionInterceptor implements HandlerInterceptor{
 	            
 	        }
 	        
-	        request.setAttribute(Was.SESSION_ID, sessionMap); // Attribute 세션 저장
+	        request.setAttribute(SessionUtils.SESSION_KEY, sessionMap); // Attribute 세션 저장
 	    } else {
 	        // SessionIgnore 처리
 	        if(SystemUtils.deepview() && !request.getRequestURI().equals("/error")){
@@ -203,7 +204,7 @@ public class SessionInterceptor implements HandlerInterceptor{
 	    if (!isUriSkipped) { // /axios/, /hq/user-did/, /dashboard/ 가 아닌 경우
 	        
 	        // Cookie 를 통한 세션 연장 처리 (기존 로직)
-	        SharedMap<String,Object> sessionMap = (SharedMap<String,Object>)request.getAttribute(Was.SESSION_ID);
+	        SharedMap<String,Object> sessionMap = (SharedMap<String,Object>)request.getAttribute(SessionUtils.SESSION_KEY);
 	        
 	        	if(!CommonUtils.isEmpty(sessionMap)){
 	            
@@ -224,9 +225,10 @@ public class SessionInterceptor implements HandlerInterceptor{
 
 	            // Cookie 생성 및 ModelAndView 설정 (기존 로직)
 	            String sessionId = sessionMap.getString(SessionUtils.SESSION_ID);
-	            CookieUtils.create(response,request.getHeader("host"), "/", Was.SESSION_ID, sessionId, Was.SESSION_EXPIRE, false, true);
+	            int expire = CommonUtils.toInt(Duration.ofMinutes(SessionUtils.getSessionExpireMinute()).getSeconds());
+	            CookieUtils.create(response,request.getHeader("host"), "/", SessionUtils.SESSION_KEY, sessionId, expire, false, true);
 	            if (modelAndView != null) {
-	                modelAndView.addObject(Was.SESSION_ID, sessionMap);
+	                modelAndView.addObject(SessionUtils.SESSION_KEY, sessionMap);
 	            }
 	        }
 	    }
@@ -245,7 +247,7 @@ public class SessionInterceptor implements HandlerInterceptor{
 	        // 플래그가 true이면 세션 맵을 Redis에 최종 반영
 	        if (lastUriUpdate) {
 	            @SuppressWarnings("unchecked")
-				SharedMap<String,Object> sessionMap = (SharedMap<String,Object>)request.getAttribute(Was.SESSION_ID);
+				SharedMap<String,Object> sessionMap = (SharedMap<String,Object>)request.getAttribute(SessionUtils.SESSION_KEY);
 	            if (!CommonUtils.isEmpty(sessionMap)) {
 	                SessionUtils.save(sessionMap); 
 	            }
