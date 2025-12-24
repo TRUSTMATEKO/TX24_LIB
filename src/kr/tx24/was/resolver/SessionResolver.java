@@ -22,7 +22,6 @@ import kr.tx24.lib.mapper.JacksonUtils;
 import kr.tx24.was.annotation.Session;
 import kr.tx24.was.util.CookieUtils;
 import kr.tx24.was.util.SessionUtils;
-import kr.tx24.was.util.Was;
 
 
 @Component
@@ -37,7 +36,7 @@ public class SessionResolver implements HandlerMethodArgumentResolver{
 		if (parameter.getParameterAnnotation(Session.class) == null) {
 			return false;
 		}
-		// 2. 파라미터 타입이 java.util.Map 인터페이스를 구현했는지 확인 (모든 Map 허용)
+		// 2. 파라미터 타입이 java.util.Map 인터페이스를 구현했는지 확인 (모든 Map 허용)	
 		return Map.class.isAssignableFrom(parameter.getParameterType());
 	}
 	
@@ -50,11 +49,11 @@ public class SessionResolver implements HandlerMethodArgumentResolver{
 		final SharedMap<String,Object> sessionData = new Object() {
 	        SharedMap<String, Object> getSessionData() {
 	            @SuppressWarnings("unchecked")
-	            SharedMap<String,Object> map = (SharedMap<String,Object>)nativeWebRequest.getAttribute(Was.SESSION_ID, RequestAttributes.SCOPE_REQUEST);
+	            SharedMap<String,Object> map = (SharedMap<String,Object>)nativeWebRequest.getAttribute(SessionUtils.SESSION_KEY, RequestAttributes.SCOPE_REQUEST);
 	            
 	            if(map == null) {
 	                HttpServletRequest httpServletRequest = nativeWebRequest.getNativeRequest(HttpServletRequest.class);
-	                map = SessionUtils.getBySessionId(CookieUtils.getValue(httpServletRequest, Was.SESSION_ID));	
+	                map = SessionUtils.getSession(CookieUtils.getValue(httpServletRequest,SessionUtils.SESSION_KEY),false);	
 	                if(map == null) {
 	                    // 세션이 없으면 빈 SharedMap을 반환
 	                    return new SharedMap<String,Object>();

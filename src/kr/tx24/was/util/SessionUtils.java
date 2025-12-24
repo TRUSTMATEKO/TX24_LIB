@@ -71,6 +71,11 @@ public class SessionUtils {
 	}
 	
 	
+	public static void create(String sessionId, SharedMap<String,Object> data) {
+		RedisUtils.set(REDIS_SESSION_STORE+sessionId, data, Duration.ofMinutes(SESSION_EXPIRE_MINUTE).getSeconds());
+	}
+	
+	
 	/**
 	 * 세션 키 (sessionKey) 생성 후 세션 Store( REDIS ) 에 저장 후 반환  
 	 * session id 는 자동 생성되어 반환된다.
