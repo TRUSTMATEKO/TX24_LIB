@@ -1,5 +1,6 @@
 package kr.tx24.was.util;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -7,9 +8,9 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.sync.RedisCommands;
+import io.lettuce.core.TransactionResult;
 import kr.tx24.lib.lang.CommonUtils;
+import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.lib.lang.IDUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.SharedMap;
@@ -27,20 +28,37 @@ import kr.tx24.lib.redis.RedisUtils;
 public class SessionUtils {
 
 	private static Logger logger = LoggerFactory.getLogger( SessionUtils.class );
-	private static String REDIS_SESSION_STORE		= "WSDATA|";
+	private static final String REDIS_SESSION_STORE			= "WS_";
+	private static final String REDIS_PERSISTENT_SESSION	= "WPS_";
+	
+	private static int SESSION_EXPIRE_MINUTE 				= 30;
+	private static int PERSISTENT_SESSION_EXPIRE_HOUR 		= 4;
 	private static String KEYS_ALL					= "*";
-	public static String SESSION_ID					= "session_id";
-	public static String SESSION_DATE				= "session_create";
-	public static String SESSION_USERID				= "session_userId";
-	public static String SESSION_PROC				= "session_proc";
+	
+	public static final String SESSION_KEY			= "XSESSION";
+	public static final String SESSION_ID			= "wsid";
+	public static final String SESSION_DATE			= "create";
+	public static final String SESSION_USERID		= "userId";
+	public static final String SESSION_PROC			= "proc";
 	
 	/**
 	 * session id 생성 
 	 */
 	public static String createSessionId(){
-		return IDUtils.genKey(16).toUpperCase();
+		return IDUtils.genKey(16);
 	}
 	
+	public static void setSessionExpireMinute(int minutes) {
+		SessionUtils.SESSION_EXPIRE_MINUTE = minutes;
+	}
+	
+	/**
+	 * 영구 유지 세션의 시간을 설정한다.
+	 * @param hour
+	 */
+	public static void setSessioinPersistentExpireHour(int hour) {
+		SessionUtils.PERSISTENT_SESSION_EXPIRE_HOUR = hour;
+	}
 	
 	/**
 	 * 세션 키 (sessionKey) 생성 후 세션 Store( REDIS ) 에 저장 후 반환  
@@ -48,8 +66,8 @@ public class SessionUtils {
 	 * @param userId
 	 * @param data
 	 */
-	public static String create(String userId, SharedMap<String,Object> data){
-		return create(IDUtils.genKey(16).toUpperCase(), userId, data);
+	public static String create(String userId, boolean persistent, SharedMap<String,Object> data){
+		return create(createSessionId(), userId, persistent, data);
 	}
 	
 	
@@ -61,15 +79,20 @@ public class SessionUtils {
 	 * @param userId
 	 * @param data
 	 */
-	public static String create(String sessionId,String userId ,SharedMap<String,Object> data){
+	public static String create(String sessionId,String userId, boolean persistent ,SharedMap<String,Object> data){
 		//세션 정보를 담는다.
 		data.put(SESSION_ID		, sessionId);
 		data.put(SESSION_USERID	, userId);
-		data.put(SESSION_DATE	, System.currentTimeMillis());
+		data.put(SESSION_DATE	, DateUtils.getCurrentDate());
 		data.put(SESSION_PROC	, SystemUtils.getLocalProcessName());
 		
-		RedisUtils.set(REDIS_SESSION_STORE+sessionId, data, Was.SESSION_EXPIRE);
-		
+		RedisUtils.set(REDIS_SESSION_STORE+sessionId, data, Duration.ofMinutes(SESSION_EXPIRE_MINUTE).getSeconds());
+		if(persistent) {
+		     RedisUtils.set(REDIS_PERSISTENT_SESSION+sessionId, data, Duration.ofHours(PERSISTENT_SESSION_EXPIRE_HOUR).getSeconds());
+		     if(SystemUtils.deepview()) {
+					logger.info("persistent session created : {}",REDIS_PERSISTENT_SESSION+sessionId);
+			}
+		}
 		
 		if(SystemUtils.deepview()) {
 			logger.info("session created : {}",REDIS_SESSION_STORE+sessionId);
@@ -94,12 +117,18 @@ public class SessionUtils {
 	 * @param sessionId
 	 */
 	public static void save(String sessionId) {
-		String redisKey = REDIS_SESSION_STORE + sessionId;
-		RedisUtils.expire(redisKey, Was.SESSION_EXPIRE);
+		
+		TransactionResult result = RedisUtils.executeTransaction(tx -> {
+			 tx.expire(REDIS_SESSION_STORE + sessionId		, Duration.ofMinutes(SESSION_EXPIRE_MINUTE).getSeconds());
+			 tx.expire(REDIS_PERSISTENT_SESSION + sessionId	, Duration.ofHours(PERSISTENT_SESSION_EXPIRE_HOUR).getSeconds());
+		});
 		
 		if (SystemUtils.deepview()) {
-			logger.info("session save : {}", redisKey);
+			for(int i=0; i < result.size() ; i++) {
+				logger.info("session save : {}", CommonUtils.toString(result.get(i)));
+			}
 		}
+
 	}
 	
 	
@@ -113,42 +142,58 @@ public class SessionUtils {
 	        logger.warn("SessionId is empty, cannot save session");
 	        return;
 	    }
-
-	    String redisKey = REDIS_SESSION_STORE + sessionId;
-		
-		// 비동기 저장 (원자적 SETEX)
-		Redis.async().setex(redisKey, Was.SESSION_EXPIRE, data)
-			.whenComplete((result, error) -> {
-				if (error != null) {
-					logger.warn("Failed to save session: {}", redisKey, error);
-				} else if (SystemUtils.deepview()) {
-					logger.info("Session saved (async): {}", redisKey);
-				}
-			});
+	    
+	    RedisUtils.setXx(REDIS_SESSION_STORE + sessionId			,data, Duration.ofMinutes(SESSION_EXPIRE_MINUTE).getSeconds());
+	    RedisUtils.setXx(REDIS_PERSISTENT_SESSION + sessionId		,data, Duration.ofHours(PERSISTENT_SESSION_EXPIRE_HOUR).getSeconds());
+	    
 	}
 	
 	/**
-	 * 세선에 저장되어 있는 데이터 가져오기 
+	 * 세선에 저장되어 있는 데이터 가져오기
+	 * 세션 연장여부 
 	 * @param sessionId
+	 * @param extend
 	 * @return
 	 */
-	public static SharedMap<String,Object> getBySessionId(String sessionId){
+	public static SharedMap<String,Object> getSession(String sessionId,boolean extend){
 		if (CommonUtils.isBlank(sessionId)) {
 			return null;
 		}
 		
-		String redisKey = REDIS_SESSION_STORE + sessionId;
-		
-		// RedisUtils.get()으로 조회 (타입 안전)
-		SharedMap<String, Object> result = RedisUtils.get(redisKey, TypeRegistry.MAP_SHAREDMAP_OBJECT);
-		
-		// 세션이 존재하면 TTL 갱신
-		if (result != null) {
-			RedisUtils.expire(redisKey, Was.SESSION_EXPIRE);
+		SharedMap<String, Object> result = null;
+		if(extend) {
+			result = RedisUtils.getEx(REDIS_SESSION_STORE + sessionId ,Duration.ofMinutes(SESSION_EXPIRE_MINUTE).getSeconds(),TypeRegistry.MAP_SHAREDMAP_OBJECT);
+			RedisUtils.setXx(REDIS_PERSISTENT_SESSION + sessionId, Duration.ofHours(PERSISTENT_SESSION_EXPIRE_HOUR).getSeconds());
+		}else {
+			result = RedisUtils.get(REDIS_SESSION_STORE + sessionId ,TypeRegistry.MAP_SHAREDMAP_OBJECT);
 		}
-		return result;
 		
+		return result;
 	}
+	
+	
+	/**
+	 * 지속관리 세선에 저장되어 있는 데이터 가져오기
+	 * 세션 연장여부 
+	 * @param sessionId
+	 * @param extend
+	 * @return
+	 */
+	public static SharedMap<String,Object> getPersistentSession(String sessionId,boolean extend){
+		if (CommonUtils.isBlank(sessionId)) {
+			return null;
+		}
+		
+		SharedMap<String, Object> result = null;
+		if(extend) {
+			result = RedisUtils.getEx(REDIS_PERSISTENT_SESSION + sessionId ,Duration.ofMinutes(SESSION_EXPIRE_MINUTE).getSeconds(),TypeRegistry.MAP_SHAREDMAP_OBJECT);
+		}else {
+			result = RedisUtils.get(REDIS_PERSISTENT_SESSION + sessionId ,TypeRegistry.MAP_SHAREDMAP_OBJECT);
+		}
+		
+		return result;
+	}
+	
 	
 	
 	/**
@@ -162,9 +207,8 @@ public class SessionUtils {
 			return "";
 		}
 		
-		SharedMap<String, Object> result = getBySessionId(sessionId);
-		
-		if (result == null) {
+		SharedMap<String, Object> result = getSession(sessionId,false);
+		if (result == null || result.isEmpty()) {
 			return "";
 		} else {
 			return result.getString(SESSION_USERID);
@@ -183,8 +227,7 @@ public class SessionUtils {
 			return false;
 		}
 		
-		String redisKey = REDIS_SESSION_STORE + sessionId;
-		return RedisUtils.exists(redisKey);
+		return RedisUtils.exists(REDIS_SESSION_STORE + sessionId);
 	}
 	
 	/**
@@ -224,24 +267,21 @@ public class SessionUtils {
 		
 		// RedisUtils.scan()으로 패턴 매칭
 		List<String> keys = RedisUtils.scan(REDIS_SESSION_STORE + KEYS_ALL);
+		if(CommonUtils.isEmpty(keys)) {
+			return list;
+		}
 		
-		if (!CommonUtils.isEmpty(keys)) {
-			// Redis.sync()를 직접 사용 (connection 재사용)
-			for (String key : keys) {
-				SharedMap<String, Object> result = RedisUtils.get(key, TypeRegistry.MAP_SHAREDMAP_OBJECT);
-				if (result != null && result.isEquals(SESSION_USERID, userId)) {
-					list.add(result);
-				}
+		List<SharedMap<String, Object>> values = RedisUtils.mget(keys, TypeRegistry.LIST_SHAREDMAP_OBJECT);
+		
+		for (SharedMap<String,Object> result : values) {
+			if (result != null && result.isEquals(SESSION_USERID, userId)) {
+				list.add(result);
 			}
 		}
 		
-		if (SystemUtils.deepview()) {
-			if (keys == null) {
-				logger.info("current session count : 0");
-			} else {
-				logger.info("current session count : {}", keys.size());
-			}
-		}
+		list = list.stream()
+				.sorted((o1, o2) -> o1.getString(SESSION_DATE).compareTo(o2.getString(SESSION_DATE)))
+				.collect(Collectors.toList());
 		
 		return list;
 	}
@@ -261,29 +301,17 @@ public class SessionUtils {
 		
 		// RedisUtils.scan()으로 패턴 매칭
 		List<String> keys = RedisUtils.scan(REDIS_SESSION_STORE + KEYS_ALL);
-		
-		if (!CommonUtils.isEmpty(keys)) {
-			// Redis.sync()를 직접 사용하여 세션 정보 조회
-			for (String key : keys) {
-				SharedMap<String, Object> result = RedisUtils.get(key, TypeRegistry.MAP_SHAREDMAP_OBJECT);
-				if (result != null) {
-					list.add(result);
-				}
-			}
-			
-			// 생성 시간 순으로 정렬
-			list = list.stream()
-					.sorted((o1, o2) -> o1.getString(SESSION_DATE).compareTo(o2.getString(SESSION_DATE)))
-					.collect(Collectors.toList());
+		if(CommonUtils.isEmpty(keys)) {
+			return list;
 		}
 		
-		if (SystemUtils.deepview()) {
-			if (keys == null) {
-				logger.info("current session count : 0");
-			} else {
-				logger.info("current session count : {}", keys.size());
-			}
-		}
+		// 2. MGET으로 한 번에 조회 
+	    list = RedisUtils.mget(keys, TypeRegistry.LIST_SHAREDMAP_OBJECT);
+	    
+		// 생성 시간 순으로 정렬
+		list = list.stream()
+				.sorted((o1, o2) -> o1.getString(SESSION_DATE).compareTo(o2.getString(SESSION_DATE)))
+				.collect(Collectors.toList());
 		
 		return list;
 	}
@@ -314,36 +342,5 @@ public class SessionUtils {
 		// RedisUtils.del()로 삭제
 		RedisUtils.del(redisKey);
 	}
-	
-	/**
-	 * 나를 제외한 세션 삭제
-	 * 
-	 * <p><b>변경:</b> RedisUtils.del() 사용</p>
-	 * 
-	 * @param sessionId
-	 * @param userId
-	 */
-	public static void destoryExcludeMe(String sessionId, String userId) {
-		if (CommonUtils.isBlank(sessionId) || CommonUtils.isBlank(userId)) {
-			return;
-		}
-		
-		List<SharedMap<String, Object>> list = getConCurrent(userId);
-		
-		if (!CommonUtils.isEmpty(list) && list.size() > 1) {
-			for (SharedMap<String, Object> map : list) {
-				if (!map.isEquals(SESSION_ID, sessionId)) {
-					String targetKey = REDIS_SESSION_STORE + map.getString(SESSION_ID);
-					RedisUtils.del(targetKey);
-					
-					if (SystemUtils.deepview()) {
-						logger.info("session destory : {}", targetKey);
-					}
-				}
-			}
-		}
-	}
-	
-	
 
 }

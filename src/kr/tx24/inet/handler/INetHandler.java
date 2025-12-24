@@ -1,6 +1,8 @@
 package kr.tx24.inet.handler;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -136,8 +138,15 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
             responseUtils.data(inet.data());
             
         } else if (returnObj instanceof Map<?, ?> map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> castedMap = (Map<String, Object>) map;
+        	Map<String, Object> castedMap = map.entrySet().stream()
+                .filter(entry -> entry.getKey() != null) 			// null 키 방지
+                .collect(Collectors.toMap(
+                    entry -> CommonUtils.toString(entry.getKey()), 	// 키를 String
+                    Map.Entry::getValue,                      		// 값은 그대로 유지
+                    (existing, replacement) -> replacement,   		// 중복 키 발생 시 덮어쓰기
+                    HashMap::new
+                ));
+        	
             responseUtils.data(castedMap);
             
         } else {

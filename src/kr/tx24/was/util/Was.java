@@ -31,8 +31,6 @@ public class Was {
 	public static final String REMOTE_IP				= "remoteIp";
 	public static final String FILE_MAP					= "fileMap";
 	
-	public static final int SESSION_EXPIRE				= 30*60; // 배포 환경
-	public static final String SESSION_ID				= "XSESSION";
 	public static final int TOKEN_EXPIRE_MINUTE			= 30;
 	public static final String LANG_EN					= "en";
 	public static final String LANG_JA					= "ja";

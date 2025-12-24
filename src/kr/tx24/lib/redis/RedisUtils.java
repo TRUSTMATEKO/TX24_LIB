@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 
+import io.lettuce.core.GetExArgs;
 import io.lettuce.core.KeyScanCursor;
 import io.lettuce.core.KeyValue;
 import io.lettuce.core.RedisFuture;
@@ -26,8 +27,7 @@ import io.lettuce.core.TransactionResult;
 import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
 import kr.tx24.lib.db.Retrieve;
-import kr.tx24.lib.lang.DateUtils;
-import kr.tx24.lib.lang.MsgUtils;
+import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.map.SharedMap;
 import kr.tx24.lib.map.TypeRegistry;
 
@@ -221,6 +221,58 @@ public final class RedisUtils {
         String result = Redis.sync().set(key, value, SetArgs.Builder.nx().ex(seconds));
         return "OK".equals(result);
     }
+    
+    
+    /**
+     * 키가 존재할 때만 성공 처리
+     * - SET XX (SET if eXists)
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 세션 갱신 (기존 세션이 있을 때만)
+     * boolean updated = RedisUtils.setXx("session:user123", newSessionData);
+     * if (updated) {
+     *     log.info("세션 갱신 성공");
+     * } else {
+     *     log.warn("세션이 만료되었거나 존재하지 않음");
+     * }
+     *
+     * // 기존 캐시 업데이트 (덮어쓰기 방지)
+     * boolean refreshed = RedisUtils.setXx("cache:product:123", updatedProduct);
+     * </pre>
+     *
+     * @param key Redis 키
+     * @param value 값
+     * @return 키가 존재해서 설정에 성공하면 true, 키가 없으면 false
+     */
+    public static boolean setXx(String key, Object value) {
+        String result = Redis.sync().set(key, value, SetArgs.Builder.xx());
+        return "OK".equals(result);
+    }
+
+    /**
+     * 키가 존재할 때만 성공 처리, TTL 포함
+     *
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // Persistent 세션 갱신 (기존 세션 있을 때만, 30분 연장)
+     * boolean updated = RedisUtils.setXx("persistent:session:abc", data, 1800);
+     *
+     * // 락 연장 (기존 락이 있을 때만)
+     * boolean extended = RedisUtils.setXx("lock:resource", "owner", 10);
+     * if (!extended) {
+     *     throw new LockExpiredException("락이 이미 만료됨");
+     * }
+     * </pre>
+     *
+     * @param key Redis 키
+     * @param value 값
+     * @param seconds TTL (초 단위)
+     * @return 키가 존재해서 설정에 성공하면 true, 키가 없으면 false
+     */
+    public static boolean setXx(String key, Object value, long seconds) {
+        String result = Redis.sync().set(key, value, SetArgs.Builder.xx().ex(seconds));
+        return "OK".equals(result);
+    }
 
     /**
      * 값 조회 (기본)
@@ -345,6 +397,71 @@ public final class RedisUtils {
         return get(key, typeRegistry.get());
     }
     
+    
+    /**
+     * 여러 키를 한 번에 조회
+     * - MGET (Multiple GET)
+     *
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * List&lt;String&gt; keys = Arrays.asList("session:1", "session:2", "session:3");
+     * List&lt;SharedMap&lt;String, Object&gt;&gt; sessions = RedisUtils.mget(keys, TypeRegistry.MAP_SHAREDMAP_OBJECT);
+     * </pre>
+     *
+     * @param keys Redis 키 목록
+     * @return 값 목록 (키가 없으면 해당 위치에 null)
+     */
+    public static List<Object> mget(List<String> keys) {
+        if (CommonUtils.isEmpty(keys)) {
+            return new ArrayList<>();
+        }
+
+        List<KeyValue<String, Object>> results = Redis.sync().mget(keys.toArray(new String[0]));
+        List<Object> list = new ArrayList<>(results.size());
+
+        for (KeyValue<String, Object> kv : results) {
+            list.add(kv.hasValue() ? kv.getValue() : null);
+        }
+
+        return list;
+    }
+
+    /**
+     * 여러 키를 한 번에 조회 (타입 지정)
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> List<T> mget(List<String> keys, TypeReference<T> typeRef) {
+        List<Object> values = mget(keys);
+        if (values.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        Class<T> rawType = getRawType(typeRef);
+        List<T> list = new ArrayList<>(values.size());
+
+        for (Object value : values) {
+            if (value == null) {
+                list.add(null);
+            } else if (rawType.isInstance(value)) {
+                list.add((T) value);
+            } else {
+                throw new ClassCastException(
+                    "Expected " + typeRef.getType() +
+                    " but got " + value.getClass().getName()
+                );
+            }
+        }
+
+        return list;
+    }
+
+    /**
+     * 여러 키를 한 번에 조회 (TypeRegistry 버전)
+     */
+    public static <T> List<T> mget(List<String> keys, TypeRegistry typeRegistry) {
+        return mget(keys, typeRegistry.get());
+    }
+    
 
     /**
      * ⭐ TypeToken을 사용한 값 조회 with 기본값
@@ -377,6 +494,50 @@ public final class RedisUtils {
     public static <T> T getOrDefault(String key, TypeRegistry typeRegistry, T defaultValue) {
         return getOrDefault(key, typeRegistry.get(), defaultValue);
     }
+    
+    
+    /**
+     * 값을 조회하면서 동시에 TTL 갱신
+     * - GETEX (GET + EXPIRE 원자적 처리, Redis 6.2+)
+     *
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 세션 조회 + TTL 갱신을 한 번에
+     * SharedMap&lt;String, Object&gt; session = RedisUtils.getEx("session:abc", 1800, TypeRegistry.MAP_SHAREDMAP_OBJECT);
+     * </pre>
+     *
+     * @param key Redis 키
+     * @param seconds TTL (초 단위)
+     * @param typeRef 반환 타입
+     * @return 값 (없으면 null, TTL도 갱신되지 않음)
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T getEx(String key, long seconds, TypeReference<T> typeRef) {
+        Object value = Redis.sync().getex(key, GetExArgs.Builder.ex(seconds));
+        if (value == null) return null;
+
+        Class<T> rawType = getRawType(typeRef);
+
+        if (rawType.isInstance(value)) {
+            return (T) value;
+        }
+
+        throw new ClassCastException(
+            "Expected " + typeRef.getType() +
+            " but got " + value.getClass().getName()
+        );
+    }
+
+    /**
+     * 값을 조회하면서 동시에 TTL 갱신 (TypeRegistry 버전)
+     */
+    public static <T> T getEx(String key, long seconds, TypeRegistry typeRegistry) {
+        return getEx(key, seconds, typeRegistry.get());
+    }
+    
+    
+    
+    
 
     /**
      * 값 조회 후 삭제 , 일정의 Take  
