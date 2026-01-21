@@ -1,5 +1,6 @@
 package kr.tx24.lib.lifecycle;
 
+import java.lang.reflect.Method;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -15,7 +16,6 @@ import kr.tx24.lib.logback.RedisAppender;
 import kr.tx24.lib.redis.Redis;
 import kr.tx24.lib.redis.RedisPubSub;
 import kr.tx24.lib.redis.RedisText;
-import kr.tx24.was.main.Server;
 
 public class SystemManager extends Thread {
 
@@ -64,7 +64,7 @@ public class SystemManager extends Thread {
 	        // 각 컴포넌트를 안전하게 종료
 	        // 주의: 메서드 참조 대신 람다를 사용하여 지연 실행
 	        shutdownSafely("INetServer"			, () -> INetServer.shutdown());
-	        shutdownSafely("Tomcat Was"			, () -> Server.shutdown());
+	        shutdownDynamic("Tomcat Was"		, "kr.tx24.was.main.Server", "shutdown");
 	        shutdownSafely("INet"				, () -> INet.shutdown());
 	        shutdownSafely("LoadBalancer"		, () -> LoadBalancer.shutdown());
 	        
@@ -131,6 +131,43 @@ public class SystemManager extends Thread {
 	}
 	
 	
-	
+	/**
+	 * 동적으로 클래스를 로드하여 static 메서드 호출
+	 * 클래스가 존재하지 않으면 건너뜀
+	 * shutdownSafely()와 동일한 수준의 예외 안전성 보장
+	 * 
+	 * @param componentName 컴포넌트 이름 (로깅용)
+	 * @param className 완전한 클래스명
+	 * @param methodName 호출할 static 메서드명
+	 */
+	private void shutdownDynamic(String componentName, String className, String methodName) {
+	    try {
+	        Class<?> clazz = Class.forName(className);
+	        Method method = clazz.getMethod(methodName);
+	        method.invoke(null);  // static 메서드이므로 instance는 null
+	        
+	    } catch (ClassNotFoundException e) {
+	        // 클래스가 classpath에 없음 - 정상 케이스로 처리
+	        
+	    } catch (NoSuchMethodException e) {
+	        // 메서드가 없음
+	        
+	    } catch (NoClassDefFoundError e) {
+	        // 클래스 로딩 중 의존성 문제 (링크 에러)
+	        
+	    } catch (ExceptionInInitializerError e) {
+	        // static 초기화 블록에서 예외 발생
+	        
+	    } catch (Error e) {
+	        // 기타 Error (OutOfMemoryError, StackOverflowError 등)
+	        
+	    } catch (Exception e) {
+	        // 일반 Exception (IllegalAccessException, InvocationTargetException 등)
+	        
+	    } catch (Throwable t) {
+	        // 예상치 못한 모든 문제
+	        
+	    }
+	}
 
 }

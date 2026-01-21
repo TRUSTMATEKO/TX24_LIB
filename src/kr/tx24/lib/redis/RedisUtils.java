@@ -2226,6 +2226,56 @@ public final class RedisUtils {
     }
     
     
+    public static List<SharedMap<String, Object>> fetchRows(String key, Retrieve retrieve) {
+        return fetchRows(key, retrieve, 0);
+    }
+
+    /**
+     * Cache-Aside Pattern with TTL
+     * 
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // 1시간 캐싱
+     * SharedMap<String, Object> user = RedisUtils.fetchRow(
+     *     "user:" + userId, 
+     *     retrieve, 
+     *     3600
+     * );
+     * </pre>
+     * 
+     * @param key Redis 키
+     * @param retrieve DB 조회 객체
+     * @param expire TTL (초 단위, 0이면 영구 저장)
+     * @return 조회된 데이터 (단일 행)
+     */
+    public static List<SharedMap<String, Object>> fetchRows(String key, Retrieve retrieve, long expireSeconds) {
+        // 1. 캐시 확인 (exists + get을 한 번에)
+        List<SharedMap<String, Object>> cached = get(key, TypeRegistry.LIST_SHAREDMAP_OBJECT);
+        
+        if (cached != null) {
+            // TTL 갱신 (expireSeconds > 0일 때만)
+            if (expireSeconds > 0) {
+                expire(key, expireSeconds);
+            }
+            return cached;
+        }
+        
+        // 2. DB 조회
+        List<SharedMap<String, Object>> maps = retrieve.select().getRows();
+        
+        // 3. 캐시 저장 (데이터가 있을 때만)
+        if (CommonUtils.isNotEmpty(maps)) {
+            if (expireSeconds > 0) {
+                set(key, maps, expireSeconds);
+            } else {
+                set(key, maps);
+            }
+        }
+        
+        return maps;
+    }
+    
+    
     /**
      * TTL 조회 (밀리초 단위) (PTTL)
      * 

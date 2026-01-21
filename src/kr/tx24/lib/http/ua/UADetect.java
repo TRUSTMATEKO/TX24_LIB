@@ -106,7 +106,7 @@ public final class UADetect {
                             );
                         }
                         parser = new UserAgentService().loadParser(REQUIRED_FIELDS);
-                        logger.info("UserAgentParser initialization successful.");
+                        logger.debug("UserAgentParser initialization successful.");
                        
                     } catch (Exception e) {
                         logger.info("Failed to initialize UserAgentParser: {}", e.getMessage(), e);
@@ -124,7 +124,7 @@ public final class UADetect {
                        .expireAfterWrite(6, TimeUnit.HOURS)
                        .build(userAgent -> parseUserAgentInternal(userAgent));
                     
-                    logger.info("UADetect Caffeine Cache initialized with maximum size 10,000 and 6-hour expiration.");
+                    logger.debug("UADetect Caffeine Cache initialized with maximum size 10,000 and 6-hour expiration.");
                }
             }
        }

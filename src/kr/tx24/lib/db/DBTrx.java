@@ -6,10 +6,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Collection;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.jsonwebtoken.lang.Arrays;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 
@@ -203,6 +205,37 @@ public class DBTrx{
 	}
 	
 	
+	public int execute(Object... daos) throws DBException {
+		if (daos == null || daos.length == 0) {
+			return 0;
+		}
+		return execute(Arrays.asList(daos));
+	}
+	
+	
+	public int execute(List<Object> daos) throws DBException {
+		int result = 0;
+		if (daos == null || daos.isEmpty()) {
+			return result;
+		}
+		
+		
+		for(Object dao : daos) {
+			if (dao instanceof Create create) {
+				result += this.insert(create);
+			} else if (dao instanceof Update update) {
+				result += this.update(update);
+			} else if (dao instanceof Delete delete) {
+				result += this.delete(delete);
+			} else {
+				throw new DBException("unsupported dao type : " + dao.getClass().getName());
+			}
+		}
+		
+		return result;
+	}
+	
+	
 	/**
 	 * Retrieve Object 를 통한 SELECT 처리 Retrieve.init() 자동 호출 됨.
 	 * @param retrieve
@@ -289,6 +322,8 @@ public class DBTrx{
 		}
 		return records;
 	}
+	
+	
 	
 	
 	
