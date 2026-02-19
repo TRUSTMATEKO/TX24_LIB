@@ -50,7 +50,7 @@
 		<copy todir="${classes.dir}">
             <fileset dir="${conf.dir}" includes="tx24.properties"/>
         </copy>
-		<jar destfile="${dist.dir}\tx24_lib_${jardate}.jar" basedir="${classes.dir}" includes="kr/tx24/lib/**,tx24.properties" excludes="kr/tx24/test/**">
+		<jar destfile="${dist.dir}\tx24_lib_2512.jar" basedir="${classes.dir}" includes="kr/tx24/lib/**,tx24.properties" excludes="kr/tx24/test/**">
 			<manifest>
 				<attribute name="Built-By" value="TX24"/>
 				<attribute name="Jar-Title" value="Tx24 Core Library"/>
@@ -58,17 +58,8 @@
 				<attribute name="Last-Updated-Date" value="${time}"/>
 			</manifest>
 		</jar>
-		<jar destfile="${dist.dir}\tx24_was_${jardate}.jar" basedir="${classes.dir}" includes="kr/tx24/was/**" excludes="kr/tx24/test/**">
-            <manifest>
-                <attribute name="Built-By" value="TX24"/>
-                <attribute name="Jar-Title" value="Tx24 Was Library"/>
-                <attribute name="Jar-Version" value="${jardate}"/>
-                <attribute name="Last-Updated-Date" value="${time}"/>
-            </manifest>
-		
-			
-        </jar>
-		<jar destfile="${dist.dir}\tx24_inet_${jardate}.jar" basedir="${classes.dir}" includes="kr/tx24/inet/**" excludes="kr/tx24/test/**">
+		<!--
+		<jar destfile="${dist.dir}\tx24_inet_2512.jar" basedir="${classes.dir}" includes="kr/tx24/inet/**" excludes="kr/tx24/test/**">
             <manifest>
                 <attribute name="Built-By" value="TX24"/>
                 <attribute name="Jar-Title" value="Tx24 INet Server Library"/>
@@ -76,7 +67,7 @@
                 <attribute name="Last-Updated-Date" value="${time}"/>
             </manifest>
         </jar>
-		<jar destfile="${dist.dir}\tx24_task_${jardate}.jar" basedir="${classes.dir}" includes="kr/tx24/task/**" excludes="kr/tx24/test/**">
+		<jar destfile="${dist.dir}\tx24_task_2512.jar" basedir="${classes.dir}" includes="kr/tx24/task/**" excludes="kr/tx24/test/**">
             <manifest>
                 <attribute name="Built-By" value="TX24"/>
                 <attribute name="Jar-Title" value="Tx24 Task Library"/>
@@ -84,5 +75,6 @@
                 <attribute name="Last-Updated-Date" value="${time}"/>
             </manifest>
         </jar>
+        -->
 	</target>
 </project>
