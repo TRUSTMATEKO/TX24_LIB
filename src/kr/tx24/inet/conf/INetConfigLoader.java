@@ -8,6 +8,9 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.google.common.reflect.TypeToken;
+
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.SharedMap;
@@ -73,7 +76,6 @@ public class INetConfigLoader {
 	
 	
 	public static LinkedHashMap<String,Object> getMap(String key){
-		
 		return getConfigMap().getMap(key, TypeRegistry.MAP_LINKEDHASHMAP_OBJECT);
 	}
 	
@@ -83,28 +85,48 @@ public class INetConfigLoader {
 		if (key == null || typeRegistry == null) {
 			return null;
 		}
-		
 		return (T) getConfigMap().getMap(key, typeRegistry);
 	}
 	
-
 	
 	public static <T> T get(String key, Class<T> type) {
-		if (key == null || type == null) {
-			return null;
-		}
-		
-		try {
-			LinkedHashMap<String,Object> map = getMap(key);
-			if(map == null) {
-				return null;
-			}
-			return new JacksonUtils().mapToObject(map, type);
-		}catch(Exception e) {
-			logger.warn("Failed to convert config key '{}' to type {}: {}", key, type.getSimpleName(), e.getMessage());
-			return null;
-		}
+		return convert(key, type);
 	}
+
+    /**
+     * 2. Jackson TypeReference 기반 get (List<String> 등 복합 제네릭용)
+     */
+    public static <T> T get(String key, TypeRegistry typeRef) {
+        return convert(key, typeRef);
+    }
+
+	
+    @SuppressWarnings("unchecked")
+    private static <T> T convert(String key, Object typeInfo) {
+        if (key == null || typeInfo == null) {
+            return null;
+        }
+
+        try {
+            LinkedHashMap<String, Object> map = getMap(key);
+            if (map == null) {
+                return null;
+            }
+
+            JacksonUtils mapper = new JacksonUtils();
+            
+            // 전달된 타입 정보의 실제 타입에 따라 적절한 변환 메서드 호출
+            if (typeInfo instanceof Class) {
+                return mapper.mapToObject(map, (Class<T>) typeInfo);
+            } else if (typeInfo instanceof TypeRegistry) {
+                return mapper.convertValue(map, (TypeRegistry)typeInfo);
+            }
+            return null;
+        } catch (Exception e) {
+            logger.warn("Failed to convert config key '{}' : {}", key, e.getMessage());
+            return null;
+        }
+    }
 	
 	public static void start() {
 		

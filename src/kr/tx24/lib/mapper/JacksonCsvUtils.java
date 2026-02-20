@@ -112,6 +112,11 @@ public class JacksonCsvUtils {
     private final boolean withHeader;
     private final char separator;
 
+    
+    private static class Holder {
+        private static final JacksonCsvUtils INSTANCE = new JacksonCsvUtils();
+    }
+    
     /**
      * 기본 생성자 - 헤더 포함, comma 구분자로 초기화
      */
@@ -132,6 +137,11 @@ public class JacksonCsvUtils {
         this.mapper = mapper;
         this.withHeader = withHeader;
         this.separator = separator;
+    }
+    
+    
+    public static JacksonCsvUtils get() {
+        return Holder.INSTANCE;
     }
 
     /**

@@ -44,12 +44,21 @@ import kr.tx24.lib.map.TypeRegistry;
 public class JacksonYamlUtils extends JacksonAbstract<YAMLMapper> {
     private static final Logger logger = LoggerFactory.getLogger(JacksonYamlUtils.class);
 
+    
+    private static class Holder {
+        private static final JacksonYamlUtils INSTANCE = new JacksonYamlUtils();
+    }
+    
     public JacksonYamlUtils() {
         super(createDefaultMapper());
     }
 
     private JacksonYamlUtils(YAMLMapper mapper) {
         super(mapper);
+    }
+    
+    public static JacksonYamlUtils get() {
+        return Holder.INSTANCE;
     }
 
     /**

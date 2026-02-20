@@ -67,6 +67,10 @@ import kr.tx24.lib.map.TypeRegistry;
 public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
     private static final Logger logger = LoggerFactory.getLogger(JacksonXmlUtils.class);
 
+    private static class Holder {
+        private static final JacksonXmlUtils INSTANCE = new JacksonXmlUtils();
+    }
+    
     /**
      * 기본 생성자 - Pretty 포맷으로 초기화
      */
@@ -81,6 +85,11 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
      */
     private JacksonXmlUtils(XmlMapper mapper) {
         super(mapper);
+    }
+    
+    
+    public static JacksonXmlUtils get() {
+        return Holder.INSTANCE;
     }
 
     /**
@@ -101,6 +110,9 @@ public class JacksonXmlUtils extends JacksonAbstract<XmlMapper> {
         xmlMapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         return xmlMapper;
     }
+    
+    
+    
 
     /**
      * Pretty 포맷 인스턴스 반환 (들여쓰기 O)

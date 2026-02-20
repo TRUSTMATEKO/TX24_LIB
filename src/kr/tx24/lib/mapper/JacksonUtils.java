@@ -68,6 +68,11 @@ import kr.tx24.lib.map.TypeRegistry;
 public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
 	
 	private static final Logger logger = LoggerFactory.getLogger(JacksonUtils.class);
+
+	
+	private static class Holder {
+        private static final JacksonUtils INSTANCE = new JacksonUtils();
+    }
 	
     /**
      * 기본 생성자 - Pretty 포맷으로 초기화
@@ -83,6 +88,11 @@ public class JacksonUtils extends JacksonAbstract<ObjectMapper> {
      */
     private JacksonUtils(ObjectMapper mapper) {
         super(mapper);
+    }
+    
+    
+    public static JacksonUtils get() {
+        return Holder.INSTANCE;
     }
 
     /**
