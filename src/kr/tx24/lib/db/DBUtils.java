@@ -717,6 +717,31 @@ public class DBUtils {
 	    }
 	    return success;
 	}
+    
+    
+    public static String cut(String input, int length) {
+        if (input == null || input.isEmpty()) {
+            return "";
+        }
+        if (length <= 0) {
+            return "";
+        }
 
+        try {
+            int actualLength = input.codePointCount(0, input.length());
+            if (actualLength <= length) {
+                return input;
+            }
+            int endOffset = input.offsetByCodePoints(0, length);
+            return input.substring(0, endOffset);
+
+        } catch (Exception e) {
+            try {
+                return input.substring(0, Math.min(input.length(), length));
+            } catch (Exception se) {
+                return ""; 
+            }
+        }
+    }
 }
 
