@@ -34,6 +34,7 @@ public class ByteBufferUtils {
     public ByteBufferUtils(Charset charset) {
         this.charset = charset;
     }
+    
 
     public ByteBufferUtils create(int capacity, String charsetName) {
         this.buffer = ByteBuffer.allocate(capacity);
@@ -78,7 +79,11 @@ public class ByteBufferUtils {
             buffer.put(b, 0, length);
         } else {
             buffer.put(b);
-            spad(length - b.length);
+            
+            byte[] add = new byte[length - b.length];
+            Arrays.fill(add, SPACE);
+            buffer.put(add);
+            
         }
         log(labels, b);
         return this;
