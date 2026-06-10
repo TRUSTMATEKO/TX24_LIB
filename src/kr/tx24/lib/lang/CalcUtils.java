@@ -41,6 +41,7 @@ public class CalcUtils {
 	
 	/**
 	 * type : D+3,M+15,W+,2W+ 에 대한 날짜 계산 , 지정일자 기준  W+1 은 차주 월요일을 의미하며 2W+1 은 차차주 월요일을 의미한다.
+	 * type : T , X 에 대해서는 다음날을 회신 
 	 * @param type
 	 * @return
 	 */
@@ -49,6 +50,9 @@ public class CalcUtils {
 		if(type.startsWith("D")) {
 			int daysToAdd = CommonUtils.parseInt(type.replaceAll("D[+]", ""));
 			return DateUtils.getDay(specifyDay).plusDays(daysToAdd)
+					.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+		}else if(type.startsWith("T") ||	 type.startsWith("X")) {
+			return DateUtils.getDay(specifyDay).plusDays(1)
 					.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 		}else if(type.startsWith("M")) {
 			int monthsToAdd = CommonUtils.parseInt(type.replaceAll("M[+]", ""));
@@ -63,7 +67,7 @@ public class CalcUtils {
 			return DateUtils.getDay(specifyDay).plusWeeks(2).with(WeekFields.of(Locale.KOREA).dayOfWeek(),week+1)
 				.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
 		}else {
-			logger.warn("format error getDay , D,M,W,2W 으로 시작되지 않았음. : {}",type);
+			logger.warn("format error getDay , D,T,X,M,W,2W 으로 시작되지 않았음. : {}",type);
 			return "";
 		}
 	}
