@@ -345,10 +345,10 @@ public class Retrieve {
 	 */
 	private StringBuilder buildCondition() {
 		StringBuilder sql = new StringBuilder();
-		if(this.where.length() > 1){ sql.append(DBUtils.WHERE).append(this.where);}
-		if(this.groupBy.length() > 1){ sql.append(GROUP_BY).append(this.groupBy);}
-		if(this.having.length() > 1){ sql.append(HAVING).append(this.having);}
-		if(this.orderBy.length() > 1){ sql.append(ORDER_BY).append(this.orderBy);}
+		if(this.where.length() > 0){ sql.append(DBUtils.WHERE).append(this.where);}
+		if(this.groupBy.length() > 0){ sql.append(GROUP_BY).append(this.groupBy);}
+		if(this.having.length() > 0){ sql.append(HAVING).append(this.having);}
+		if(this.orderBy.length() > 0){ sql.append(ORDER_BY).append(this.orderBy);}
 		
 		return sql;
 	}
@@ -360,10 +360,10 @@ public class Retrieve {
 	 */
 	public StringBuilder buildWhere() {
 		StringBuilder sql = new StringBuilder();
-		if(this.where.length() > 1){ sql.append(this.where);}
-		if(this.groupBy.length() > 1){ sql.append(GROUP_BY).append(this.groupBy);}
-		if(this.having.length() > 1){ sql.append(HAVING).append(this.having);}
-		if(this.orderBy.length() > 1){ sql.append(ORDER_BY).append(this.orderBy);}
+		if(this.where.length() > 0){ sql.append(this.where);}
+		if(this.groupBy.length() > 0){ sql.append(GROUP_BY).append(this.groupBy);}
+		if(this.having.length() > 0){ sql.append(HAVING).append(this.having);}
+		if(this.orderBy.length() > 0){ sql.append(ORDER_BY).append(this.orderBy);}
 		
 		return sql;
 	}
