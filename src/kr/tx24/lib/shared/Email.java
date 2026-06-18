@@ -12,7 +12,8 @@ import java.util.List;
 public class Email implements java.io.Serializable{
 	private static final long serialVersionUID = -7047374973778666074L;
 	
-	public String id		= "";						//관리용 ID
+	public String system 	= "default";						//시스템명
+	public String id			= "";						//관리용 ID
 	public String table		= "";						//관리용 TABLE
 	public String from 		= "";						//보내는사람 이메일
 	public String fromName 	= "";						//보내는사람 이름

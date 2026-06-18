@@ -5,7 +5,7 @@ package kr.tx24.lib.shared;
  */
 public class MsgResult implements java.io.Serializable{
 	private static final long serialVersionUID = 702789770925468631L;
-	
+	public String system 	= "default";	
 	public String id			= "";	//관리아이디
 	public String table			= "";	//관리테이블
 	public String msgType		= "";	//EMAIL, SMS
