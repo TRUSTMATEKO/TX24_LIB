@@ -1,6 +1,7 @@
 package kr.tx24.lib.map;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +25,10 @@ public class SharedMap<K, V> extends ConcurrentHashMap<K, V> {
 
     public SharedMap() {}
     
+    public SharedMap(int initialCapacity) {
+	    super(initialCapacity);
+	}
+	
     
     public SharedMap(int initialCapacity, float loadFactor) {
 		super(initialCapacity,loadFactor);
@@ -35,7 +40,50 @@ public class SharedMap<K, V> extends ConcurrentHashMap<K, V> {
         }
     }
     
+    public static <K,V> SharedMap<K,V> of(){
+    	return new SharedMap<>();
+    }
+    
+    public static <K,V> SharedMap<K,V> of(int initialCapacity){
+    	return new SharedMap<>(initialCapacity);
+    }
 
+    /**
+     * 없는 key 를 넣을 경우에 
+     * @param key
+     * @param value
+     * @return
+     */
+    public SharedMap<K,V> add(K key, V value){
+    	if (super.putIfAbsent(key, value) != null) {
+
+            throw new IllegalArgumentException(
+                    "Duplicate key : " + key
+            );
+        }
+
+        return this;
+    }
+    
+    /**
+     * 있는 key 에 값을 넣을 경우에
+     * @param key
+     * @param value
+     * @return
+     */
+    public SharedMap<K,V> set(K key, V value){
+    	V oldValue = super.replace(key, value);
+
+	   	if (oldValue == null && !containsKey(key)) {
+	   		 throw new IllegalArgumentException(
+	   				 "Undefined key : " + key);
+	   	}
+    	return this;
+    }
+    
+    public SharedMap<K,V> copy(){
+    	return new SharedMap<>(this);
+    }
 
 
     public SharedMap(String json) {
@@ -210,11 +258,25 @@ public class SharedMap<K, V> extends ConcurrentHashMap<K, V> {
     public BigDecimal getBigDecimal(String key) {
         V val = super.get(key);
         if (val instanceof BigDecimal) return (BigDecimal) val;
+        if (val instanceof BigInteger) return new BigDecimal((BigInteger) val);
+        if (val instanceof Number) return new BigDecimal(val.toString());
         if (val instanceof String) {
-            try { return new BigDecimal((String) val); } 
+            try { return new BigDecimal(((String) val).trim()); }
             catch (Exception e) { return BigDecimal.ZERO; }
         }
         return BigDecimal.ZERO;
+    }
+    
+    public BigInteger getBigInteger(String key) {
+        V val = super.get(key);
+        if (val instanceof BigInteger) return (BigInteger) val;
+        if (val instanceof BigDecimal) return ((BigDecimal) val).toBigInteger();
+        if (val instanceof Number) return BigInteger.valueOf(((Number) val).longValue());
+        if (val instanceof String) {
+            try { return new BigInteger(((String) val).trim()); }
+            catch (Exception e) { return BigInteger.ZERO; }
+        }
+        return BigInteger.ZERO;
     }
 
     public Timestamp getTimestamp(String key) {
