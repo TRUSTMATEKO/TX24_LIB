@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project basedir="../../TX24_LIB" default="compile" name="LNK1P">
+<project basedir="../../TX24_LIB" default="compile" name="TX24">
 	
 	<!-- Project Default Directory -->
 	<property name="src.dir" location="${basedir}\src"/>
@@ -58,7 +58,7 @@
 				<attribute name="Last-Updated-Date" value="${time}"/>
 			</manifest>
 		</jar>
-		<!--
+		
 		<jar destfile="${dist.dir}\tx24_inet_2512.jar" basedir="${classes.dir}" includes="kr/tx24/inet/**" excludes="kr/tx24/test/**">
             <manifest>
                 <attribute name="Built-By" value="TX24"/>
@@ -67,6 +67,7 @@
                 <attribute name="Last-Updated-Date" value="${time}"/>
             </manifest>
         </jar>
+		<!--
 		<jar destfile="${dist.dir}\tx24_task_2512.jar" basedir="${classes.dir}" includes="kr/tx24/task/**" excludes="kr/tx24/test/**">
             <manifest>
                 <attribute name="Built-By" value="TX24"/>

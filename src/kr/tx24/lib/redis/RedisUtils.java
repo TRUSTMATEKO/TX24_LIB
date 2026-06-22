@@ -1229,6 +1229,26 @@ public final class RedisUtils {
         
         return null;
     }
+
+
+    @SuppressWarnings("unchecked")
+    public static <T> T lpop(String key, TypeReference<T> typeRef) {
+        Object value = lpop(key);
+        if (value == null) return null;
+
+        Class<T> rawType = getRawType(typeRef);
+        if (rawType.isInstance(value)) {
+            return (T) value;
+        }
+
+        throw new ClassCastException("Expected " + typeRef.getType() + " but got " + value.getClass().getName());
+    }
+
+
+    public static <T> T lpop(String key, TypeRegistry typeRegistry) {
+        return lpop(key, typeRegistry.get());
+    }
+
   
     
 
@@ -1255,7 +1275,7 @@ public final class RedisUtils {
     /**
      * KEY 와 초단위 값 전달 
      * @param key
-     * @param timeout
+     * @param maxWaitSeconds
      * @return
      */
     public static Object brpop(String key, long maxWaitSeconds) {
@@ -1283,6 +1303,25 @@ public final class RedisUtils {
         
         return null;
 		 
+    }
+
+
+    @SuppressWarnings("unchecked")
+    public static <T> T rpop(String key, TypeReference<T> typeRef) {
+        Object value = rpop(key);
+        if (value == null) return null;
+
+        Class<T> rawType = getRawType(typeRef);
+        if (rawType.isInstance(value)) {
+            return (T) value;
+        }
+
+        throw new ClassCastException("Expected " + typeRef.getType() + " but got " + value.getClass().getName());
+    }
+
+
+    public static <T> T rpop(String key, TypeRegistry typeRegistry) {
+        return lpop(key, typeRegistry.get());
     }
     
 
@@ -2195,7 +2234,7 @@ public final class RedisUtils {
      * 
      * @param key Redis 키
      * @param retrieve DB 조회 객체
-     * @param expire TTL (초 단위, 0이면 영구 저장)
+     * @param expireSeconds TTL (초 단위, 0이면 영구 저장)
      * @return 조회된 데이터 (단일 행)
      */
     public static SharedMap<String, Object> fetchRow(String key, Retrieve retrieve, long expireSeconds) {
@@ -2245,7 +2284,7 @@ public final class RedisUtils {
      * 
      * @param key Redis 키
      * @param retrieve DB 조회 객체
-     * @param expire TTL (초 단위, 0이면 영구 저장)
+     * @param expireSeconds TTL (초 단위, 0이면 영구 저장)
      * @return 조회된 데이터 (단일 행)
      */
     public static List<SharedMap<String, Object>> fetchRows(String key, Retrieve retrieve, long expireSeconds) {
