@@ -203,6 +203,41 @@ public class DBTrx{
 		}
 		return result;
 	}
+
+
+	public long insertLastId(Create create)throws DBException{
+
+		PreparedStatement pstmt = null;
+		ResultSet rset 			= null;
+		String query			= create.buildPreparedQuery();
+		long result = 0;
+
+		long startTime = System.nanoTime();
+		try {
+			pstmt		= conn.prepareStatement(query,Statement.RETURN_GENERATED_KEYS);
+			DBUtils.setValues(pstmt,create.getRecord());
+			result  	= pstmt.executeUpdate();
+			rset		= pstmt.getGeneratedKeys();
+
+			if(rset.next()){
+				result = rset.getLong(1);
+			}
+
+
+		}catch(SQLException t){
+			throw new DBException("Failed to execute insert", query, t);
+		}finally {
+			close(pstmt);
+			if(deepview) {
+				logger.info("query : {} = [{}]",result,create.build());
+				logger.info(SystemUtils.getElapsedTime(System.nanoTime()- startTime));
+			}
+
+			create.init();
+
+		}
+		return result;
+	}
 	
 	
 	public int execute(Object... daos) throws DBException {
