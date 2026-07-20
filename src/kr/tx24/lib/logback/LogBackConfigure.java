@@ -263,6 +263,8 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         ctx.getLogger("javax.activation").setLevel(Level.INFO);
         ctx.getLogger("javax.mail").setLevel(Level.INFO);
         ctx.getLogger("io.netty").setLevel(Level.INFO);
+
+
         ctx.getLogger("org.apache").setLevel(Level.INFO);
         ctx.getLogger("org.hibernate").setLevel(Level.INFO);
         
@@ -271,12 +273,17 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         
         ctx.getLogger("io.lettuce").setLevel(Level.INFO);
         ctx.getLogger("io.lettuce.core.AbstractRedisClient").setLevel(Level.ERROR);
-        
+        ctx.getLogger("io.lettuce.core.resource.Transports").setLevel(Level.ERROR);
+
         ctx.getLogger("reactor.util").setLevel(Level.INFO);
         ctx.getLogger("org.thymeleaf").setLevel(Level.INFO);
         ctx.getLogger("org.springframework").setLevel(Level.INFO);
         ctx.getLogger("org.mariadb.jdbc").setLevel(Level.INFO);
         ctx.getLogger("com.password4j").setLevel(Level.INFO);
+
+
+
+
     }
     
     /**
