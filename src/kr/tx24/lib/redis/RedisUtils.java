@@ -2024,7 +2024,7 @@ public final class RedisUtils {
      * @return "PONG" 또는 null (연결 실패)
      */
     public static String ping() {
-        return Redis.ping();
+        return Redis.sync().ping();
     }
 
     /**

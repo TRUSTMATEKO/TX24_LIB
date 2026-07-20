@@ -1,501 +1,321 @@
 package kr.tx24.lib.redis;
 
+import io.lettuce.core.ClientOptions;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.codec.StringCodec;
+import io.lettuce.core.pubsub.RedisPubSubAdapter;
+import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
+import io.lettuce.core.pubsub.api.async.RedisPubSubAsyncCommands;
+import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
+import io.lettuce.core.resource.ClientResources;
+import io.lettuce.core.resource.DefaultClientResources;
+import kr.tx24.lib.executor.AsyncExecutor;
+import kr.tx24.lib.lang.SystemUtils;
+import kr.tx24.lib.mapper.JacksonUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.RedisURI;
-import io.lettuce.core.codec.StringCodec;
-import io.lettuce.core.pubsub.RedisPubSubListener;
-import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
-import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
-import io.lettuce.core.resource.ClientResources;
-import io.lettuce.core.resource.DefaultClientResources;
-import kr.tx24.lib.lang.SystemUtils;
-import kr.tx24.lib.mapper.JacksonUtils;
-
 /**
- * Redis Pub/Sub 전용 Connection 관리자 (수정 버전 v2)
- * - static 블록 자동 초기화 제거
- * - Lazy initialization (실제 사용시에만 초기화)
- * - shutdown시 불필요한 초기화 방지
+ * Redis Pub/Sub Manager
+ *
+ * <pre>
+ * RedisClient
+ *      |
+ * StatefulRedisPubSubConnection
+ *      |
+ * Heartbeat Monitor
+ *
+ * 특징
+ * - Pub/Sub 전용 Lettuce Connection 관리
+ * - Lazy Initialization (실제 사용시 초기화)
+ * - Auto reconnect 및 HAProxy idle timeout 대응
+ * - 단일 메시지 Publish / 장기 Listener Subscribe 지원
+ * </pre>
  */
 public final class RedisPubSub {
 
     private static final Logger logger = LoggerFactory.getLogger(RedisPubSub.class);
-    
+
     private static volatile RedisClient client;
     private static volatile ClientResources clientResources;
-    
-    // 상태 관리 플래그
-    private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
-    private static final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
-    
-    // 활성 Subscriber 관리 (채널별)
+    private static volatile StatefulRedisPubSubConnection<String, String> connection;
+
+    private static final AtomicBoolean initialized = new AtomicBoolean(false);
+    private static final AtomicBoolean shutdown = new AtomicBoolean(false);
+    private static final AtomicBoolean reconnecting = new AtomicBoolean(false);
+    private static final AtomicBoolean heartbeatStarted = new AtomicBoolean(false);
+
+    private static volatile ScheduledFuture<?> heartbeatFuture;
+    private static String redisUri;
+
+    // 활성 Subscriber 관리 (채널/패턴별)
     private static final Map<String, Subscriber> activeSubscribers = new ConcurrentHashMap<>();
-    
-    // static 블록 제거 - 자동 초기화 하지 않음
-    // static {
-    //     initClient();
-    // }
 
     private RedisPubSub() {
-        throw new UnsupportedOperationException("Utility class");
+        throw new UnsupportedOperationException();
     }
 
-    // ========== 초기화 및 종료 ==========
-    
     /**
-     * Client 초기화 (Lazy initialization)
-     * 실제 사용시에만 호출됨
+     * Redis Pub/Sub 초기화
      */
-    private static synchronized void initClient() {
-        // 이미 초기화되었으면 스킵
-        if (isInitialized.get()) {
+    private static synchronized void init() {
+
+        if (initialized.get() && connection != null && connection.isOpen()) {
             return;
         }
-        
-        // shutdown 중이면 초기화하지 않음
-        if (isShuttingDown.get()) {
-            //logger.debug("RedisPubSub is shutting down, skipping initialization");
-            return;
+
+        if (shutdown.get()) {
+            throw new IllegalStateException("RedisPubSub already shutdown");
         }
-        
+
         try {
             SystemUtils.init();
-            String redisUri = SystemUtils.getRedisSystemUri();
-            
+            redisUri = SystemUtils.getRedisSystemUri();
+
             if (SystemUtils.REDIS_INITIAL.equals(redisUri)) {
                 throw new IllegalStateException("Redis URI not configured");
             }
-            
-            // ClientResources 최적화
-            clientResources = DefaultClientResources.builder()
-                    .ioThreadPoolSize(2)  // Pub/Sub는 I/O 집약적
-                    .computationThreadPoolSize(2)
-                    .build();
-            
-            RedisURI uri = RedisURI.create(redisUri);
-            uri.setTimeout(Duration.ofSeconds(10));
-            
-            client = RedisClient.create(clientResources, uri);
-            isInitialized.set(true);
-            
-            logger.info("RedisPubSub  : initialized");
+
+            createClient();
+            createConnection();
+            initialized.set(true);
+            startHeartbeat();
+
+            logger.info("RedisPubSub initialized : {}", redisUri);
+
         } catch (Exception e) {
-            logger.error("Failed to initialize RedisPubSub client", e);
-            throw new RuntimeException("RedisPubSub initialization failed", e);
+            logger.error("RedisPubSub initialization failed", e);
+            throw e;
         }
-    }
-    
-    /**
-     * client가 사용 가능한지 확인하고 필요시 초기화
-     * 실제 pub/sub 작업 전에만 호출
-     */
-    private static void ensureClientAvailable() {
-        if (isShuttingDown.get()) {
-            throw new IllegalStateException("RedisPubSub is shutting down");
-        }
-        
-        if (!isInitialized.get()) {
-            synchronized (RedisPubSub.class) {
-                if (!isInitialized.get() && !isShuttingDown.get()) {
-                    initClient();
-                }
-            }
-        }
-        
-        if (client == null) {
-            throw new IllegalStateException("RedisPubSub client is not available");
-        }
-    }
-    
-    /**
-     * 모든 활성 연결 종료 및 리소스 해제
-     */
-    public static synchronized void shutdown() {
-        // shutdown 플래그 설정
-        if (!isShuttingDown.compareAndSet(false, true)) {
-            logger.debug("RedisPubSub shutdown already in progress");
-            return;
-        }
-        
-        // 초기화되지 않았으면 바로 리턴
-        if (!isInitialized.get()) {
-            //logger.debug("RedisPubSub was not initialized, skipping shutdown");
-            return;
-        }
-        
-        // 모든 Subscriber 종료
-        if (!activeSubscribers.isEmpty()) {
-            activeSubscribers.values().forEach(subscriber -> {
-                try {
-                    subscriber.close();
-                } catch (Exception e) {
-                    logger.warn("Failed to close subscriber", e);
-                }
-            });
-            activeSubscribers.clear();
-        }
-        
-        // Client 종료
-        if (client != null) {
-            try {
-                client.shutdown(100, 1000, TimeUnit.MILLISECONDS);
-                client = null;
-            } catch (Exception e) {
-                logger.error("Error during client shutdown", e);
-            }
-        }
-        
-        // ClientResources 종료
-        if (clientResources != null) {
-            try {
-                clientResources.shutdown(100, 1000, TimeUnit.MILLISECONDS).get();
-                clientResources = null;
-            } catch (Exception e) {
-                logger.error("Error during client resources shutdown", e);
-            }
-        }
-        
-        isInitialized.set(false);
-        logger.info("RedisPubSub shutdown");
     }
 
-    // ========== 간편 API (일회성 Publish) ==========
-    
     /**
-     * 메시지 발행 (일회성 - Connection 자동 생성/해제)
-     * 
-     * @param channel 채널명
-     * @param message 메시지 (String)
-     * @return 메시지를 받은 구독자 수
+     * RedisClient 생성
+     */
+    private static void createClient() {
+
+        if (clientResources == null) {
+            int cpu = Runtime.getRuntime().availableProcessors();
+
+            clientResources = DefaultClientResources.builder()
+                    .ioThreadPoolSize(Math.max(2, cpu))
+                    .computationThreadPoolSize(Math.max(2, cpu))
+                    .build();
+        }
+
+        RedisURI uri = RedisURI.create(redisUri);
+        uri.setTimeout(Duration.ofSeconds(10));
+
+        client = RedisClient.create(clientResources, uri);
+
+        client.setOptions(ClientOptions.builder()
+                .autoReconnect(true)
+                .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                .build()
+        );
+    }
+
+    /**
+     * Connection 생성
+     */
+    private static synchronized void createConnection() {
+
+        try {
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Exception ignore) {
+                }
+            }
+
+            connection = client.connectPubSub(StringCodec.UTF8);
+
+            String pong = connection.sync().ping();
+
+            if (!"PONG".equals(pong)) {
+                throw new IllegalStateException("RedisPubSub ping failed");
+            }
+
+        } catch (Exception e) {
+            logger.error("RedisPubSub connection create failed", e);
+            throw e;
+        }
+    }
+
+    /**
+     * Connection 반환
+     */
+    public static StatefulRedisPubSubConnection<String, String> getConnection() {
+        if (shutdown.get()) {
+            throw new IllegalStateException("RedisPubSub shutdown");
+        }
+
+        if (!initialized.get() || connection == null || !connection.isOpen()) {
+            init();
+        }
+
+        return connection;
+    }
+
+    /**
+     * Sync command
+     */
+    public static RedisPubSubCommands<String, String> sync() {
+        return getConnection().sync();
+    }
+
+    /**
+     * Async command
+     */
+    public static RedisPubSubAsyncCommands<String, String> async() {
+        return getConnection().async();
+    }
+
+    // ==================== Publish API ====================
+
+    /**
+     * 메시지 발행 (String)
      */
     public static Long publish(String channel, String message) {
-        if (isShuttingDown.get()) {
-            logger.warn("Cannot publish, RedisPubSub is shutting down");
-            return 0L;
-        }
-        
-        try (Publisher publisher = createPublisher()) {
-            return publisher.publish(channel, message);
+        try {
+            Long receivers = sync().publish(channel, message);
+            logger.debug("Published to {}: {} (received by {})", channel, message, receivers);
+            return receivers;
         } catch (Exception e) {
-            logger.error("Failed to publish message", e);
+            logger.error("Failed to publish message to channel: {}", channel, e);
             return 0L;
         }
     }
-    
+
     /**
-     * 메시지 발행 (일회성 - JSON 객체)
-     * 
-     * @param channel 채널명
-     * @param message 메시지 객체 (JSON으로 직렬화됨)
-     * @return 메시지를 받은 구독자 수
+     * 메시지 발행 (JSON)
      */
     public static <T> Long publishJson(String channel, T message) {
-        if (isShuttingDown.get()) {
-            logger.warn("Cannot publish, RedisPubSub is shutting down");
-            return 0L;
-        }
-        
-        try (Publisher publisher = createPublisher()) {
-            return publisher.publishJson(channel, message);
+        try {
+            String json = new JacksonUtils().toJson(message);
+            return publish(channel, json);
         } catch (Exception e) {
-            logger.error("Failed to publish JSON message", e);
+            logger.error("Failed to publish JSON message to channel: {}", channel, e);
             return 0L;
         }
     }
 
-    // ========== Publisher API (재사용 가능) ==========
-    
-    /**
-     * 재사용 가능한 Publisher 생성
-     * try-with-resources 사용 권장
-     */
-    public static Publisher createPublisher() {
-        ensureClientAvailable();  // 여기서 필요시 초기화
-        return new Publisher();
-    }
-    
-    /**
-     * 메시지 발행용 Publisher
-     * - 여러 번 publish 가능
-     * - AutoCloseable로 자동 정리
-     */
-    public static class Publisher implements AutoCloseable {
-        
-        private final StatefulRedisPubSubConnection<String, String> connection;
-        private final RedisPubSubCommands<String, String> commands;
-        private volatile boolean closed = false;
-        
-        private Publisher() {
-            this.connection = client.connectPubSub(StringCodec.UTF8);
-            this.commands = connection.sync();
-            logger.debug("Publisher connection created");
-        }
-        
-        /**
-         * 메시지 발행 (String)
-         */
-        public Long publish(String channel, String message) {
-            checkClosed();
-            try {
-                Long subscribers = commands.publish(channel, message);
-                logger.debug("Published to {}: {} (received by {} subscribers)", 
-                           channel, message, subscribers);
-                return subscribers;
-            } catch (Exception e) {
-                logger.error("Failed to publish to channel: {}", channel, e);
-                throw new RuntimeException("Publish failed", e);
-            }
-        }
-        
-        /**
-         * 메시지 발행 (JSON)
-         */
-        public <T> Long publishJson(String channel, T message) {
-            checkClosed();
-            try {
-                String json = new JacksonUtils().toJson(message);
-                return publish(channel, json);
-            } catch (Exception e) {
-                logger.error("Failed to serialize and publish JSON to channel: {}", channel, e);
-                throw new RuntimeException("JSON publish failed", e);
-            }
-        }
-        
-        /**
-         * 패턴 발행 (여러 채널에 한 번에 전송)
-         */
-        public void publishToPattern(String channelPattern, String message, String... channels) {
-            checkClosed();
-            for (String channel : channels) {
-                if (channel.matches(channelPattern.replace("*", ".*"))) {
-                    publish(channel, message);
-                }
-            }
-        }
-        
-        private void checkClosed() {
-            if (closed) {
-                throw new IllegalStateException("Publisher already closed");
-            }
-            if (isShuttingDown.get()) {
-                throw new IllegalStateException("RedisPubSub is shutting down");
-            }
-        }
-        
-        @Override
-        public void close() {
-            if (closed) return;
-            closed = true;
-            
-            try {
-                if (connection != null && connection.isOpen()) {
-                    connection.close();
-                }
-                logger.debug("Publisher connection closed");
-            } catch (Exception e) {
-                logger.warn("Error closing publisher connection", e);
-            }
-        }
-    }
+    // ==================== Subscribe API ====================
 
-    // ========== Subscriber API (장기 연결) ==========
-    
     /**
      * 채널 구독 시작
-     * 
-     * @param channel 채널명
-     * @param messageHandler 메시지 수신 시 호출될 핸들러
-     * @return Subscriber 인스턴스 (unsubscribe/close 호출 필요)
      */
     public static Subscriber subscribe(String channel, Consumer<String> messageHandler) {
-        if (isShuttingDown.get()) {
-            throw new IllegalStateException("Cannot subscribe, RedisPubSub is shutting down");
-        }
-        
-        ensureClientAvailable();  // 여기서 필요시 초기화
         Subscriber subscriber = new Subscriber();
         subscriber.subscribe(channel, messageHandler);
         activeSubscribers.put(channel, subscriber);
         return subscriber;
     }
-    
+
     /**
      * 패턴 구독 시작 (예: "news:*")
-     * 
-     * @param pattern 채널 패턴
-     * @param messageHandler 메시지 수신 시 호출될 핸들러
-     * @return Subscriber 인스턴스
      */
     public static Subscriber psubscribe(String pattern, Consumer<String> messageHandler) {
-        if (isShuttingDown.get()) {
-            throw new IllegalStateException("Cannot subscribe, RedisPubSub is shutting down");
-        }
-        
-        ensureClientAvailable();  // 여기서 필요시 초기화
         Subscriber subscriber = new Subscriber();
         subscriber.psubscribe(pattern, messageHandler);
         activeSubscribers.put(pattern, subscriber);
         return subscriber;
     }
-    
+
     /**
      * JSON 메시지 구독
-     * 
-     * @param channel 채널명
-     * @param messageType 메시지 타입 클래스
-     * @param messageHandler 역직렬화된 객체를 받는 핸들러
      */
-    public static <T> Subscriber subscribeJson(String channel, Class<T> messageType, 
-                                                Consumer<T> messageHandler) {
+    public static <T> Subscriber subscribeJson(String channel, Class<T> messageType, Consumer<T> messageHandler) {
         return subscribe(channel, json -> {
             try {
                 T obj = new JacksonUtils().fromJson(json, messageType);
                 messageHandler.accept(obj);
             } catch (Exception e) {
-                logger.error("Failed to deserialize JSON message from {}", channel, e);
+                logger.error("Failed to deserialize JSON message from channel: {}", channel, e);
             }
         });
     }
-    
+
     /**
-     * 메시지 구독용 Subscriber
-     * - 장기 연결 유지
-     * - 명시적으로 unsubscribe/close 호출 필요
+     * Subscriber Wrapper
      */
     public static class Subscriber implements AutoCloseable {
-        
-        private final StatefulRedisPubSubConnection<String, String> connection;
-        private final RedisPubSubCommands<String, String> commands;
+
+        private final StatefulRedisPubSubConnection<String, String> subConnection;
+        private final RedisPubSubCommands<String, String> subCommands;
         private volatile boolean closed = false;
         private String subscribedChannel;
         private String subscribedPattern;
-        
+
         private Subscriber() {
-            this.connection = client.connectPubSub(StringCodec.UTF8);
-            this.commands = connection.sync();
-            logger.debug("Subscriber connection created");
+            if (!initialized.get()) {
+                init();
+            }
+            this.subConnection = client.connectPubSub(StringCodec.UTF8);
+            this.subCommands = subConnection.sync();
         }
-        
-        /**
-         * 채널 구독
-         */
+
         public void subscribe(String channel, Consumer<String> messageHandler) {
             checkClosed();
-            
-            connection.addListener(new RedisPubSubListener<String, String>() {
+            subConnection.addListener(new RedisPubSubAdapter<>() {
                 @Override
-                public void message(String channel, String message) {
-                    try {
-                        messageHandler.accept(message);
-                    } catch (Exception e) {
-                        logger.error("Error in message handler for channel {}", channel, e);
+                public void message(String ch, String message) {
+                    if (ch.equals(channel)) {
+                        try {
+                            messageHandler.accept(message);
+                        } catch (Exception e) {
+                            logger.error("Error in message handler for channel: {}", channel, e);
+                        }
                     }
                 }
-
-                @Override
-                public void message(String pattern, String channel, String message) {
-                    // Pattern subscribe에서 사용
-                }
-
-                @Override
-                public void subscribed(String channel, long count) {
-                    logger.debug("Subscribed to channel: {} (total: {})", channel, count);
-                }
-
-                @Override
-                public void psubscribed(String pattern, long count) {
-                    // Pattern subscribe에서 사용
-                }
-
-                @Override
-                public void unsubscribed(String channel, long count) {
-                    logger.debug("Unsubscribed from channel: {} (remaining: {})", channel, count);
-                }
-
-                @Override
-                public void punsubscribed(String pattern, long count) {
-                    // Pattern unsubscribe에서 사용
-                }
             });
-            
-            commands.subscribe(channel);
+
+            subCommands.subscribe(channel);
             this.subscribedChannel = channel;
             logger.info("Subscribed to channel: {}", channel);
         }
-        
-        /**
-         * 패턴 구독
-         */
+
         public void psubscribe(String pattern, Consumer<String> messageHandler) {
             checkClosed();
-            
-            connection.addListener(new RedisPubSubListener<String, String>() {
+            subConnection.addListener(new RedisPubSubAdapter<>() {
                 @Override
-                public void message(String channel, String message) {
-                    // Regular subscribe에서 사용
-                }
-
-                @Override
-                public void message(String pattern, String channel, String message) {
-                    try {
-                        messageHandler.accept(message);
-                    } catch (Exception e) {
-                        logger.error("Error in message handler for pattern {} channel {}", 
-                                   pattern, channel, e);
+                public void message(String pat, String ch, String message) {
+                    if (pat.equals(pattern)) {
+                        try {
+                            messageHandler.accept(message);
+                        } catch (Exception e) {
+                            logger.error("Error in message handler for pattern: {}", pattern, e);
+                        }
                     }
                 }
-
-                @Override
-                public void subscribed(String channel, long count) {
-                    // Regular subscribe에서 사용
-                }
-
-                @Override
-                public void psubscribed(String pattern, long count) {
-                    logger.debug("Pattern subscribed: {} (total: {})", pattern, count);
-                }
-
-                @Override
-                public void unsubscribed(String channel, long count) {
-                    // Regular unsubscribe에서 사용
-                }
-
-                @Override
-                public void punsubscribed(String pattern, long count) {
-                    logger.debug("Pattern unsubscribed: {} (remaining: {})", pattern, count);
-                }
             });
-            
-            commands.psubscribe(pattern);
+
+            subCommands.psubscribe(pattern);
             this.subscribedPattern = pattern;
             logger.info("Pattern subscribed: {}", pattern);
         }
-        
-        /**
-         * 구독 해제
-         */
+
         public void unsubscribe() {
             if (closed) return;
-            
+
             try {
                 if (subscribedChannel != null) {
-                    commands.unsubscribe(subscribedChannel);
+                    subCommands.unsubscribe(subscribedChannel);
                     activeSubscribers.remove(subscribedChannel);
                     logger.info("Unsubscribed from channel: {}", subscribedChannel);
                 }
-                
                 if (subscribedPattern != null) {
-                    commands.punsubscribe(subscribedPattern);
+                    subCommands.punsubscribe(subscribedPattern);
                     activeSubscribers.remove(subscribedPattern);
                     logger.info("Pattern unsubscribed: {}", subscribedPattern);
                 }
@@ -503,49 +323,225 @@ public final class RedisPubSub {
                 logger.error("Error during unsubscribe", e);
             }
         }
-        
+
         private void checkClosed() {
             if (closed) {
                 throw new IllegalStateException("Subscriber already closed");
             }
-            if (isShuttingDown.get()) {
+            if (shutdown.get()) {
                 throw new IllegalStateException("RedisPubSub is shutting down");
             }
         }
-        
+
         @Override
         public void close() {
             if (closed) return;
             closed = true;
-            
+
             try {
                 unsubscribe();
-                
-                if (connection != null && connection.isOpen()) {
-                    connection.close();
+                if (subConnection != null && subConnection.isOpen()) {
+                    subConnection.close();
                 }
-                logger.debug("Subscriber connection closed");
             } catch (Exception e) {
                 logger.warn("Error closing subscriber connection", e);
             }
         }
     }
-    
+
+    // ==================== Connection 상태 ====================
+
     /**
-     * 상태 확인 메서드들
+     * Heartbeat 시작
      */
-    public static boolean isInitialized() {
-        return isInitialized.get() && client != null;
+    private static void startHeartbeat() {
+
+        if (!heartbeatStarted.compareAndSet(false, true)) {
+            return;
+        }
+
+        heartbeatFuture = AsyncExecutor.scheduleAtFixedRate(
+                RedisPubSub::heartbeat,
+                30,
+                30,
+                TimeUnit.SECONDS);
     }
-    
-    public static boolean isShuttingDown() {
-        return isShuttingDown.get();
+
+    /**
+     * Redis heartbeat
+     */
+    private static void heartbeat() {
+
+        if (shutdown.get()) {
+            return;
+        }
+
+        try {
+            if (connection == null || !connection.isOpen()) {
+                reconnect();
+                return;
+            }
+
+            String pong = connection.sync().ping();
+
+            if (!"PONG".equals(pong)) {
+                logger.info("RedisPubSub heartbeat failed");
+                reconnect();
+            }
+
+        } catch (Exception e) {
+            logger.info("RedisPubSub heartbeat error", e);
+            reconnect();
+        }
     }
-    
+
+    /**
+     * Redis 재연결
+     */
+    private static void reconnect() {
+
+        if (shutdown.get()) {
+            return;
+        }
+
+        if (!reconnecting.compareAndSet(false, true)) {
+            return;
+        }
+
+        try {
+            logger.info("RedisPubSub reconnect start");
+            createConnection();
+            logger.info("RedisPubSub reconnect success");
+        } catch (Exception e) {
+            logger.error("RedisPubSub reconnect failed", e);
+        } finally {
+            reconnecting.set(false);
+        }
+    }
+
+    /**
+     * 연결 상태 확인
+     */
+    public static boolean isConnected() {
+        return connection != null && connection.isOpen();
+    }
+
+    /**
+     * Ping
+     */
+    public static boolean ping() {
+        try {
+            return "PONG".equals(sync().ping());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * RedisPubSub 종료
+     */
+    public static synchronized void shutdown() {
+
+        if (!shutdown.compareAndSet(false, true)) {
+            return;
+        }
+
+        if (heartbeatFuture != null) {
+            heartbeatFuture.cancel(false);
+            heartbeatFuture = null;
+        }
+
+        heartbeatStarted.set(false);
+
+        // 모든 구독자 제거
+        if (!activeSubscribers.isEmpty()) {
+            activeSubscribers.values().forEach(subscriber -> {
+                try {
+                    subscriber.close();
+                } catch (Exception ignore) {
+                }
+            });
+            activeSubscribers.clear();
+        }
+
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (Exception ignore) {
+            }
+            connection = null;
+        }
+
+        if (client != null) {
+            try {
+                client.shutdown(100, 1000, TimeUnit.MILLISECONDS);
+            } catch (Exception ignore) {
+            }
+            client = null;
+        }
+
+        if (clientResources != null) {
+            try {
+                clientResources.shutdown().get();
+            } catch (Exception ignore) {
+            }
+            clientResources = null;
+        }
+
+        initialized.set(false);
+
+        logger.info("RedisPubSub shutdown");
+    }
+
+    // ==================== 유틸리티 ====================
+
     /**
      * 활성 구독자 수 확인
      */
     public static int getActiveSubscriberCount() {
         return activeSubscribers.size();
+    }
+
+    /**
+     * 활성화된 Pub/Sub 채널 목록 확인
+     */
+    public static List<String> getChannels(String pattern) {
+        if (!isConnected()) {
+            return List.of();
+        }
+        try {
+            return sync().pubsubChannels(pattern);
+        } catch (Exception e) {
+            logger.error("Error getting pubsub channels", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Redis 정보 조회
+     */
+    public static String getInfo() {
+        if (!isConnected()) {
+            return "RedisPubSub: Not connected";
+        }
+
+        try {
+            String info = sync().info("server");
+            String[] lines = info.split("\r?\n");
+            StringBuilder sb = new StringBuilder();
+
+            for (String line : lines) {
+                if (line.startsWith("redis_version:") ||
+                        line.startsWith("redis_mode:") ||
+                        line.startsWith("os:") ||
+                        line.startsWith("uptime_in_seconds:")) {
+                    sb.append(line).append("\n");
+                }
+            }
+
+            return sb.toString();
+        } catch (Exception e) {
+            return "RedisPubSub: Error getting info - " + e.getMessage();
+        }
     }
 }

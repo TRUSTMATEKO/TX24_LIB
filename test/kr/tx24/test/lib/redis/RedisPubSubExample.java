@@ -19,10 +19,7 @@ public class RedisPubSubExample {
         
         // 예시 2: 메시지 구독 및 수신
         example2_Subscribe();
-        
-        // 예시 3: 재사용 가능한 Publisher
-        example3_ReusablePublisher();
-        
+
         // 예시 4: JSON 메시지 Pub/Sub
         example4_JsonPubSub();
         
@@ -79,23 +76,6 @@ public class RedisPubSubExample {
         System.out.println();
     }
 
-    /**
-     * 예시 3: 재사용 가능한 Publisher
-     * - 여러 메시지를 한 Connection으로 발행
-     * - try-with-resources로 자동 정리
-     */
-    private static void example3_ReusablePublisher() {
-        System.out.println("--- 예시 3: 재사용 가능한 Publisher ---");
-        
-        try (RedisPubSub.Publisher publisher = RedisPubSub.createPublisher()) {
-            publisher.publish("channel:logs", "Log message 1");
-            publisher.publish("channel:logs", "Log message 2");
-            publisher.publish("channel:logs", "Log message 3");
-            System.out.println("3개의 메시지 발행 완료 (하나의 Connection 사용)");
-        } // Connection 자동 close
-        
-        System.out.println();
-    }
 
     /**
      * 예시 4: JSON 메시지 Pub/Sub

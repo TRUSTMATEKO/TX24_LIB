@@ -4,6 +4,7 @@ import java.lang.reflect.Method;
 import java.util.LinkedList;
 import java.util.List;
 
+import kr.tx24.lib.redis.RedisText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,7 +16,6 @@ import kr.tx24.lib.lb.LoadBalancer;
 import kr.tx24.lib.logback.RedisAppender;
 import kr.tx24.lib.redis.Redis;
 import kr.tx24.lib.redis.RedisPubSub;
-import kr.tx24.lib.redis.RedisText;
 
 public class SystemManager extends Thread {
 
