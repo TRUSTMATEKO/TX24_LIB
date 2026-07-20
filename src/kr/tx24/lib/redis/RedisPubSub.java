@@ -1,5 +1,17 @@
 package kr.tx24.lib.redis;
 
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.lettuce.core.ClientOptions;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
@@ -10,37 +22,19 @@ import io.lettuce.core.pubsub.api.async.RedisPubSubAsyncCommands;
 import io.lettuce.core.pubsub.api.sync.RedisPubSubCommands;
 import io.lettuce.core.resource.ClientResources;
 import io.lettuce.core.resource.DefaultClientResources;
+
 import kr.tx24.lib.executor.AsyncExecutor;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.mapper.JacksonUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Consumer;
 
 /**
  * Redis Pub/Sub Manager
  *
- * <pre>
- * RedisClient
- *      |
- * StatefulRedisPubSubConnection
- *      |
- * Heartbeat Monitor
- *
  * 특징
- * - Pub/Sub 전용 Lettuce Connection 관리
- * - Lazy Initialization (실제 사용시 초기화)
- * - Auto reconnect 및 HAProxy idle timeout 대응
- * - 단일 메시지 Publish / 장기 Listener Subscribe 지원
- * </pre>
+ * - Pub/Sub 전용 StatefulRedisPubSubConnection 사용
+ * - Lettuce Auto Reconnect 활용 (재연결 시 자동 Re-subscribe 지원)
+ * - HAProxy Idle Timeout 대응용 Heartbeat
+ * - 단일 메시지 Publish 및 Subscriber 모듈화
  */
 public final class RedisPubSub {
 
@@ -52,11 +46,12 @@ public final class RedisPubSub {
 
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
     private static final AtomicBoolean shutdown = new AtomicBoolean(false);
-    private static final AtomicBoolean reconnecting = new AtomicBoolean(false);
     private static final AtomicBoolean heartbeatStarted = new AtomicBoolean(false);
 
     private static volatile ScheduledFuture<?> heartbeatFuture;
     private static String redisUri;
+
+    private static final JacksonUtils jacksonUtils = new JacksonUtils();
 
     // 활성 Subscriber 관리 (채널/패턴별)
     private static final Map<String, Subscriber> activeSubscribers = new ConcurrentHashMap<>();
@@ -66,10 +61,9 @@ public final class RedisPubSub {
     }
 
     /**
-     * Redis Pub/Sub 초기화
+     * Redis Pub/Sub 초기화 (최초 1회 실행)
      */
-    private static synchronized void init() {
-
+    public static synchronized void init() {
         if (initialized.get() && connection != null && connection.isOpen()) {
             return;
         }
@@ -103,10 +97,10 @@ public final class RedisPubSub {
      * RedisClient 생성
      */
     private static void createClient() {
+        if (client != null) return;
 
         if (clientResources == null) {
             int cpu = Runtime.getRuntime().availableProcessors();
-
             clientResources = DefaultClientResources.builder()
                     .ioThreadPoolSize(Math.max(2, cpu))
                     .computationThreadPoolSize(Math.max(2, cpu))
@@ -119,48 +113,41 @@ public final class RedisPubSub {
         client = RedisClient.create(clientResources, uri);
 
         client.setOptions(ClientOptions.builder()
-                .autoReconnect(true)
+                .autoReconnect(true) // Netty 자동 재연결 (Auto-Subscribe 연동)
                 .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
                 .build()
         );
     }
 
     /**
-     * Connection 생성
+     * Connection 생성 (Publish 및 관리용 메인 커넥션)
      */
     private static synchronized void createConnection() {
+        if (connection != null && connection.isOpen()) {
+            return;
+        }
 
-        try {
-            if (connection != null) {
-                try {
-                    connection.close();
-                } catch (Exception ignore) {
-                }
-            }
+        if (connection != null) {
+            try { connection.close(); } catch (Exception ignored) {}
+        }
 
-            connection = client.connectPubSub(StringCodec.UTF8);
+        connection = client.connectPubSub(StringCodec.UTF8);
 
-            String pong = connection.sync().ping();
-
-            if (!"PONG".equals(pong)) {
-                throw new IllegalStateException("RedisPubSub ping failed");
-            }
-
-        } catch (Exception e) {
-            logger.error("RedisPubSub connection create failed", e);
-            throw e;
+        String pong = connection.sync().ping();
+        if (!"PONG".equals(pong)) {
+            throw new IllegalStateException("RedisPubSub initial ping failed");
         }
     }
 
     /**
-     * Connection 반환
+     * Connection 반환 (없으면 초기화)
      */
     public static StatefulRedisPubSubConnection<String, String> getConnection() {
         if (shutdown.get()) {
             throw new IllegalStateException("RedisPubSub shutdown");
         }
 
-        if (!initialized.get() || connection == null || !connection.isOpen()) {
+        if (!initialized.get() || connection == null) {
             init();
         }
 
@@ -168,14 +155,14 @@ public final class RedisPubSub {
     }
 
     /**
-     * Sync command
+     * Sync command (Publish용)
      */
     public static RedisPubSubCommands<String, String> sync() {
         return getConnection().sync();
     }
 
     /**
-     * Async command
+     * Async command (Publish용)
      */
     public static RedisPubSubAsyncCommands<String, String> async() {
         return getConnection().async();
@@ -202,7 +189,7 @@ public final class RedisPubSub {
      */
     public static <T> Long publishJson(String channel, T message) {
         try {
-            String json = new JacksonUtils().toJson(message);
+            String json = jacksonUtils.toJson(message);
             return publish(channel, json);
         } catch (Exception e) {
             logger.error("Failed to publish JSON message to channel: {}", channel, e);
@@ -238,7 +225,7 @@ public final class RedisPubSub {
     public static <T> Subscriber subscribeJson(String channel, Class<T> messageType, Consumer<T> messageHandler) {
         return subscribe(channel, json -> {
             try {
-                T obj = new JacksonUtils().fromJson(json, messageType);
+                T obj = jacksonUtils.fromJson(json, messageType);
                 messageHandler.accept(obj);
             } catch (Exception e) {
                 logger.error("Failed to deserialize JSON message from channel: {}", channel, e);
@@ -247,7 +234,7 @@ public final class RedisPubSub {
     }
 
     /**
-     * Subscriber Wrapper
+     * Subscriber Wrapper (개별 전용 커넥션 관리)
      */
     public static class Subscriber implements AutoCloseable {
 
@@ -352,10 +339,9 @@ public final class RedisPubSub {
     // ==================== Connection 상태 ====================
 
     /**
-     * Heartbeat 시작
+     * HAProxy Idle Timeout 대응용 Heartbeat 시작
      */
     private static void startHeartbeat() {
-
         if (!heartbeatStarted.compareAndSet(false, true)) {
             return;
         }
@@ -371,51 +357,21 @@ public final class RedisPubSub {
      * Redis heartbeat
      */
     private static void heartbeat() {
-
-        if (shutdown.get()) {
+        if (shutdown.get() || !initialized.get()) {
             return;
         }
 
         try {
-            if (connection == null || !connection.isOpen()) {
-                reconnect();
-                return;
+            StatefulRedisPubSubConnection<String, String> conn = connection;
+            if (conn != null && conn.isOpen()) {
+                conn.sync().ping();
+            } else {
+                synchronized (RedisPubSub.class) {
+                    createConnection();
+                }
             }
-
-            String pong = connection.sync().ping();
-
-            if (!"PONG".equals(pong)) {
-                logger.info("RedisPubSub heartbeat failed");
-                reconnect();
-            }
-
         } catch (Exception e) {
-            logger.info("RedisPubSub heartbeat error", e);
-            reconnect();
-        }
-    }
-
-    /**
-     * Redis 재연결
-     */
-    private static void reconnect() {
-
-        if (shutdown.get()) {
-            return;
-        }
-
-        if (!reconnecting.compareAndSet(false, true)) {
-            return;
-        }
-
-        try {
-            logger.info("RedisPubSub reconnect start");
-            createConnection();
-            logger.info("RedisPubSub reconnect success");
-        } catch (Exception e) {
-            logger.error("RedisPubSub reconnect failed", e);
-        } finally {
-            reconnecting.set(false);
+            logger.warn("RedisPubSub heartbeat ping failed (Lettuce will auto-reconnect): {}", e.getMessage());
         }
     }
 
@@ -441,7 +397,6 @@ public final class RedisPubSub {
      * RedisPubSub 종료
      */
     public static synchronized void shutdown() {
-
         if (!shutdown.compareAndSet(false, true)) {
             return;
         }
@@ -453,7 +408,7 @@ public final class RedisPubSub {
 
         heartbeatStarted.set(false);
 
-        // 모든 구독자 제거
+        // 모든 활성 구독자 커넥션 정리
         if (!activeSubscribers.isEmpty()) {
             activeSubscribers.values().forEach(subscriber -> {
                 try {
@@ -465,32 +420,23 @@ public final class RedisPubSub {
         }
 
         if (connection != null) {
-            try {
-                connection.close();
-            } catch (Exception ignore) {
-            }
+            try { connection.close(); } catch (Exception ignored) {}
             connection = null;
         }
 
         if (client != null) {
-            try {
-                client.shutdown(100, 1000, TimeUnit.MILLISECONDS);
-            } catch (Exception ignore) {
-            }
+            try { client.shutdown(100, 1000, TimeUnit.MILLISECONDS); } catch (Exception ignored) {}
             client = null;
         }
 
         if (clientResources != null) {
-            try {
-                clientResources.shutdown().get();
-            } catch (Exception ignore) {
-            }
+            try { clientResources.shutdown().get(); } catch (Exception ignored) {}
             clientResources = null;
         }
 
         initialized.set(false);
 
-        logger.info("RedisPubSub shutdown");
+        logger.info("RedisPubSub shutdown completed");
     }
 
     // ==================== 유틸리티 ====================

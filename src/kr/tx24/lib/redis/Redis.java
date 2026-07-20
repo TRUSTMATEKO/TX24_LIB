@@ -23,20 +23,10 @@ import kr.tx24.lib.lang.SystemUtils;
 /**
  * Redis Connection Manager
  *
- * <pre>
- * RedisClient
- *      |
- * StatefulRedisConnection
- *      |
- * Heartbeat Monitor
- *
  * 특징
- * - Connection Pool 사용하지 않음
- * - Lettuce Connection 공유
- * - Auto reconnect 지원
- * - HAProxy idle timeout 대응
- * - 장애 발생 시 자동 복구
- * </pre>
+ * - StatefulRedisConnection 싱글톤 재사용
+ * - Lettuce 자동 재연결(Netty Auto-Reconnect) 활용
+ * - HAProxy Idle Timeout 방지용 주기적 Heartbeat
  */
 public final class Redis {
 
@@ -48,7 +38,6 @@ public final class Redis {
 
     private static final AtomicBoolean initialized = new AtomicBoolean(false);
     private static final AtomicBoolean shutdown = new AtomicBoolean(false);
-    private static final AtomicBoolean reconnecting = new AtomicBoolean(false);
     private static final AtomicBoolean heartbeatStarted = new AtomicBoolean(false);
 
     private static volatile ScheduledFuture<?> heartbeatFuture;
@@ -59,10 +48,9 @@ public final class Redis {
     }
 
     /**
-     * Redis 초기화
+     * Redis 초기화 (최초 1회 실행)
      */
-    private static synchronized void init() {
-
+    public static synchronized void init() {
         if (initialized.get() && connection != null && connection.isOpen()) {
             return;
         }
@@ -76,8 +64,7 @@ public final class Redis {
             redisUri = SystemUtils.getRedisSystemUri();
 
             if (SystemUtils.REDIS_INITIAL.equals(redisUri)) {
-                throw new IllegalStateException(
-                        "Redis URI not configured");
+                throw new IllegalStateException("Redis URI not configured");
             }
 
             createClient();
@@ -85,194 +72,118 @@ public final class Redis {
             initialized.set(true);
             startHeartbeat();
 
-            logger.info( "Redis initialized : {}",redisUri);
+            logger.info("Redis initialized : {}", redisUri);
 
         } catch (Exception e) {
             logger.error("Redis initialization failed", e);
-
+            throw e;
         }
     }
 
-    /**
-     * RedisClient 생성
-     */
     private static void createClient() {
+        if (client != null) return;
 
         if (clientResources == null) {
             clientResources = DefaultClientResources.builder()
                     .ioThreadPoolSize(2)
                     .computationThreadPoolSize(2)
                     .build();
-            /* 리소스 소비가 과함.
-            int cpu = Runtime.getRuntime().availableProcessors();
-
-            clientResources = DefaultClientResources.builder()
-                            .ioThreadPoolSize( Math.max(2, cpu))
-                            .computationThreadPoolSize( Math.max(2, cpu))
-                            .build();*/
         }
 
         RedisURI uri = RedisURI.create(redisUri);
         uri.setTimeout(Duration.ofSeconds(3));
 
-        client = RedisClient.create( clientResources,uri);
+        client = RedisClient.create(clientResources, uri);
 
         client.setOptions(ClientOptions.builder()
-                        .autoReconnect(true)
-                        .disconnectedBehavior(
-                                ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
-                        .build()
+                .autoReconnect(true) // Netty 레벨 자동 재연결 활성화
+                .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                .build()
         );
     }
 
-    /**
-     * Connection 생성
-     */
     private static synchronized void createConnection() {
+        if (connection != null && connection.isOpen()) {
+            return;
+        }
 
-        try {
-            if (connection != null) {
-                try {
-                    connection.close();
-                } catch (Exception ignore) {
-                }
-            }
+        if (connection != null) {
+            try { connection.close(); } catch (Exception ignored) {}
+        }
 
-            connection = client.connect(new TypedRedisCodec());
+        // 연결 시도 (실패 시 예외 던짐)
+        connection = client.connect(new TypedRedisCodec());
 
-            String pong = connection.sync().ping();
-
-            if (!"PONG".equals(pong)) {
-                throw new IllegalStateException("Redis ping failed");
-            }
-
-        } catch (Exception e) {
-            logger.error("Redis connection create failed",e);
-            throw e;
+        // PING 테스트
+        String pong = connection.sync().ping();
+        if (!"PONG".equals(pong)) {
+            throw new IllegalStateException("Redis initial ping failed");
         }
     }
 
     /**
-     * Connection 반환
+     * 커넥션 반환 (없으면 초기화)
      */
     public static StatefulRedisConnection<String, Object> getConnection() {
         if (shutdown.get()) {
-            throw new IllegalStateException(
-                    "Redis shutdown");
+            throw new IllegalStateException("Redis shutdown");
         }
 
-        if (connection == null || !connection.isOpen()) {
-            reconnect();
+        if (!initialized.get() || connection == null) {
+            init();
         }
 
         return connection;
     }
 
-    public static RedisClient getClient(){
-        return client;
-    }
-
-    public static String getUriString(){
-        return redisUri;
-    }
-
-    /**
-     * Sync command
-     */
     public static RedisCommands<String, Object> sync() {
         return getConnection().sync();
     }
 
-    /**
-     * Async command
-     */
-    public static RedisAsyncCommands<String, Object>async() {
+    public static RedisAsyncCommands<String, Object> async() {
         return getConnection().async();
     }
 
-    // ==================== Connection 상태 ====================
-
     /**
-     * Heartbeat 시작
+     * HAProxy Idle Timeout 대응용 Heartbeat
      */
     private static void startHeartbeat() {
-
         if (!heartbeatStarted.compareAndSet(false, true)) {
             return;
         }
 
-        heartbeatFuture =
-                AsyncExecutor.scheduleAtFixedRate(
-                        Redis::heartbeat,
-                        30,
-                        30,
-                        TimeUnit.SECONDS);
-
-        //logger.info("Redis heartbeat started");
+        heartbeatFuture = AsyncExecutor.scheduleAtFixedRate(
+                Redis::heartbeat,
+                30,
+                30,
+                TimeUnit.SECONDS);
     }
 
-    /**
-     * Redis heartbeat
-     */
     private static void heartbeat() {
-
-        if (shutdown.get()) {
+        if (shutdown.get() || !initialized.get()) {
             return;
         }
 
         try {
-            if(connection == null|| !connection.isOpen()) {
-                reconnect();
-                return;
+            StatefulRedisConnection<String, Object> conn = connection;
+            if (conn != null && conn.isOpen()) {
+                // 단순 세션 유지용 PING (재연결은 Lettuce가 알아서 처리함)
+                conn.sync().ping();
+            } else {
+                // 커넥션 자체가 null이거나 완전히 닫힌 경우에만 재생성 시도
+                synchronized (Redis.class) {
+                    createConnection();
+                }
             }
-
-            String pong = connection.sync().ping();
-
-            if (!"PONG".equals(pong)) {
-                logger.info("Redis heartbeat failed");
-                reconnect();
-            }
-
         } catch (Exception e) {
-            logger.info("Redis heartbeat error",e);
-            reconnect();
+            logger.warn("Redis heartbeat ping failed (Lettuce will auto-reconnect): {}", e.getMessage());
         }
     }
 
-    /**
-     * Redis 재연결
-     */
-    private static void reconnect() {
-
-        if (shutdown.get()) {
-            return;
-        }
-
-        if (!reconnecting.compareAndSet(false, true)) {
-            return;
-        }
-
-        try {
-            logger.info( "Redis reconnect start");
-            createConnection();
-            logger.info("Redis reconnect success");
-        } catch (Exception e) {
-            logger.error("Redis reconnect failed",e);
-        } finally {
-            reconnecting.set(false);
-        }
-    }
-
-    /**
-     * 연결 상태 확인
-     */
     public static boolean isConnected() {
-        return connection != null&& connection.isOpen();
+        return connection != null && connection.isOpen();
     }
 
-    /**
-     * Ping
-     */
     public static boolean ping() {
         try {
             return "PONG".equals(sync().ping());
@@ -281,11 +192,7 @@ public final class Redis {
         }
     }
 
-    /**
-     * Redis 종료
-     */
     public static synchronized void shutdown() {
-
         if (!shutdown.compareAndSet(false, true)) {
             return;
         }
@@ -298,46 +205,24 @@ public final class Redis {
         heartbeatStarted.set(false);
 
         if (connection != null) {
-            try {
-                connection.close();
-            } catch (Exception ignore) {
-            }
+            try { connection.close(); } catch (Exception ignored) {}
             connection = null;
         }
 
         if (client != null) {
-            try {
-                client.shutdown(
-                        100,
-                        1000,
-                        TimeUnit.MILLISECONDS);
-
-            } catch (Exception ignore) {
-            }
+            try { client.shutdown(100, 1000, TimeUnit.MILLISECONDS); } catch (Exception ignored) {}
             client = null;
         }
 
         if (clientResources != null) {
-            try {
-                clientResources.shutdown().get();
-            } catch (Exception ignore) {
-            }
+            try { clientResources.shutdown().get(); } catch (Exception ignored) {}
             clientResources = null;
         }
 
         initialized.set(false);
-
-        logger.info("Redis shutdown");
+        logger.info("Redis shutdown completed");
     }
 
-
-    // ==================== 유틸리티 ====================
-
-    /**
-     * Redis 정보 조회
-     *
-     * @return Redis 서버 정보 요약
-     */
     public static String getInfo() {
         if (!isConnected()) {
             return "Redis: Not connected";
@@ -356,12 +241,12 @@ public final class Redis {
                     sb.append(line).append("\n");
                 }
             }
-
             return sb.toString();
         } catch (Exception e) {
             return "Redis: Error getting info - " + e.getMessage();
         }
     }
 
-
+    public static RedisClient getClient() { return client; }
+    public static String getUriString() { return redisUri; }
 }
