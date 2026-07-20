@@ -186,7 +186,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
 			.addListener(future -> {
 			if (future.isSuccess()) {
 			   double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
-			   logger.info("response sent, elapsed: {}ms", elapsedMs);
+			   logger.info("response sent, elapsed: {} ms", elapsedMs);
 			} else {
 			   logger.error("Failed to send response", future.cause());
 			}
@@ -232,7 +232,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
 
         ctx.writeAndFlush(errorInet).addListener((ChannelFutureListener) future -> {
             double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
-            logger.info("Error response sent - elapsed: %.3fms", elapsedMs);
+            logger.info("Error response sent - elapsed: {} ms", elapsedMs);
             future.channel().close();
         });
     }
@@ -260,7 +260,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
             .send()
             .addListener(future -> {
                 double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
-                logger.info("Error response sent (Route Not Found) - elapsed: {:.3f}ms", 
+                logger.info("Error response sent (Route Not Found) - elapsed: {} ms",
                            elapsedMs);
             });
     }
@@ -276,7 +276,7 @@ public class INetHandler extends SimpleChannelInboundHandler<INet> {
             .send()
             .addListener(future -> {
                 double elapsedMs = (System.nanoTime() - startTime) / 1e6d;
-                logger.info("Error response sent (Internal Error) - elapsed: {:.3f}ms", 
+                logger.info("Error response sent (Internal Error) - elapsed: {} ms",
                            elapsedMs);
             });
     }
