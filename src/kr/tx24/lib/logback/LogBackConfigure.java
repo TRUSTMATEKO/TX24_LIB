@@ -1,10 +1,7 @@
 package kr.tx24.lib.logback;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Queue;
+import java.util.*;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.SubstituteLoggerFactory;
@@ -39,6 +36,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
 
     private static final boolean[] LOG_APPENDER = new boolean[]{true, false, false};
     private static Logger ROOT_LOGGER;
+    private static boolean shutdownHookRegistered = false;
     
     static {
         // Logback 상태 메시지 부분 비활성화
@@ -158,6 +156,12 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         
         // 컨텍스트 초기화
         ctx.reset();
+
+
+        PatternLayout.DEFAULT_CONVERTER_SUPPLIER_MAP.put(
+                "masked",
+                MaskConverter::new
+        );
         
         // LOGGER 환경변수 기반 설정
         String[] udfs = Arrays.stream(System.getProperty("LOGGER", SystemUtils.LOG_ENV_DEFAULT).split(","))
@@ -166,12 +170,13 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
             LOG_APPENDER[i] = Boolean.parseBoolean(udfs[i]);
         }
 
+
+
         ROOT_LOGGER = ctx.getLogger(Logger.ROOT_LOGGER_NAME);
         ROOT_LOGGER.setLevel(SystemUtils.getLogLevel());
         ROOT_LOGGER.setAdditive(false);
 
-        // MaskConverter 등록
-        PatternLayout.DEFAULT_CONVERTER_MAP.put("masked", MaskConverter.class.getName());
+
 
         // Console Appender
         if (LOG_APPENDER[0]) {
@@ -252,9 +257,15 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
         }
         
         printLostLogs();
-        
-        Runtime.getRuntime().addShutdownHook(new SystemManager());
-        
+
+
+        synchronized (LogBackConfigure.class) {
+            if (!shutdownHookRegistered) {
+                Runtime.getRuntime().addShutdownHook(new SystemManager());
+                shutdownHookRegistered = true;
+            }
+        }
+
         return ExecutionStatus.DO_NOT_INVOKE_NEXT_IF_ANY;
     }
  
