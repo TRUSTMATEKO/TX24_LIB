@@ -71,7 +71,7 @@
     <orderEntry type="jdk" jdkName="jdk17.0.19_10" jdkType="JavaSDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module-library">
-      <library name="attoparser-2.0.7.RELEASE.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/attoparser-2.0.7.RELEASE.jar!/" />
         </CLASSES>
@@ -80,7 +80,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="browscap-java-1.5.1.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/browscap-java-1.5.1.jar!/" />
         </CLASSES>
@@ -89,7 +89,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="caffeine-3.2.2.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/caffeine-3.2.2.jar!/" />
         </CLASSES>
@@ -98,16 +98,16 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="commons-codec-1.19.0.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/commons-codec-1.19.0.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/commons-codec-1.22.0.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="commons-collections4-4.5.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/commons-collections4-4.5.0.jar!/" />
         </CLASSES>
@@ -116,7 +116,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="commons-compress-1.28.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/commons-compress-1.28.0.jar!/" />
         </CLASSES>
@@ -125,7 +125,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="commons-io-2.20.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/commons-io-2.20.0.jar!/" />
         </CLASSES>
@@ -134,7 +134,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="commons-lang3-3.18.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/commons-lang3-3.18.0.jar!/" />
         </CLASSES>
@@ -143,7 +143,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="commons-logging-1.3.5.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/commons-logging-1.3.5.jar!/" />
         </CLASSES>
@@ -152,7 +152,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="commons-math3-3.6.1.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/commons-math3-3.6.1.jar!/" />
         </CLASSES>
@@ -161,7 +161,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="commons-text-1.14.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/commons-text-1.14.0.jar!/" />
         </CLASSES>
@@ -170,7 +170,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="curvesapi-1.08.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/curvesapi-1.08.jar!/" />
         </CLASSES>
@@ -179,16 +179,16 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="ecj-3.44.0.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/ecj-3.44.0.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/ecj-3.45.0.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="fontbox-3.0.5.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/fontbox-3.0.5.jar!/" />
         </CLASSES>
@@ -197,7 +197,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="fst-3.0.4-jdk17.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/fst-3.0.4-jdk17.jar!/" />
         </CLASSES>
@@ -206,25 +206,25 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="groovy-4.0.28.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/groovy-4.0.28.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/groovy-4.0.31.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="groovy-extensions-3.0.0.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/groovy-extensions-3.0.0.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/groovy-extensions-3.1.0.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="guava-33.4.8-jre.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/guava-33.4.8-jre.jar!/" />
         </CLASSES>
@@ -233,7 +233,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="HikariCP-7.0.2.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/HikariCP-7.0.2.jar!/" />
         </CLASSES>
@@ -242,7 +242,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="jackson-2.21.0-fat.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/jackson-2.21.0-fat.jar!/" />
         </CLASSES>
@@ -251,7 +251,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="jakarta.annotation-api-3.0.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/jakarta.annotation-api-3.0.0.jar!/" />
         </CLASSES>
@@ -260,7 +260,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="jakarta.servlet-api-6.1.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/jakarta.servlet-api-6.1.0.jar!/" />
         </CLASSES>
@@ -269,7 +269,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="javaparser-core-3.27.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/javaparser-core-3.27.0.jar!/" />
         </CLASSES>
@@ -278,7 +278,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="javax.el-api-3.0.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/javax.el-api-3.0.0.jar!/" />
         </CLASSES>
@@ -287,7 +287,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="jjwt-0.13.0-fat.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/jjwt-0.13.0-fat.jar!/" />
         </CLASSES>
@@ -296,52 +296,52 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="jsoup-1.21.2.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/jsoup-1.21.2.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/jsoup-1.22.2.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="lettuce-core-7.4.0.RELEASE.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/lettuce-core-7.4.0.RELEASE.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/lettuce-core-7.6.0.RELEASE.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="mariadb-java-client-3.5.6.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/mariadb-java-client-3.5.6.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/mariadb-java-client-3.5.9.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="netty-4.2.15-fat.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/netty-4.2.15-fat.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/netty-4.2.16-fat.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="okhttp-5.3.0-fat.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/okhttp-5.3.0-fat.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/okhttp-5.3.1-fat.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="password4j-1.8.4.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/password4j-1.8.4.jar!/" />
         </CLASSES>
@@ -350,7 +350,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="pdfbox-3.0.5.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/pdfbox-3.0.5.jar!/" />
         </CLASSES>
@@ -359,7 +359,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="pdfbox-io-3.0.5.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/pdfbox-io-3.0.5.jar!/" />
         </CLASSES>
@@ -368,7 +368,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="poi-5.5.1.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/poi-5.5.1.jar!/" />
         </CLASSES>
@@ -377,7 +377,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="poi-ooxml-5.5.1.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/poi-ooxml-5.5.1.jar!/" />
         </CLASSES>
@@ -386,7 +386,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="poi-ooxml-full-5.5.1.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/poi-ooxml-full-5.5.1.jar!/" />
         </CLASSES>
@@ -395,7 +395,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="reactive-streams-1.0.4.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/reactive-streams-1.0.4.jar!/" />
         </CLASSES>
@@ -404,16 +404,16 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="reactor-core-3.7.11.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/reactor-core-3.7.11.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/reactor-core-3.7.19.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="slf4j-2.0.17_logback-1.5.32-fat.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/slf4j-2.0.17_logback-1.5.32-fat.jar!/" />
         </CLASSES>
@@ -422,25 +422,25 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="spring-6.2.16-fat.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/spring-6.2.16-fat.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/spring-6.2.19-fat.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="thymeleaf-3.1.3.RELEASE.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/thymeleaf-3.1.3.RELEASE.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/thymeleaf-3.1.5.RELEASE.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="thymeleaf-expression-processor-3.2.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/thymeleaf-expression-processor-3.2.0.jar!/" />
         </CLASSES>
@@ -449,7 +449,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="thymeleaf-layout-dialect-3.4.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/thymeleaf-layout-dialect-3.4.0.jar!/" />
         </CLASSES>
@@ -458,16 +458,16 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="thymeleaf-spring6-3.1.3.RELEASE.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/thymeleaf-spring6-3.1.3.RELEASE.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/thymeleaf-spring6-3.1.5.RELEASE.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="tika-core-3.2.3.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/tika-core-3.2.3.jar!/" />
         </CLASSES>
@@ -476,61 +476,61 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="tomcat-annotations-api-11.0.18.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/tomcat-annotations-api-11.0.18.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/tomcat-annotations-api-11.0.24.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="tomcat-embed-core-11.0.18.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-core-11.0.18.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-core-11.0.24.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="tomcat-embed-el-11.0.18.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-el-11.0.18.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-el-11.0.24.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="tomcat-embed-jasper-11.0.18.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-jasper-11.0.18.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-jasper-11.0.24.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="tomcat-embed-programmatic-11.0.18.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-programmatic-11.0.18.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-programmatic-11.0.24.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="tomcat-embed-websocket-11.0.18.jar">
+      <library>
         <CLASSES>
-          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-websocket-11.0.18.jar!/" />
+          <root url="jar://$MODULE_DIR$/lib/tomcat-embed-websocket-11.0.24.jar!/" />
         </CLASSES>
         <JAVADOC />
         <SOURCES />
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="unbescape-1.1.6.RELEASE.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/unbescape-1.1.6.RELEASE.jar!/" />
         </CLASSES>
@@ -539,7 +539,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="univocity-parsers-2.9.1.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/univocity-parsers-2.9.1.jar!/" />
         </CLASSES>
@@ -548,7 +548,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="velocity-1.5.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/velocity-1.5.jar!/" />
         </CLASSES>
@@ -557,7 +557,7 @@
       </library>
     </orderEntry>
     <orderEntry type="module-library">
-      <library name="xmlbeans-5.3.0.jar">
+      <library>
         <CLASSES>
           <root url="jar://$MODULE_DIR$/lib/xmlbeans-5.3.0.jar!/" />
         </CLASSES>
