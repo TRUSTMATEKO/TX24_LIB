@@ -3,6 +3,8 @@ package kr.tx24.inet.route;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.function.Supplier;
 
 import io.netty.channel.ChannelHandlerContext;
@@ -52,68 +54,100 @@ public class RouteInvoker {
     
     
     private Object createController(ChannelHandlerContext ctx, INet inet) throws Exception {
-        Constructor<?>[] constructors = controllerClass.getDeclaredConstructors();
-        
-        // @Autowired 생성자 개수 확인
-        int autowiredCount = 0;
-        Constructor<?> autowiredConstructor = null;
-        
-        for (Constructor<?> constructor : constructors) {
-            if (constructor.isAnnotationPresent(Autowired.class)) {
-                autowiredCount++;
-                autowiredConstructor = constructor;
-            }
-        }
-        
-        // @Autowired가 여러 개면 에러
-        if (autowiredCount > 1) {
-            throw new IllegalStateException(
-                "Multiple @Autowired constructors found in " + controllerClass.getName() + 
-                ". Only one @Autowired constructor is allowed."
-            );
-        }
-        
-        // @Autowired 생성자 사용
-        if (autowiredConstructor != null) {
-            return instantiateWithAutowired(autowiredConstructor, ctx, inet);
-        }
-        
-        // 기본 생성자 찾기
-        for (Constructor<?> constructor : constructors) {
-            if (constructor.getParameterCount() == 0) {
-                constructor.setAccessible(true);
-                return constructor.newInstance();
-            }
-        }
-        
-        // 생성자를 찾지 못함
-        throw new IllegalStateException(
-                controllerClass.getName() + 
-                " 에 맞는 생성자를 찾을 수 없습니다. @Autowired 생성자를 사용하거나 default 생성자를 사용하시기 바랍니다."
-            );
+        return instantiateType(controllerClass, ctx, inet, new ArrayDeque<>());
     }
 
-    private Object instantiateWithAutowired(Constructor<?> constructor, 
-                                           ChannelHandlerContext ctx, 
-                                           INet inet) throws Exception {
+    /**
+     * 타입의 @Autowired 생성자를 찾아 생성자 의존성까지 재귀적으로 주입한다.
+     * @Autowired 생성자가 없을 때만 기본 생성자를 사용한다.
+     */
+    private Object instantiateType(Class<?> type, ChannelHandlerContext ctx, INet inet,
+                                   Deque<Class<?>> dependencyPath) throws Exception {
+        if (dependencyPath.contains(type)) {
+            throw new IllegalStateException(
+                "Circular constructor dependency detected: "
+                    + formatDependencyPath(dependencyPath, type)
+            );
+        }
+
+        dependencyPath.addLast(type);
+        try {
+            Constructor<?> autowiredConstructor = null;
+            int autowiredCount = 0;
+
+            for (Constructor<?> constructor : type.getDeclaredConstructors()) {
+                if (constructor.isAnnotationPresent(Autowired.class)) {
+                    autowiredConstructor = constructor;
+                    autowiredCount++;
+                }
+            }
+
+            if (autowiredCount > 1) {
+                throw new IllegalStateException(
+                    "Multiple @Autowired constructors found in " + type.getName()
+                        + ". Only one @Autowired constructor is allowed."
+                );
+            }
+
+            if (autowiredConstructor != null) {
+                return instantiateWithAutowired(
+                    autowiredConstructor, ctx, inet, dependencyPath
+                );
+            }
+
+            try {
+                Constructor<?> defaultConstructor = type.getDeclaredConstructor();
+                defaultConstructor.setAccessible(true);
+                return defaultConstructor.newInstance();
+            } catch (NoSuchMethodException e) {
+                throw new IllegalStateException(
+                    "No injectable constructor found in " + type.getName()
+                        + ". Add one @Autowired constructor or a default constructor."
+                        + " Dependency path: " + formatDependencyPath(dependencyPath, null),
+                    e
+                );
+            }
+        } finally {
+            dependencyPath.removeLast();
+        }
+    }
+
+    private Object instantiateWithAutowired(Constructor<?> constructor,
+                                            ChannelHandlerContext ctx,
+                                            INet inet,
+                                            Deque<Class<?>> dependencyPath) throws Exception {
         constructor.setAccessible(true);
         
         Class<?>[] paramTypes = constructor.getParameterTypes();
         Object[] params = new Object[paramTypes.length];
         
         for (int i = 0; i < paramTypes.length; i++) {
-            params[i] = resolveParameter(paramTypes[i], ctx, inet);
+            params[i] = resolveParameter(paramTypes[i], ctx, inet, dependencyPath);
             
             // null 체크
             if (params[i] == null) {
                 throw new IllegalArgumentException(
                     "Cannot resolve parameter type " + paramTypes[i].getName() + 
-                    " in @Autowired constructor of " + controllerClass.getName()
+                    " in @Autowired constructor of " + constructor.getDeclaringClass().getName()
                 );
             }
         }
         
         return constructor.newInstance(params);
+    }
+
+    private String formatDependencyPath(Deque<Class<?>> dependencyPath, Class<?> repeatedType) {
+        StringBuilder path = new StringBuilder();
+        for (Class<?> dependencyType : dependencyPath) {
+            if (path.length() > 0) {
+                path.append(" -> ");
+            }
+            path.append(dependencyType.getName());
+        }
+        if (repeatedType != null) {
+            path.append(" -> ").append(repeatedType.getName());
+        }
+        return path.toString();
     }
     
     
@@ -174,15 +208,15 @@ public class RouteInvoker {
         };
     }
     
-    private Object resolveParameter(Class<?> type, ChannelHandlerContext ctx, INet inet) 
-            throws Exception {
+    private Object resolveParameter(Class<?> type, ChannelHandlerContext ctx, INet inet,
+                                    Deque<Class<?>> dependencyPath) throws Exception {
         
         if (INet.class.isAssignableFrom(type)) {
             return inet;
         } else if (ChannelHandlerContext.class.isAssignableFrom(type)) {
             return ctx;
         } else {
-            return type.getDeclaredConstructor().newInstance();
+            return instantiateType(type, ctx, inet, dependencyPath);
         }
     }
     
