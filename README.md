@@ -205,7 +205,7 @@ try {
 
 - `@Controller`: 라우팅 대상 클래스
 - `@Route`: 요청 경로 또는 명령과 처리 메서드 매핑
-- `@Autowired`: 컨트롤러 의존성 주입 대상
+- `@Autowired`: 컨트롤러와 하위 의존성의 주입 생성자 지정
 - `@Head`, `@Data`: INet 헤더·데이터를 메서드 인자에 바인딩
 - `@Description`: 라우트 설명 메타데이터
 
@@ -230,6 +230,79 @@ try {
 Socket -> INetDecoder -> INetHandler -> Router -> RouteInvoker -> Controller
        <- INetEncoder <- INetHandler <- 응답 객체 또는 오류 ----------
 ```
+
+### 생성자 주입과 Request scope
+
+`RouteInvoker`는 컨트롤러를 생성할 때 `@Autowired` 생성자를 선택하고, 생성자에 필요한 하위 의존성도 같은 규칙으로 재귀 생성합니다. `@Autowired` 생성자가 없으면 기본 생성자를 사용합니다. 한 클래스에 `@Autowired` 생성자를 둘 이상 선언할 수 없으며, 필드 및 메서드 주입은 지원하지 않습니다. `@Autowired` 필드를 발견하면 해당 필드는 주입하지 않고 클래스와 필드명을 `logger.warn` 한 줄로 한 번만 출력합니다.
+
+```java
+public class EwalletCtl {
+    private final PayoutValidator payoutValidator;
+    private final AuthorizeSvc authorizeSvc;
+
+    @Autowired
+    public EwalletCtl(
+            PayoutValidator payoutValidator,
+            AuthorizeSvc authorizeSvc) {
+        this.payoutValidator = payoutValidator;
+        this.authorizeSvc = authorizeSvc;
+    }
+}
+
+public class PayoutValidator {
+    private final EwalletRps ewalletRps;
+
+    @Autowired
+    public PayoutValidator(EwalletRps ewalletRps) {
+        this.ewalletRps = ewalletRps;
+    }
+}
+
+public class AuthorizeSvc {
+    private final EwalletRps ewalletRps;
+
+    @Autowired
+    public AuthorizeSvc(EwalletRps ewalletRps) {
+        this.ewalletRps = ewalletRps;
+    }
+}
+
+public class EwalletRps {
+    public EwalletRps() {
+    }
+}
+```
+
+각 `RouteInvoker.invoke()` 호출은 독립적인 Request scope를 만듭니다. 위 예제에서 `PayoutValidator`와 `AuthorizeSvc`가 받는 `EwalletRps`는 같은 요청 안에서는 동일한 인스턴스입니다. 다음 요청에서는 컨트롤러와 모든 Request scope Bean을 새로 생성합니다.
+
+```text
+요청 A
+└─ EwalletCtl
+   ├─ PayoutValidator ─┐
+   └─ AuthorizeSvc ────┴─ EwalletRps A
+
+요청 B
+└─ EwalletCtl
+   ├─ PayoutValidator ─┐
+   └─ AuthorizeSvc ────┴─ EwalletRps B
+```
+
+핵심 동작 원리는 다음과 같습니다.
+
+1. 요청마다 타입을 키로 사용하는 별도의 Bean 저장소를 생성합니다.
+2. 생성자 파라미터 타입이 이미 저장되어 있으면 해당 요청의 기존 인스턴스를 주입합니다.
+3. 저장되어 있지 않으면 `@Autowired` 생성자를 재귀적으로 처리하고, 완전히 생성된 인스턴스만 저장합니다.
+4. `INet`과 `ChannelHandlerContext`는 생성하지 않고 현재 요청의 객체를 직접 주입합니다.
+5. `A -> B -> A`와 같은 생성자 순환 의존성은 경로가 포함된 예외로 차단합니다.
+6. 요청 처리가 끝나면 Bean 저장소도 더 이상 참조되지 않으므로 요청 간에 인스턴스가 공유되지 않습니다.
+
+사용 시 다음 제한사항에 유의합니다.
+
+- Bean은 정확한 `Class<?>` 타입을 기준으로 구분합니다. 인터페이스 구현체 선택이나 이름 기반 Bean 등록은 지원하지 않습니다.
+- 같은 요청에서 같은 타입은 하나만 생성되므로, 타입 하나를 서로 다른 설정의 인스턴스 여러 개로 사용해야 하는 경우에는 적합하지 않습니다.
+- 요청 내부에서 여러 스레드가 같은 Bean을 동시에 사용한다면 해당 Bean 자체가 thread-safe해야 합니다.
+- 필드에 선언한 `@Autowired`는 무시되며 경고만 출력됩니다. 의존성은 `@Autowired` 생성자로 선언해야 합니다.
+- 컨트롤러 메서드의 `@Head`, `@Data`, `INet`, `ChannelHandlerContext` 파라미터 바인딩은 생성자 주입과 별도로 기존 방식대로 처리됩니다.
 
 ## 작업 스케줄러 (`kr.tx24.task`)
 

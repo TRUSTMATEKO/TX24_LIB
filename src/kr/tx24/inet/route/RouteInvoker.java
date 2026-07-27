@@ -1,11 +1,19 @@
 package kr.tx24.inet.route;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import io.netty.channel.ChannelHandlerContext;
 import kr.tx24.inet.mapper.Autowired;
@@ -15,6 +23,10 @@ import kr.tx24.lib.inter.INet;
 import kr.tx24.lib.map.LinkedMap;
 
 public class RouteInvoker {
+    private static final Logger logger = LoggerFactory.getLogger(RouteInvoker.class);
+    private static final Set<Class<?>> AUTOWIRED_FIELD_INSPECTED_TYPES =
+        ConcurrentHashMap.newKeySet();
+
 	private final Method method;
     private final Class<?> controllerClass;
     private final Supplier<?>[] parameterSuppliers;
@@ -42,8 +54,9 @@ public class RouteInvoker {
      * 라우트 메서드 실행
      */
     public Object invoke(ChannelHandlerContext ctx, INet inet) throws Exception {
-        // 1. 컨트롤러 인스턴스 생성
-        Object controller = createController(ctx, inet);
+        // 1. 요청별 Bean 컨텍스트와 컨트롤러 인스턴스 생성
+        RequestBeanContext requestContext = new RequestBeanContext(ctx, inet);
+        Object controller = createController(requestContext);
         
         // 2. 파라미터 준비 (미리 캐싱된 Supplier 사용)
         Object[] args = prepareArguments(ctx, inet);
@@ -53,24 +66,38 @@ public class RouteInvoker {
     }
     
     
-    private Object createController(ChannelHandlerContext ctx, INet inet) throws Exception {
-        return instantiateType(controllerClass, ctx, inet, new ArrayDeque<>());
+    private Object createController(RequestBeanContext requestContext) throws Exception {
+        return instantiateType(controllerClass, requestContext);
     }
 
     /**
      * 타입의 @Autowired 생성자를 찾아 생성자 의존성까지 재귀적으로 주입한다.
      * @Autowired 생성자가 없을 때만 기본 생성자를 사용한다.
      */
-    private Object instantiateType(Class<?> type, ChannelHandlerContext ctx, INet inet,
-                                   Deque<Class<?>> dependencyPath) throws Exception {
-        if (dependencyPath.contains(type)) {
+    private Object instantiateType(Class<?> type, RequestBeanContext requestContext)
+            throws Exception {
+        if (INet.class.isAssignableFrom(type)) {
+            return requestContext.inet;
+        }
+        if (ChannelHandlerContext.class.isAssignableFrom(type)) {
+            return requestContext.ctx;
+        }
+
+        warnUnsupportedAutowiredFields(type);
+
+        Object cachedBean = requestContext.beans.get(type);
+        if (cachedBean != null) {
+            return cachedBean;
+        }
+
+        if (requestContext.dependencyPath.contains(type)) {
             throw new IllegalStateException(
                 "Circular constructor dependency detected: "
-                    + formatDependencyPath(dependencyPath, type)
+                    + formatDependencyPath(requestContext.dependencyPath, type)
             );
         }
 
-        dependencyPath.addLast(type);
+        requestContext.dependencyPath.addLast(type);
         try {
             Constructor<?> autowiredConstructor = null;
             int autowiredCount = 0;
@@ -90,39 +117,63 @@ public class RouteInvoker {
             }
 
             if (autowiredConstructor != null) {
-                return instantiateWithAutowired(
-                    autowiredConstructor, ctx, inet, dependencyPath
-                );
+                Object bean = instantiateWithAutowired(autowiredConstructor, requestContext);
+                requestContext.beans.put(type, bean);
+                return bean;
             }
 
             try {
                 Constructor<?> defaultConstructor = type.getDeclaredConstructor();
                 defaultConstructor.setAccessible(true);
-                return defaultConstructor.newInstance();
+                Object bean = defaultConstructor.newInstance();
+                requestContext.beans.put(type, bean);
+                return bean;
             } catch (NoSuchMethodException e) {
                 throw new IllegalStateException(
                     "No injectable constructor found in " + type.getName()
                         + ". Add one @Autowired constructor or a default constructor."
-                        + " Dependency path: " + formatDependencyPath(dependencyPath, null),
+                        + " Dependency path: "
+                        + formatDependencyPath(requestContext.dependencyPath, null),
                     e
                 );
             }
         } finally {
-            dependencyPath.removeLast();
+            requestContext.dependencyPath.removeLast();
+        }
+    }
+
+    /**
+     * 지원하지 않는 필드 주입을 한 번만 경고하고 실제 주입은 수행하지 않는다.
+     */
+    private void warnUnsupportedAutowiredFields(Class<?> type) {
+        if (!AUTOWIRED_FIELD_INSPECTED_TYPES.add(type)) {
+            return;
+        }
+
+        Class<?> currentType = type;
+        while (currentType != null && currentType != Object.class) {
+            for (Field field : currentType.getDeclaredFields()) {
+                if (field.isAnnotationPresent(Autowired.class)) {
+                    logger.warn(
+                        "@Autowired field injection is not supported and will be ignored: {}.{}. "
+                            + "Use constructor injection instead.",
+                        currentType.getName(), field.getName()
+                    );
+                }
+            }
+            currentType = currentType.getSuperclass();
         }
     }
 
     private Object instantiateWithAutowired(Constructor<?> constructor,
-                                            ChannelHandlerContext ctx,
-                                            INet inet,
-                                            Deque<Class<?>> dependencyPath) throws Exception {
+                                            RequestBeanContext requestContext) throws Exception {
         constructor.setAccessible(true);
         
         Class<?>[] paramTypes = constructor.getParameterTypes();
         Object[] params = new Object[paramTypes.length];
         
         for (int i = 0; i < paramTypes.length; i++) {
-            params[i] = resolveParameter(paramTypes[i], ctx, inet, dependencyPath);
+            params[i] = resolveParameter(paramTypes[i], requestContext);
             
             // null 체크
             if (params[i] == null) {
@@ -208,15 +259,24 @@ public class RouteInvoker {
         };
     }
     
-    private Object resolveParameter(Class<?> type, ChannelHandlerContext ctx, INet inet,
-                                    Deque<Class<?>> dependencyPath) throws Exception {
-        
-        if (INet.class.isAssignableFrom(type)) {
-            return inet;
-        } else if (ChannelHandlerContext.class.isAssignableFrom(type)) {
-            return ctx;
-        } else {
-            return instantiateType(type, ctx, inet, dependencyPath);
+    private Object resolveParameter(Class<?> type, RequestBeanContext requestContext)
+            throws Exception {
+        return instantiateType(type, requestContext);
+    }
+
+    /**
+     * invoke() 한 번에만 유지되는 요청 범위 Bean 저장소다.
+     * 요청마다 별도 인스턴스를 사용하므로 동시 요청 사이에는 공유되지 않는다.
+     */
+    private static final class RequestBeanContext {
+        private final ChannelHandlerContext ctx;
+        private final INet inet;
+        private final Map<Class<?>, Object> beans = new HashMap<>();
+        private final Deque<Class<?>> dependencyPath = new ArrayDeque<>();
+
+        private RequestBeanContext(ChannelHandlerContext ctx, INet inet) {
+            this.ctx = ctx;
+            this.inet = inet;
         }
     }
     
