@@ -2,6 +2,7 @@ package kr.tx24.inet.codec;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -169,7 +170,12 @@ public class INetDecoder extends ByteToMessageDecoder {
 			double receivedMB	= received / (1024.0 * 1024.0);
 			double totalMB		= total / (1024.0 * 1024.0);
 			
-			logger.info("Receiving large packet: {:.1f}% ({:.2f}MB / {:.2f}MB)",progress, receivedMB, totalMB);
+			logger.info(
+					"Receiving large packet: {}% ({}MB / {}MB)",
+					String.format(Locale.ROOT, "%.1f", progress),
+					String.format(Locale.ROOT, "%.2f", receivedMB),
+					String.format(Locale.ROOT, "%.2f", totalMB)
+			);
 			
 			lastLogTime = now;
 		}
@@ -182,7 +188,10 @@ public class INetDecoder extends ByteToMessageDecoder {
 		if (packetLength > 1024 * 1024) {
 			// 1MB 이상
 			double sizeMB = packetLength / (1024.0 * 1024.0);
-			logger.info("inet recv: [LARGE PACKET], length={:.2f}MB", sizeMB);
+			logger.info(
+					"inet recv: [LARGE PACKET], length={}MB",
+					String.format(Locale.ROOT, "%.2f", sizeMB)
+			);
 			
 		} else if (SystemUtils.deepview() || packetLength > 10240) {
 			// 10KB 이상이거나 디버그 모드

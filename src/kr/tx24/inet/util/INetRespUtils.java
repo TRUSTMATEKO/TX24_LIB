@@ -137,16 +137,8 @@ public class INetRespUtils {
                 } else {
                     logger.error("Failed to send response", f.cause());
                 }
-                
-                if (delayBeforeClose > 0) {
-                    try {
-                        Thread.sleep(delayBeforeClose);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-                
-                f.channel().close();
+
+                closeAfterWrite(f);
             });
         }
         
@@ -170,17 +162,34 @@ public class INetRespUtils {
                 completableFuture.completeExceptionally(f.cause());
             }
             
-            if (autoClose && delayBeforeClose > 0) {
-                // 스케줄러 사용
-                f.channel().eventLoop().schedule(() -> {
-                    f.channel().close();
-                }, delayBeforeClose, TimeUnit.MILLISECONDS);
-            } else if (autoClose) {
-                f.channel().close();
+            if (autoClose) {
+                closeAfterWrite(f);
             }
         });
         
         return completableFuture;
+    }
+
+    /**
+     * writeAndFlush 완료 후 EventLoop를 차단하지 않고 연결 종료를 예약한다.
+     * 전송 실패 시에는 지연하지 않고 채널을 종료한다.
+     */
+    private void closeAfterWrite(ChannelFuture future) {
+        if (!future.isSuccess() || delayBeforeClose <= 0) {
+            future.channel().close();
+            return;
+        }
+
+        try {
+            future.channel().eventLoop().schedule(
+                () -> future.channel().close(),
+                delayBeforeClose,
+                TimeUnit.MILLISECONDS
+            );
+        } catch (RuntimeException e) {
+            logger.warn("Failed to schedule channel close; closing immediately", e);
+            future.channel().close();
+        }
     }
     
     

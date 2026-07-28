@@ -1,6 +1,7 @@
 package kr.tx24.inet.server;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,8 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.util.concurrent.DefaultEventExecutorGroup;
+import io.netty.util.concurrent.EventExecutorGroup;
 import kr.tx24.inet.codec.INetDecoder;
 import kr.tx24.inet.codec.INetEncoder;
 import kr.tx24.inet.conf.INetConfigLoader;
@@ -42,9 +45,13 @@ public class INetServer{
 	private static final int HIGH_WATER_MARK = 4 * 1024 * 1024;      // 4MB
 	private static final int TCP_RCV_BUFFER_SIZE = 512 * 1024;       // 512KB
 	private static final int TCP_SND_BUFFER_SIZE = 64 * 1024;        // 64KB
+	private static final int BUSINESS_THREADS =
+			Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
+	private static final int BUSINESS_SHUTDOWN_TIMEOUT_SECONDS = 10;
 	
 	private static volatile  EventLoopGroup bossGroup 	= null;
 	private static volatile  EventLoopGroup workerGroup 	= null;
+	private static volatile  EventExecutorGroup businessGroup = null;
 	
 	// 중복 shutdown 방지
     private static final AtomicBoolean isShutdown = new AtomicBoolean(false);
@@ -63,6 +70,7 @@ public class INetServer{
 			logger.debug("INetServer is already initialized or starting");
 			return;
 		}
+		isShutdown.set(false);
 	
 		run();
 	}
@@ -79,6 +87,7 @@ public class INetServer{
 		// Netty 4.2.x 최신 방식: MultiThreadIoEventLoopGroup with NioIoHandler
 		bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
 		workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory()); // CPU * 2 기본
+		businessGroup = new DefaultEventExecutorGroup(BUSINESS_THREADS);
 		
 		
 		try{
@@ -93,7 +102,6 @@ public class INetServer{
                     // Child options - 각 클라이언트 연결에 적용되는 옵션들
                     .childOption(ChannelOption.SO_KEEPALIVE, false)							//KeepAlive 설정
                     .childOption(ChannelOption.TCP_NODELAY, true)							//Nagle 알고리즘 비활성화
-                    .childOption(ChannelOption.SO_LINGER, 3)								//소켓 닫기 시 대기 시간
                     .childOption(ChannelOption.SO_SNDBUF, TCP_SND_BUFFER_SIZE)
                     .childOption(ChannelOption.SO_RCVBUF, TCP_RCV_BUFFER_SIZE)
                     .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)	//
@@ -103,15 +111,16 @@ public class INetServer{
                     .childOption(ChannelOption.MESSAGE_SIZE_ESTIMATOR,io.netty.channel.DefaultMessageSizeEstimator.DEFAULT) // Message size estimator - 메시지 크기 추정 (메모리 관리)
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
+                        @SuppressWarnings("deprecation")
                         protected void initChannel(SocketChannel sc) throws Exception {
                             ChannelPipeline p = sc.pipeline();
                             if (INetConfigLoader.enableLoggingHandler()) {
                                 p.addLast(new LoggingHandler(LogLevel.INFO)); //로그 확인 시
                             }
-                            p.addLast("idleStateHandler", new IdleStateHandler(15, 120, 0));
+                            p.addLast("idleStateHandler", new IdleStateHandler(0, 0, 300));
                             p.addLast("inetDecoder", new INetDecoder());
                             p.addLast("inetEncoder", new INetEncoder());
-                            p.addLast("handler", new INetHandler());
+                            p.addLast(businessGroup, "handler", new INetHandler());
                         }
                     });	
 					
@@ -131,7 +140,7 @@ public class INetServer{
 
             future.channel().closeFuture().sync();
 		}catch (Exception e){
-			logger.error("server exception : {}",e.getMessage());
+			logger.error("INetServer execution failed", e);
 		}finally {
 			shutdown();
 		}
@@ -144,8 +153,13 @@ public class INetServer{
                     ? ((MultithreadEventLoopGroup) bossGroup).executorCount() : 1;
             int workerThreads = (workerGroup instanceof MultithreadEventLoopGroup)
                     ? ((MultithreadEventLoopGroup) workerGroup).executorCount() : 1;
-            logger.info("Boss threads: {}, Worker threads: {}", bossThreads, workerThreads);
-        } catch (Exception ignore) {}
+            logger.info(
+                    "Boss threads: {}, Worker threads: {}, Business threads: {}",
+                    bossThreads, workerThreads, BUSINESS_THREADS
+            );
+        } catch (Exception e) {
+            logger.debug("Failed to read INetServer thread information", e);
+        }
     }
 	
 	
@@ -161,26 +175,42 @@ public class INetServer{
             return;
         }
 		
-        try {
-        	
-        	//각 worker, boss 는 0 : 즉시 다음 요청을 수신하지 않으며 3 초까지 현재의 처리를 대기한 후 종료한다.
-        	if (workerGroup != null) {
-            	workerGroup.shutdownGracefully(0, 3, java.util.concurrent.TimeUnit.SECONDS).sync();
-            }
-            if (bossGroup != null) {
-            	bossGroup.shutdownGracefully(0, 3, java.util.concurrent.TimeUnit.SECONDS).sync();
-            }
-        	
-            isInitialized.set(false);
-            
-            logger.info("INetSrver stopped successfully! ...");
-        } catch (InterruptedException  ex) {
-            logger.info("shutdown exception : {}", ex.getMessage(), ex);
+        // 신규 연결을 먼저 중단하고, 진행 중인 업무가 끝난 뒤 남은 네트워크 응답을 처리한다.
+        boolean interrupted = false;
+        interrupted |= shutdownGroup(bossGroup, 3, "bossGroup");
+        interrupted |= shutdownGroup(
+                businessGroup, BUSINESS_SHUTDOWN_TIMEOUT_SECONDS, "businessGroup"
+        );
+        interrupted |= shutdownGroup(workerGroup, 3, "workerGroup");
+
+        bossGroup = null;
+        businessGroup = null;
+        workerGroup = null;
+        isInitialized.set(false);
+
+        if (interrupted) {
         	Thread.currentThread().interrupt();
-        } catch (Exception e) {
-            logger.info("Error during shutdown", e);
         }
+        logger.info("INetServer stopped successfully! ...");
     }
+
+	private static boolean shutdownGroup(
+			EventExecutorGroup group, long timeoutSeconds, String groupName) {
+		if (group == null) {
+			return false;
+		}
+
+		try {
+			group.shutdownGracefully(0, timeoutSeconds, TimeUnit.SECONDS).sync();
+			return false;
+		} catch (InterruptedException e) {
+			logger.warn("{} shutdown interrupted", groupName, e);
+			return true;
+		} catch (Exception e) {
+			logger.warn("{} shutdown failed", groupName, e);
+			return false;
+		}
+	}
 	
 	
 	public static void main(String[] args) {
