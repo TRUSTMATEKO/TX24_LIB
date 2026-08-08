@@ -90,7 +90,7 @@ public class DBUtils {
 				if(temp instanceof Number) {
 					sb.append(DBUtils.COMMA).append(temp);
 				}else {
-					sb.append(DBUtils.COMMA).append(DBUtils.APOSTROPHE).append(temp).append(DBUtils.APOSTROPHE);
+					sb.append(DBUtils.COMMA).append(DBUtils.APOSTROPHE).append(escape(CommonUtils.toString(temp))).append(DBUtils.APOSTROPHE);
 				}
 			});
 			return sb.substring(1);
@@ -226,7 +226,7 @@ public class DBUtils {
 				.append(column)
 				.append(getOperator(operator))
 				.append("'%")
-				.append(CommonUtils.toString(value))
+				.append(escape(CommonUtils.toString(value)))
 				.append("%'");
 			}else if(operator.equals(in) || operator.equals(ni) || operator.equals(fnin) || operator.equals(fnni)) {
 				sb
@@ -269,7 +269,7 @@ public class DBUtils {
 					.append(column)
 					.append(getOperator(operator))
 					.append(APOSTROPHE)
-					.append(CommonUtils.toString(value))
+					.append(escape(CommonUtils.toString(value)))
 					.append(APOSTROPHE);
 				}
 			}
@@ -321,7 +321,7 @@ public class DBUtils {
 				
 				if(obj instanceof String){
 					valBuf.append("'")
-							.append(((String)obj).replaceAll("'", "\\\\'" ))
+							.append(escape((String)obj))
 							.append("'");
 				}else if(obj instanceof Integer || obj instanceof Long || obj instanceof Double){
 					valBuf.append(obj);
@@ -343,7 +343,7 @@ public class DBUtils {
 				}else if(obj instanceof char[]){
 					char[] c = (char[])obj;
 					valBuf.append("'")
-							.append(String.valueOf(c).replaceAll("'", "\\\\'" ))
+							.append(escape(String.valueOf(c)))
 							.append("'");
 				}else if(obj instanceof BigInteger){
 					BigInteger b =  (BigInteger)obj;
@@ -367,7 +367,7 @@ public class DBUtils {
 				}else if(obj instanceof String[]){
 					String[] s = (String[])obj;
 					valBuf.append("'")
-							.append(Arrays.toString(s).replaceAll("'", "\\\\'" ))
+							.append(escape(Arrays.toString(s)))
 							.append("'");
 					
 				}else {
@@ -743,5 +743,76 @@ public class DBUtils {
             }
         }
     }
+
+	/**
+	 * SQL 문자열 리터럴 내부에 사용할 값을 이스케이프한다.
+	 *
+	 * <p>작은따옴표는 ANSI SQL 방식으로 두 번 표기하고, MySQL 문자열 리터럴에서
+	 * 의미를 갖는 역슬래시와 제어 문자는 역슬래시 시퀀스로 변환한다. 가능하면
+	 * 이 메서드로 SQL을 조립하기보다 {@link PreparedStatement} 바인딩을 사용한다.</p>
+	 *
+	 * @param value SQL 문자열 리터럴 내부에 사용할 값
+	 * @return 이스케이프된 값, {@code null} 또는 빈 문자열이면 빈 문자열
+	 */
+	public static String escape(String value) {
+		return escape(value, false);
+	}
+
+	/**
+	 * SQL LIKE 패턴의 리터럴 값을 이스케이프한다.
+	 *
+	 * <p>{@link #escape(String)} 처리에 더해 LIKE wildcard인 {@code %}와
+	 * {@code _}를 역슬래시로 이스케이프한다. DB 설정에 따라 생성한 패턴 뒤에
+	 * {@code ESCAPE '\\'} 절을 명시해야 할 수 있다.</p>
+	 *
+	 * @param value LIKE 패턴에서 문자 그대로 비교할 값
+	 * @return 이스케이프된 LIKE 값, {@code null} 또는 빈 문자열이면 빈 문자열
+	 */
+	public static String escapeLike(String value) {
+		return escape(value, true);
+	}
+
+	private static String escape(String value, boolean likePattern) {
+		if(CommonUtils.isEmpty(value)) return "";
+
+		StringBuilder escaped = new StringBuilder(value.length() + 16);
+		for(int i = 0; i < value.length(); i++) {
+			char ch = value.charAt(i);
+			switch(ch) {
+				case '\0':
+					escaped.append("\\0");
+					break;
+				case '\b':
+					escaped.append("\\b");
+					break;
+				case '\n':
+					escaped.append("\\n");
+					break;
+				case '\r':
+					escaped.append("\\r");
+					break;
+				case '\t':
+					escaped.append("\\t");
+					break;
+				case '\u001a':
+					escaped.append("\\Z");
+					break;
+				case '\\':
+					escaped.append("\\\\");
+					break;
+				case '\'':
+					escaped.append("''");
+					break;
+				case '%':
+				case '_':
+					if(likePattern) escaped.append('\\');
+					escaped.append(ch);
+					break;
+				default:
+					escaped.append(ch);
+			}
+		}
+		return escaped.toString();
+	}
 }
 

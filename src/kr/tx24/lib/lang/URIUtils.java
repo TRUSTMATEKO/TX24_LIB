@@ -1,7 +1,10 @@
 package kr.tx24.lib.lang;
 
 import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
 import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
@@ -170,6 +173,55 @@ public class URIUtils {
     }
 
     /**
+     * 문자열이 유효한 HTTP 또는 HTTPS URL인지 확인합니다.
+     *
+     * <p>스킴과 호스트가 포함된 절대 URL만 유효하며, 상대 경로와 다른 스킴은
+     * 허용하지 않습니다. 포트가 지정된 경우 1~65535 범위여야 합니다.</p>
+     *
+     * @param url 검증할 URL 문자열
+     * @return 유효한 HTTP 또는 HTTPS URL이면 {@code true}, 아니면 {@code false}
+     *
+     * @example
+     * <pre>
+     * valid("https://example.com/path")     // true
+     * valid("http://localhost:8080")        // true
+     * valid("ftp://example.com")            // false
+     * valid("/relative/path")                // false
+     * </pre>
+     */
+    public static boolean valid(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+
+        try {
+            URI uri = new URI(url);
+            URL parsedUrl = uri.toURL();
+
+            String protocol = parsedUrl.getProtocol();
+            if (!"http".equalsIgnoreCase(protocol)
+                    && !"https".equalsIgnoreCase(protocol)) {
+                return false;
+            }
+
+            String host = parsedUrl.getHost();
+            if (host == null || host.isBlank()) {
+                return false;
+            }
+
+            String authority = uri.getRawAuthority();
+            if (authority == null || authority.endsWith(":")) {
+                return false;
+            }
+
+            int port = parsedUrl.getPort();
+            return port == -1 || (port >= 1 && port <= 65535);
+        } catch (URISyntaxException | MalformedURLException e) {
+            return false;
+        }
+    }
+
+    /**
      * 문자열을 URI 객체로 변환합니다.
      * URL과 URI 모두 처리 가능
      * 
@@ -277,12 +329,9 @@ public class URIUtils {
             return MapFactory.createObjectMap(type);
         }
 
-        // 쿼리 파라미터 개수를 추정하여 적절한 초기 용량 계산
+        // MapFactory가 예상 개수와 기본 load factor를 기준으로 용량을 자동 보정
         int estimatedParamCount = estimateParameterCount(query);
-        int initialCapacity = calculateOptimalCapacity(estimatedParamCount);
-        
-        // MapFactory를 사용하여 최적화된 용량으로 Map 생성
-        M map = MapFactory.createObjectMap(type, initialCapacity);
+        M map = MapFactory.createObjectMap(type, estimatedParamCount);
 
         Charset charset = charsetNames.length > 0 
             ? Charset.forName(charsetNames[0]) 
@@ -501,26 +550,4 @@ public class URIUtils {
         return count;
     }
 
-    /**
-     * 예상 파라미터 개수를 기반으로 최적의 초기 용량을 계산합니다.
-     * 
-     * <p>HashMap의 loadFactor(0.75)를 고려하여 리사이징이 발생하지 않도록
-     * 충분한 용량을 계산합니다.</p>
-     * 
-     * @param estimatedSize 예상 파라미터 개수
-     * @return 최적 초기 용량
-     */
-    private static int calculateOptimalCapacity(int estimatedSize) {
-        if (estimatedSize <= 0) {
-            return MapFactory.getDefaultInitialCapacity();
-        }
-        
-        // loadFactor가 0.75이므로 리사이징을 피하기 위해 여유 공간 추가
-        // (estimatedSize / loadFactor) + 1
-        float loadFactor = MapFactory.getDefaultLoadFactor();
-        int capacity = (int) Math.ceil(estimatedSize / loadFactor) + 1;
-        
-        // 최소값은 기본 초기 용량
-        return Math.max(capacity, MapFactory.getDefaultInitialCapacity());
-    }
 }

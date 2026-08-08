@@ -161,14 +161,15 @@ public class Router {
                 route.loggable(), route.authRequired());
         
         for (String target : targets) {
-            // 빈 target 체크
-            if (target == null || target.trim().isEmpty()) {
-                logger.warn("Empty target in route for method: {}.{}", 
+            if (target == null) {
+                logger.warn("Null target in route for method: {}.{}",
                         clazz.getName(), method.getName());
                 continue;
             }
             
-            String fullTarget = rootTarget + normalizeTarget(target);
+            // 빈 target("")과 루트 target("/")은 컨트롤러 자체 경로를 의미한다.
+            // 결합 후 다시 정규화하여 "/biz" + "/"도 "/biz"로 등록한다.
+            String fullTarget = normalizeTarget(rootTarget + normalizeTarget(target));
             
             // fullTarget이 빈 문자열인 경우 체크
             if (fullTarget.isEmpty()) {
@@ -177,7 +178,7 @@ public class Router {
                 continue;
             }
             
-            String normalizedTarget = fullTarget.toLowerCase();
+            String normalizedTarget = fullTarget;
             
             // 중복 체크 및 등록
             RouteInvoker existing = ROUTE_MAP.putIfAbsent(normalizedTarget, invoker);
@@ -209,8 +210,8 @@ public class Router {
             normalized = "/" + normalized;
         }
         
-        // 끝 슬래시 제거
-        if (normalized.length() > 1 && normalized.endsWith("/")) {
+        // 끝 슬래시는 모두 제거한다. "/" 자체는 루트 경로로 유지한다.
+        while (normalized.length() > 1 && normalized.endsWith("/")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
         
@@ -229,6 +230,7 @@ public class Router {
             return null;
         }
         
+        // 사용자가 "/biz/"처럼 끝에 슬래시를 붙여도 "/biz" route를 조회한다.
         String normalizedTarget = normalizeTarget(target);
         
         // 정확히 일치하는 라우트 찾기

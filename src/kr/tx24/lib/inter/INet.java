@@ -159,7 +159,7 @@ public class INet implements java.io.Serializable {
 	private static final long serialVersionUID 	= -3518167926980673854L;
 	private static final Logger logger			= LoggerFactory.getLogger(INet.class);
 
-	private static final int DEFAULT_CONNECT_TIMEOUT 	= 2 * 1000;	// 2초
+	private static final int DEFAULT_CONNECT_TIMEOUT 	= 1 * 1000;	// 1초
 	private static final int DEFAULT_READ_TIMEOUT 		= 2 * 60 * 1000;	// 2분
 	private static final String TIMEOUT_CONNECT 		= "connect timeout";
 	private static final String TIMEOUT_READ 			= "read timeout";
