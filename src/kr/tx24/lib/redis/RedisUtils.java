@@ -26,6 +26,9 @@ import io.lettuce.core.SetArgs;
 import io.lettuce.core.TransactionResult;
 import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
+import io.lettuce.core.output.ValueOutput;
+import io.lettuce.core.protocol.CommandArgs;
+import io.lettuce.core.protocol.CommandType;
 import kr.tx24.lib.db.Retrieve;
 import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.map.SharedMap;
@@ -82,6 +85,8 @@ import kr.tx24.lib.map.TypeRegistry;
 public final class RedisUtils {
 
     private static final Logger logger = LoggerFactory.getLogger(RedisUtils.class);
+    private static final String GEO_IP_COUNTRY_FUNCTION = "country";
+    private static final String GEO_IP_COUNTRY_V4_KEY   = "geoip:country:v4";
 
     private RedisUtils() {
         throw new UnsupportedOperationException("Utility class");
@@ -861,14 +866,70 @@ public final class RedisUtils {
      * 
      * <p><b>내부 동작:</b></p>
      * SCAN으로 키를 찾고 DEL로 삭제 (안전하고 효율적)
+     * 빈 패턴과 길이 3 이하의 패턴은 대량 오삭제 방지를 위해 허용하지 않는다.
      * 
      * @param pattern 패턴 (예: "cache:*")
      * @return 삭제된 키 개수
+     * @throws IllegalArgumentException 패턴이 {@code null}, 공백 또는 길이 3 이하인 경우
      */
     public static long deleteByPattern(String pattern) {
+        validateDeleteSearchValue(pattern, "pattern");
+
         List<String> keys = scan(pattern, 100);
         if (keys.isEmpty()) return 0;
-        return del(keys.toArray(new String[0]));
+        return mdelPipeline(keys);
+    }
+
+    /**
+     * 키 이름에 지정한 문자열이 포함된 모든 키를 검색하여 한 번에 삭제한다.
+     *
+     * <p>검색 문자열은 Redis glob 패턴이 아닌 일반 문자열로 처리한다.
+     * 따라서 검색 문자열에 {@code *}, {@code ?}, {@code [}, {@code ]}가
+     * 포함되어도 wildcard가 아니라 실제 문자로 검색한다.</p>
+     *
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * // "user:123"이 포함된 모든 키 삭제
+     * long deleted = RedisUtils.deleteByLikeKey("user:123");
+     *
+     * // cache:order:100, temp:order:100 등을 모두 삭제
+     * long deleted = RedisUtils.deleteByLikeKey("order:100");
+     * </pre>
+     *
+     * <p>내부적으로 SCAN을 사용해 키를 검색하고 100개 단위로 삭제한다.
+     * 빈 검색 문자열과 길이 3 이하의 검색 문자열은 대량 오삭제 방지를 위해 허용하지 않는다.
+     * Redis glob 패턴을 직접 사용하려면 {@link #deleteByPattern(String)}을 사용한다.</p>
+     *
+     * @param similarKey 키 이름에 포함되어야 하는 문자열
+     * @return 삭제된 키 개수
+     * @throws IllegalArgumentException 검색 문자열이 {@code null}, 공백 또는 길이 3 이하인 경우
+     */
+    public static long deleteByLikeKey(String key) {
+        validateDeleteSearchValue(key, "key");
+
+        String pattern = "*" + escapeGlobPattern(key) + "*";
+        return deleteByPattern(pattern);
+    }
+
+    private static void validateDeleteSearchValue(String value, String parameterName) {
+        if (value == null || value.isBlank() || value.length() <= 3) {
+            throw new IllegalArgumentException(parameterName + " must contain at least 4 characters");
+        }
+    }
+
+    /**
+     * Redis glob 패턴에서 일반 문자로 검색할 수 있도록 특수 문자를 이스케이프한다.
+     */
+    private static String escapeGlobPattern(String value) {
+        StringBuilder escaped = new StringBuilder(value.length() + 8);
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == '\\' || ch == '*' || ch == '?' || ch == '[' || ch == ']') {
+                escaped.append('\\');
+            }
+            escaped.append(ch);
+        }
+        return escaped.toString();
     }
 
     // ==================== Increment/Decrement ====================
@@ -2007,6 +2068,34 @@ public final class RedisUtils {
 
 
     // ==================== Utility ====================
+
+    /**
+     * Redis GeoIP Function으로 IPv4 주소의 국가 코드를 조회한다.
+     *
+     * <p>Redis에 등록된 {@code country} Function을 호출하며,
+     * {@code geoip:country:v4} 키를 사용한다.</p>
+     *
+     * <p><b>사용 예:</b></p>
+     * <pre>
+     * String country = RedisUtils.getGeoIpCountry("8.8.8.8");
+     * </pre>
+     *
+     * @param ip 조회할 IPv4 주소
+     * @return Redis Function이 반환한 국가 코드, 입력값이 {@code null} 또는 공백이면 빈 문자열
+     */
+    public static String getGeoIpCountry(String ip) {
+        if (ip == null || ip.isBlank()) return "";
+
+        TypedRedisCodec codec = new TypedRedisCodec();
+        CommandArgs<String, Object> args = new CommandArgs<>(codec)
+                .add(GEO_IP_COUNTRY_FUNCTION)
+                .add(1)
+                .addKey(GEO_IP_COUNTRY_V4_KEY)
+                .add(ip);
+        Object result = Redis.sync().dispatch(CommandType.FCALL, new ValueOutput<>(codec), args);
+
+        return result == null ? "" : String.valueOf(result);
+    }
 
     /**
      * Redis 서버 연결 테스트
