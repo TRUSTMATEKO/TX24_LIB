@@ -87,6 +87,7 @@ public final class RedisUtils {
     private static final Logger logger = LoggerFactory.getLogger(RedisUtils.class);
     private static final String GEO_IP_COUNTRY_FUNCTION = "country";
     private static final String GEO_IP_COUNTRY_V4_KEY   = "geoip:country:v4";
+    private static final String GEO_IP_UNKNOWN_COUNTRY  = "ZZ";
 
     private RedisUtils() {
         throw new UnsupportedOperationException("Utility class");
@@ -2081,10 +2082,16 @@ public final class RedisUtils {
      * </pre>
      *
      * @param ip 조회할 IPv4 주소
-     * @return Redis Function이 반환한 국가 코드, 입력값이 {@code null} 또는 공백이면 빈 문자열
+     * @return Redis Function이 반환한 국가 코드, GeoIP 키가 없거나 조회 결과가 없으면 {@code "ZZ"},
+     *         입력값이 {@code null} 또는 공백이면 빈 문자열
      */
     public static String getGeoIpCountry(String ip) {
         if (ip == null || ip.isBlank()) return "";
+
+        if (!exists(GEO_IP_COUNTRY_V4_KEY)) {
+            logger.warn("Redis GeoIP key does not exist. Create the key before lookup: {}", GEO_IP_COUNTRY_V4_KEY);
+            return GEO_IP_UNKNOWN_COUNTRY;
+        }
 
         TypedRedisCodec codec = new TypedRedisCodec();
         CommandArgs<String, Object> args = new CommandArgs<>(codec)
@@ -2094,7 +2101,7 @@ public final class RedisUtils {
                 .add(ip);
         Object result = Redis.sync().dispatch(CommandType.FCALL, new ValueOutput<>(codec), args);
 
-        return result == null ? "" : String.valueOf(result);
+        return result == null ? GEO_IP_UNKNOWN_COUNTRY : CommonUtils.toString(result);
     }
 
     /**
