@@ -1,5 +1,6 @@
 package kr.tx24.test.lang;
 
+import kr.tx24.lib.crypt.Argon2;
 import kr.tx24.lib.lang.DateUtils;
 import kr.tx24.lib.lang.IpMatcherUtils;
 
@@ -15,6 +16,6 @@ public class IPTest {
 
             System.out.println(DateUtils.getCurrentDay("yyyyMM")+"00");
             System.out.println(DateUtils.getCurrentDay("yyyyMM00"));
-
+        System.out.println(Argon2.fastHash("tx24"));
     }
 }

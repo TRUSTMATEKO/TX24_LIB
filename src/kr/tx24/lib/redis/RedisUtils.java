@@ -831,22 +831,38 @@ public final class RedisUtils {
      */
     public static List<String> scan(String pattern, long count) {
         List<String> result = new ArrayList<>();
-        ScanCursor cursor = ScanCursor.INITIAL;
-        
-        ScanArgs args;
-        if (count <= 0) {
-            args = ScanArgs.Builder.matches(pattern);  // ✅ limit() 없음
-        } else {
-            args = ScanArgs.Builder.matches(pattern).limit(count);
+        ScanCursor   cursor = ScanCursor.INITIAL;
+        ScanArgs     args   = ScanArgs.Builder.matches(pattern);
+
+        if (count > 0) {
+            args.limit(count);
         }
-        
+
         do {
             KeyScanCursor<String> scanResult = Redis.sync().scan(cursor, args);
             result.addAll(scanResult.getKeys());
-            cursor = ScanCursor.of(scanResult.getCursor());
-        } while (!cursor.isFinished());  // ✅ 여기서 자동으로 전체 검색
-        
+            cursor = scanResult;
+        } while (!cursor.isFinished());
+
         return result;
+    }
+
+    /**
+     * 패턴에 매칭되는 키를 지정한 커서부터 한 페이지만 조회합니다.
+     *
+     * <p>{@code count}는 Redis SCAN의 반환 개수 힌트이며 정확한 상한이 아닙니다.
+     * 호출자는 반환된 커서를 다음 호출에 전달하여 순회를 이어가야 합니다.</p>
+     *
+     * @param pattern 키 패턴
+     * @param cursor 이전 SCAN 결과의 커서
+     * @param count 한 번의 SCAN에서 요청할 키 개수 힌트
+     * @return 현재 페이지의 키와 다음 cursor를 포함한 SCAN 결과
+     */
+    public static KeyScanCursor<String> scan(String pattern, ScanCursor cursor, long count) {
+        ScanArgs args = count <= 0
+                ? ScanArgs.Builder.matches(pattern)
+                : ScanArgs.Builder.matches(pattern).limit(count);
+        return Redis.sync().scan(cursor, args);
     }
 
     /**
@@ -901,7 +917,7 @@ public final class RedisUtils {
      * 빈 검색 문자열과 길이 3 이하의 검색 문자열은 대량 오삭제 방지를 위해 허용하지 않는다.
      * Redis glob 패턴을 직접 사용하려면 {@link #deleteByPattern(String)}을 사용한다.</p>
      *
-     * @param similarKey 키 이름에 포함되어야 하는 문자열
+     * @param key 키 이름에 포함되어야 하는 문자열
      * @return 삭제된 키 개수
      * @throws IllegalArgumentException 검색 문자열이 {@code null}, 공백 또는 길이 3 이하인 경우
      */
