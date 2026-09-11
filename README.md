@@ -44,6 +44,41 @@ JDBC 연결, 세션, 트랜잭션과 CRUD 실행을 추상화합니다.
 - `RecordSet`: 조회 결과 표현
 - `DBUtils`, `DBType`, `DBException`: DB 공통 기능, DB 종류, 전용 예외
 
+`Create.insert(String query, Object... values)`는 직접 작성한 INSERT와 INSERT ... SELECT의 `?` 값을
+`DBUtils.setValues`로 바인딩합니다. `insert(String)`과 동일하게 단일 쿼리 실행 후 commit하고,
+오류는 로그로 기록하며 실행 결과를 반환합니다. 실행 전·실행 중 오류는 0을 반환하고,
+실행 후 commit 오류는 이미 얻은 행 수를 반환합니다. 연결·문장은 실행 후 닫고 빌더 설정은 초기화하지 않습니다.
+
+```java
+int count = new Create()
+        .insert("INSERT INTO TARGET (id, regId) SELECT id, ? FROM SOURCE WHERE day=?", userId, day);
+```
+
+기존 `insert()`·`insert(String)`의 호출과 동작은 유지됩니다. 바인딩할 값이 없더라도 새 오버로드를
+사용하려면 `insert(query, new Object[0])`로 호출합니다. null 배열도 바인딩하지 않으며,
+하나의 SQL NULL 값은 `insert(query, (Object) null)`처럼 전달합니다.
+
+`DBTrx.begin()`은 직접 연결을 빌려 소유하며, 시작 실패와 commit·rollback 종료 시 해당 연결을 닫습니다.
+`begin(Connection)`은 외부 연결을 사용하므로 시작 실패와 commit·rollback 이후에도 연결을 닫지 않습니다.
+외부 연결의 종료는 호출부가 `try-with-resources` 등으로 담당합니다. 명시적으로 호출한 commit·rollback은
+두 방식 모두 수행하며, 종료 후에는 내부 연결 참조와 소유권을 초기화해 반복 정리를 안전하게 처리합니다.
+
+`commit()` 실패는 rollback 후 `DBException`으로 전달되므로 호출부에서 처리하거나 선언해야 합니다.
+JDBC 원인은 `getCause()`에, DBTrx가 수행한 정리 오류는 그 원인의 `getSuppressed()`에 보존합니다.
+직접 소유한 연결에서 commit에 성공한 뒤 연결 종료만 실패해도 예외가 전달되며 DB 반영은 이미 완료된 상태입니다.
+
+업무 오류를 처리하는 호출부는 `catch`에서 `trx.rollback(ex)`를 호출한 뒤 원래 `ex`를 다시 전달합니다.
+이 경우 rollback과 직접 소유한 연결의 종료 오류는 `ex.getSuppressed()`에 함께 보존됩니다.
+기존 `rollback()` 호출도 유지되며, 원인 예외를 전달하지 않으면 정리 오류는 로그로 기록합니다.
+
+`DBTrxUpdate.executeWithResult()`도 `DBTrx`의 시작·commit·rollback 처리를 사용하며, 직접 얻은 연결은
+`try-with-resources`로 닫습니다. rollback은 연결을 닫기 전에 수행하고 각 SQL 문은 실행 직후 닫습니다.
+쿼리 실패 시 원인과 해당 SQL을 `DBException`에 보존합니다. 문장·rollback 오류는 원인 예외의
+`suppressed`에 남으며, 시작·commit 실패 후 외부에서 닫는 연결의 오류는 전달된 `DBException` 자체의
+`suppressed`에 남습니다. commit 후 연결 종료만 실패한 경우는 DB 반영이 완료된 상태입니다.
+`execute()`는 기존처럼 성공 시 `true`, 실패 시 `false`를 반환하므로, 호출부에서 원인 예외를 처리하려면
+`executeWithResult()`를 사용합니다.
+
 ### `kr.tx24.lib.db.scheme`
 
 데이터베이스 메타데이터와 SQL 결과를 표현하는 모델입니다.

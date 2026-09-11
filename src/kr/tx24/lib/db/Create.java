@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -303,6 +304,46 @@ public class Create {
 	}
 	
 	
+	/**
+	 * 직접 지정한 INSERT 또는 INSERT ... SELECT의 ?에 값을 순서대로 바인딩하여 실행한다.
+	 * insert(String)과 동일하게 실행 후 commit하며, 오류는 로그로 기록한다. INIT은 호출하지 않는다.
+	 * @param query 서버에서 정의한 SQL
+	 * @param values 바인딩할 값. null 배열이나 빈 배열은 바인딩하지 않으며 null 원소는 SQL NULL이다.
+	 * @return executeUpdate 결과. 쿼리를 실행하지 못한 경우 0
+	 */
+	public int insert(String query, Object... values){
+
+		DBManager db 			= null;
+		PreparedStatement pstmt = null;
+		Connection 	conn		= null;
+		int result				= 0;
+
+		long startTime = System.nanoTime();
+		try {
+			db			= DBFactory.get();
+			conn		= db.getConnection();
+			pstmt		= conn.prepareStatement(query);
+			DBUtils.setValues(pstmt, values);
+			result  	= pstmt.executeUpdate();
+			conn.commit();
+		}catch(Exception t){
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+		}finally {
+			if(db != null) {
+				db.close(pstmt);
+				db.close(conn);
+			}
+
+			if(deepview) {
+				logger.info("query : {} = [{}]",result,query);
+				logger.info("args  : {}",Arrays.toString(values));
+				logger.info(SystemUtils.getElapsedTime(System.nanoTime()- startTime));
+			}
+		}
+		return result;
+	}
+
+
 	/**
 	 * INSERT 이후 AUTO_INCREMENT COLUMNS 의 LAST_ID 를 가져오며 INIT 이 실행된다.
 	 * @return

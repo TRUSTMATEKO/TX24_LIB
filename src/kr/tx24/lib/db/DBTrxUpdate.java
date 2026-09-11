@@ -10,7 +10,6 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 import kr.tx24.lib.map.LinkedMap;
 
@@ -28,7 +27,6 @@ public class DBTrxUpdate{
 	
 	
 	private List<DBSet> list = null;
-	private Connection conn		= null;
 	
 	public DBTrxUpdate() {
 		list = new ArrayList<DBSet>();
@@ -68,7 +66,12 @@ public class DBTrxUpdate{
 	}
 	
 	
+	/**
+	 * 등록한 쿼리를 하나의 트랜잭션으로 실행하고 성공 여부를 반환한다.
+	 * 원인 예외가 필요한 호출부는 executeWithResult()를 사용한다.
+	 */
 	public boolean execute() {
+
 		try {
 			executeWithResult();
 		}catch(Exception e) {
@@ -78,85 +81,61 @@ public class DBTrxUpdate{
 	}
 	
 	
+	/**
+	 * DBTrx로 등록한 쿼리를 실행하고 쿼리별 영향받은 행 수를 반환하며 직접 얻은 연결을 닫는다.
+	 * 문장·rollback 오류는 원인에, 연결 종료 오류는 전달되는 예외의 suppressed에 보존한다.
+	 * @throws DBException 시작·쿼리·commit·연결 종료에 실패한 경우. JDBC 원인은 getCause()로 확인한다.
+	 */
 	public int[] executeWithResult() throws DBException{
-		
-		
-		conn = DBFactory.get().getConnection();
-		try {
-			conn.setAutoCommit(false);
-		} catch (SQLException e) {
-			throw new DBException("Failed to set auto-commit mode", e);
-		}
-		
-		logger.info("start transaction");
-		
-		int[] result = new int[list.size()];
-		for (int i = 0; i < result.length; i++) {
-		    result[i] = -1;
-		}
-		
-		
-		PreparedStatement pstmt = null;
-		Statement stmt = null;
-		int i = 0;
-		
-		try {
-			for(DBSet data : list) {
-				
-				if(data.query.toUpperCase().startsWith("SELECT ")) {
-					throw new SQLException ("SELECT 구문은 허용하지 않습니다." +data.query);
-				}
-				
-				if(data.hasValue()) {
-					pstmt = conn.prepareStatement(data.query);
-					DBUtils.setValues(pstmt,data.record);
-					result[i]  = pstmt.executeUpdate();
-					pstmt.close();
-				}else {
-					stmt = conn.createStatement();
-					result[i]  = stmt.executeUpdate(data.query);
-					stmt.close();
-				}
-				
-				if(SystemUtils.deepview()) logger.info("[{}] ,[{}] ,{} ",i,result[i],data.query);	
-				
-				i++;
-			}
-			
-			conn.commit();
-			logger.info("commit transaction");
-		}catch(SQLException e) {
-			logger.warn("db transaction execute failed : ",CommonUtils.getExceptionMessage(e));
+
+		DBTrx  trx    = new DBTrx();
+		String query  = null;
+		int[]  result = new int[list.size()];
+
+		try(Connection conn = DBFactory.get().getConnection()) {
 			try {
-                conn.rollback();
-                logger.info("rollback transaction");
-            } catch (SQLException rb) {
-            	logger.warn("rollback failed : ",CommonUtils.getExceptionMessage(rb));
-            }
-			throw new DBException("Failed to execute update", "", e);
-		}finally {
-			
-			
-			if(stmt != null){
-				try{
-					stmt.close();
-					//if(SystemUtils.deepview()) logger.info("Statement closed");
-				}catch(SQLException e){}
+				trx.begin(conn);
+
+				int i = 0;
+				for(DBSet data : list) {
+					query = data.query;
+					if(query.toUpperCase().startsWith("SELECT ")) {
+						throw new SQLException("SELECT 구문은 허용하지 않습니다." +query);
+					}
+
+					if(data.hasValue()) {
+						try(PreparedStatement pstmt = conn.prepareStatement(query)) {
+							DBUtils.setValues(pstmt,data.record);
+							result[i] = pstmt.executeUpdate();
+						}
+					}else {
+						try(Statement stmt = conn.createStatement()) {
+							result[i] = stmt.executeUpdate(query);
+						}
+					}
+
+					if(SystemUtils.deepview()) {
+						logger.info("[{}] ,[{}] ,{} ",i,result[i],query);
+					}
+					i++;
+				}
+
+				trx.commit();
+			}catch(SQLException | RuntimeException | Error ex){
+				trx.rollback(ex);
+				throw ex;
 			}
-			if(pstmt != null){
-				try{
-					pstmt.close();
-					//if(SystemUtils.deepview()) logger.info("PreparedStatement closed");
-				}catch(SQLException e){}
+		}catch(SQLException ex){
+			logger.warn("복합 쿼리 처리 실패", ex);
+			if(ex instanceof DBException dbEx) {
+				throw dbEx;
 			}
-			if(conn != null){
-				try{
-					conn.close();
-					//if(SystemUtils.deepview()) logger.info("end transaction");
-				}catch(SQLException e){}
-			}
+			throw new DBException("Failed to execute update", query, ex);
+		}catch(RuntimeException | Error ex){
+			logger.warn("복합 쿼리 처리 실패", ex);
+			throw ex;
 		}
-		
+
 		return result;
 	}
 	

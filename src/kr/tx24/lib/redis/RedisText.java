@@ -73,10 +73,10 @@ public final class RedisText {
             initialized.set(true);
             startHeartbeat();
 
-            logger.info("RedisText initialized : {}", redisUri);
+            logger.info("RedisText initialized : {}", RedisUriSanitizer.redact(redisUri));
 
         } catch (Exception e) {
-            logger.error("RedisText initialization failed", e);
+            logger.error("RedisText initialization failed: {}", RedisUriSanitizer.errorMessage(e));
             throw e;
         }
     }
@@ -202,7 +202,8 @@ public final class RedisText {
                 }
             }
         } catch (Exception e) {
-            logger.warn("RedisText heartbeat ping failed (Lettuce will auto-reconnect): {}", e.getMessage());
+            logger.warn("RedisText heartbeat ping failed (Lettuce will auto-reconnect): {}",
+                    RedisUriSanitizer.errorMessage(e));
         }
     }
 
@@ -287,7 +288,7 @@ public final class RedisText {
 
             return sb.toString();
         } catch (Exception e) {
-            return "Redis: Error getting info - " + e.getMessage();
+            return "Redis: Error getting info - " + RedisUriSanitizer.errorMessage(e);
         }
     }
 }

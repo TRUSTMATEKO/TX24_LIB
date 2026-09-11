@@ -3,6 +3,7 @@ package kr.tx24.lib.db;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -511,6 +512,38 @@ public class Update {
 				logger.info(SystemUtils.getElapsedTime(System.nanoTime()- startTime));
 			}
 			
+		}
+		return result;
+	}
+
+	public int update(String query, Object... values){
+
+		DBManager db 			= null;
+		PreparedStatement pstmt = null;
+		Connection 	conn		= null;
+		int result				= 0;
+
+		long startTime = System.nanoTime();
+		try {
+			db			= DBFactory.get();
+			conn		= db.getConnection();
+			pstmt		= conn.prepareStatement(query);
+			DBUtils.setValues(pstmt, values);
+			result  	= pstmt.executeUpdate();
+			conn.commit();
+		}catch(Exception t){
+			logger.warn("sql error : {}",CommonUtils.getExceptionMessage(t));
+		}finally {
+			if(db != null) {
+				db.close(pstmt);
+				db.close(conn);
+			}
+
+			if(deepview) {
+				logger.info("query : {} = [{}]",result,query);
+				logger.info("args  : {}", Arrays.toString(values));
+				logger.info(SystemUtils.getElapsedTime(System.nanoTime()- startTime));
+			}
 		}
 		return result;
 	}

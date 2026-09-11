@@ -12,12 +12,11 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import kr.tx24.lib.lang.CommonUtils;
 import kr.tx24.lib.lang.SystemUtils;
 
 /**
- * 데이터베이스 트랜젝션 처리를 위한 커녁션 관리 
- * JPA 와 같은 형식으로 사용한다. NEW -> begin() -> commit() or rollback() 을 통한 transaction 마감 및 connection 자동 close
+ * 데이터베이스 트랜잭션 처리와 연결 소유권을 관리한다.
+ * begin()으로 얻은 연결은 종료 시 닫으며, begin(Connection)으로 받은 연결은 호출부가 닫는다.
  * DBTrx  trx = new DBTrx();
  * try{
  *     trx.begin();
@@ -28,49 +27,79 @@ import kr.tx24.lib.lang.SystemUtils;
  *  
  *     trx.commit();
  * }catch(Exception e){
- *     trx.rollback();
+ *     trx.rollback(e);
+ *     throw e;
  * }
  */
 public class DBTrx{
 	private static Logger logger = LoggerFactory.getLogger(DBTrx.class);
-	private boolean deepview 	= false;
-	private Connection conn		= null;
+	private boolean    deepview       = false;
+	private Connection conn           = null;
+	private boolean    ownsConnection = false;
 	
 	
 	public DBTrx() {
+
 		this.deepview	= SystemUtils.deepview();
 	}
 	
 	/**
-	 * DBTrx 를 사용할 때 반드시 호출하여야 한다.
-	 * begin() 은 connection 을 할당하며 autocommit(false) 로 처리한다.
-	 * @throws Exception
+	 * 연결을 빌려 트랜잭션을 시작한다. 시작에 실패하면 연결을 닫고 원인 예외를 보존한다.
+	 * @throws DBException 연결을 얻거나 autoCommit 설정에 실패한 경우
 	 */
 	public void begin() throws DBException{
+
 		if(conn == null) {
-			conn = DBFactory.get().getConnection();
-			try {
-				conn.setAutoCommit(false);
-			} catch (SQLException e) {
-				throw new DBException("Failed to set auto-commit mode", e);
-			}
-			if(SystemUtils.deepview()) logger.info("start transaction");
+			begin(DBFactory.get().getConnection(), true);
 		}
 	}
 	
 	/**
-	 * DBTrx 를 사용할 때 반드시 호출하여야 한다.
-	 * begin(Connection) 은 connection 을 할당하며 autocommit(false) 로 처리한다.
-	 * @throws Exception
+	 * 외부 연결로 트랜잭션을 시작한다. 시작 실패와 commit·rollback 이후에도 연결 종료는 호출부가 담당한다.
+	 * 이미 시작한 연결은 다른 연결로 교체하지 않는다.
+	 * @throws DBException autoCommit 설정에 실패한 경우
 	 */
 	public void begin(Connection conn) throws DBException{
-		this.conn = conn;
+
+		begin(conn, false);
+	}
+
+	/**
+	 * 연결 소유권을 구분하여 트랜잭션을 시작하고, 설정 실패 시 직접 소유한 연결만 닫는다.
+	 */
+	private void begin(Connection conn, boolean ownsConnection) throws DBException{
+
+		if(conn == null) {
+			throw new IllegalArgumentException("트랜잭션 연결이 없습니다.");
+		}
+		if(this.conn != null) {
+			if(this.conn == conn) {
+				return;
+			}
+			throw new IllegalStateException("이미 시작된 트랜잭션의 연결을 교체할 수 없습니다.");
+		}
+
 		try {
 			conn.setAutoCommit(false);
-		} catch (SQLException e) {
-			throw new DBException("Failed to set auto-commit mode", e);
+		}catch(SQLException ex){
+			if(ownsConnection) {
+				close(conn, ex);
+			}
+			logger.warn("트랜잭션 처리 실패", ex);
+			throw new DBException("Failed to set auto-commit mode", ex);
+		}catch(RuntimeException ex){
+			if(ownsConnection) {
+				close(conn, ex);
+			}
+			logger.warn("트랜잭션 처리 실패", ex);
+			throw ex;
 		}
-		if(SystemUtils.deepview()) logger.info("start transaction");
+
+		this.conn           = conn;
+		this.ownsConnection = ownsConnection;
+		if(SystemUtils.deepview()) {
+			logger.info("start transaction");
+		}
 	}
 	
 	
@@ -159,6 +188,35 @@ public class DBTrx{
 		}
 		return result;
 	}
+
+
+	/**
+	 * placeholder가 포함된 UPDATE 쿼리를 PreparedStatement로 실행한다.
+	 * @param query placeholder가 포함된 UPDATE 쿼리
+	 * @param values placeholder 순서에 맞는 값
+	 * @return 변경된 row 수
+	 * @throws DBException 쿼리 실행 실패
+	 */
+	public int update(String query, Object... values) throws DBException{
+		PreparedStatement pstmt = null;
+		int result = 0;
+
+		long startTime = System.nanoTime();
+		try {
+			pstmt = conn.prepareStatement(query);
+			DBUtils.setValues(pstmt, values);
+			result = pstmt.executeUpdate();
+		} catch(SQLException t) {
+			throw new DBException("Failed to execute prepared update", query, t);
+		} finally {
+			close(pstmt);
+			if(deepview) {
+				logger.info("query : {} = [{}]", result, query);
+				logger.info(SystemUtils.getElapsedTime(System.nanoTime() - startTime));
+			}
+		}
+		return result;
+	}
 	
 	
 	/**
@@ -174,7 +232,6 @@ public class DBTrx{
 	
 	/**
 	 * Create Object 를 이용한 UPDATE 처리  Create.init() 자동 호출 됨
-	 * @param update
 	 * @return
 	 * @throws Exception
 	 */
@@ -363,45 +420,113 @@ public class DBTrx{
 	
 	
 	/**
-	 * 모든 select(),update(),delete() 쿼리 실행 후 반드시 호출되어야 한다. 
+	 * 트랜잭션을 commit하고 직접 소유한 연결만 닫는다. commit 실패 시 rollback한 뒤 원인 예외를 전달한다.
+	 * rollback과 연결 종료 오류는 원인 예외의 suppressed에 보존한다.
+	 * @throws DBException commit 또는 연결 종료에 실패한 경우. commit 후 종료만 실패하면 DB 반영은 완료된 상태다.
 	 */
-	public void commit(){
-		try{
-			if(conn != null) {
-				conn.commit();
+	public void commit() throws DBException{
+
+		Connection connection      = conn;
+		Connection ownedConnection = ownsConnection ? conn : null;
+		boolean    committed       = false;
+		conn           = null;
+		ownsConnection = false;
+		if(connection == null) {
+			return;
+		}
+
+		try(ownedConnection) {
+			try {
+				connection.commit();
+				committed = true;
+			}catch(SQLException | RuntimeException ex){
+				rollback(connection, ex);
+				throw ex;
 			}
-			if(SystemUtils.deepview()) {
-				logger.info("commit transaction");
-			}
-		}catch(SQLException e){
-			logger.warn("db transaction commit failed: ",CommonUtils.getExceptionMessage(e));
-		}finally {
-			close(conn);
+		}catch(SQLException ex){
+			logger.warn("트랜잭션 처리 실패", ex);
+			throw new DBException(committed ? "트랜잭션 연결 종료에 실패했습니다." : "트랜잭션 commit에 실패했습니다.", ex);
+		}catch(RuntimeException ex){
+			logger.warn("트랜잭션 처리 실패", ex);
+			throw ex;
+		}
+
+		if(SystemUtils.deepview()) {
+			logger.info("commit transaction");
 		}
 	}
 	
 	/**
-	 * 연속된 호출에서 Exception 이 발생시에 호출한다.
+	 * 트랜잭션을 rollback하고 직접 소유한 연결만 닫는다. 정리 오류는 함께 로그로 기록하며 반복 호출은 무시한다.
 	 */
 	public void rollback(){
-		try{
-			if(conn != null) {
-				conn.rollback();
+
+		rollback(null);
+	}
+
+	/**
+	 * 업무 오류 후 rollback하고 직접 소유한 연결만 닫으며 정리 오류를 전달받은 원인의 suppressed에 보존한다.
+	 * 원인 예외는 호출부에서 다시 전달하며, 이 메서드는 정리 오류로 원인을 덮어쓰지 않는다.
+	 * @param cause 호출부의 원인 예외. null이면 정리 오류를 로그로만 기록한다.
+	 */
+	public void rollback(Throwable cause){
+
+		Connection connection      = conn;
+		Connection ownedConnection = ownsConnection ? conn : null;
+		conn           = null;
+		ownsConnection = false;
+		if(connection == null) {
+			return;
+		}
+
+		if(cause != null) {
+			try {
+				rollback(connection, cause);
+			}finally {
+				close(ownedConnection, cause);
 			}
-			logger.info("rollback transaction");
-		}catch(SQLException e){
-			logger.warn("db transaction rollback failed : ",CommonUtils.getExceptionMessage(e));
-		}finally {
-			close(conn);
+			logger.warn("트랜잭션 처리 실패", cause);
+			return;
+		}
+
+		try(ownedConnection) {
+			connection.rollback();
+		}catch(SQLException | RuntimeException ex){
+			logger.warn("트랜잭션 처리 실패", ex);
+			return;
+		}
+		logger.info("rollback transaction");
+	}
+
+	/**
+	 * commit 또는 업무 오류를 정리하는 과정의 rollback 오류를 원인 예외에 보존한다.
+	 */
+	private void rollback(Connection conn, Throwable cause){
+
+		try {
+			conn.rollback();
+		}catch(SQLException | RuntimeException ex){
+			if(ex != cause) {
+				cause.addSuppressed(ex);
+			}
 		}
 	}
 	
-	private void close(Connection conn){
-		if(conn != null){
-			try{
-				conn.close();
-				//if(SystemUtils.deepview()) logger.info("Connection closed");
-			}catch(SQLException e){}
+	/**
+	 * 트랜잭션 시작 또는 업무 오류를 정리하는 과정의 연결 종료 오류를 원인 예외에 보존한다.
+	 */
+	private void close(Connection conn, Throwable cause){
+
+		if(conn == null) {
+			return;
+		}
+
+		try {
+			conn.close();
+		}catch(SQLException | RuntimeException ex){
+			if(ex != cause) {
+				cause.addSuppressed(ex);
+			}
 		}
 	}
 	

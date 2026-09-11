@@ -7,6 +7,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Layout;
@@ -31,10 +32,11 @@ import kr.tx24.lib.lang.SystemUtils;
  */
 public class RedisAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
-    private static final int QUEUE_CAPACITY = 10000;
-    private static final int BATCH_SIZE = 200; // 한 번에 Redis로 묶어 보낼 최대 로그 수
-    private static final int POLL_TIMEOUT_MS = 500;
-    private static final int SHUTDOWN_TIMEOUT_MS = 3000;
+    private static final int     QUEUE_CAPACITY      = 10000;
+    private static final int     BATCH_SIZE          = 200; // 한 번에 Redis로 묶어 보낼 최대 로그 수
+    private static final int     POLL_TIMEOUT_MS     = 500;
+    private static final int     SHUTDOWN_TIMEOUT_MS = 3000;
+    private static final Pattern REDIS_USER_INFO     = Pattern.compile("(?i)(rediss?://)[^\\s,/@]*@");
 
     private static volatile ClientResources clientResources;
     private static volatile RedisClient client;
@@ -124,11 +126,12 @@ public class RedisAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
             // 연결 테스트
             connection.sync().ping();
-            System.err.println("RedisAppender: Successfully connected to RedisLog (" + redisUri + ")");
+            System.err.println("RedisAppender: Successfully connected to RedisLog (" + safeRedisText(redisUri) + ")");
             return true;
 
         } catch (Exception e) {
-            System.err.println("RedisAppender: Initialization failed for URI [" + redisUri + "] - " + e.getMessage());
+            System.err.println("RedisAppender: Initialization failed for URI [" + safeRedisText(redisUri) + "] - "
+                    + safeRedisText(e.getMessage()));
             cleanupRedis();
             return false;
         }
@@ -151,6 +154,10 @@ public class RedisAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         } catch (Exception e) {
             // ignore
         }
+    }
+
+    private static String safeRedisText(String value) {
+        return value == null ? "" : REDIS_USER_INFO.matcher(value).replaceAll("$1***@");
     }
 
     // ========================================================================

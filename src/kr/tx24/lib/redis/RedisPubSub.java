@@ -85,10 +85,10 @@ public final class RedisPubSub {
             initialized.set(true);
             startHeartbeat();
 
-            logger.info("RedisPubSub initialized : {}", redisUri);
+            logger.info("RedisPubSub initialized : {}", RedisUriSanitizer.redact(redisUri));
 
         } catch (Exception e) {
-            logger.error("RedisPubSub initialization failed", e);
+            logger.error("RedisPubSub initialization failed: {}", RedisUriSanitizer.errorMessage(e));
             throw e;
         }
     }
@@ -179,7 +179,7 @@ public final class RedisPubSub {
             logger.debug("Published to {}: {} (received by {})", channel, message, receivers);
             return receivers;
         } catch (Exception e) {
-            logger.error("Failed to publish message to channel: {}", channel, e);
+            logger.error("Failed to publish message to channel {}: {}", channel, RedisUriSanitizer.errorMessage(e));
             return 0L;
         }
     }
@@ -307,7 +307,7 @@ public final class RedisPubSub {
                     logger.info("Pattern unsubscribed: {}", subscribedPattern);
                 }
             } catch (Exception e) {
-                logger.error("Error during unsubscribe", e);
+                logger.error("Error during unsubscribe: {}", RedisUriSanitizer.errorMessage(e));
             }
         }
 
@@ -331,7 +331,7 @@ public final class RedisPubSub {
                     subConnection.close();
                 }
             } catch (Exception e) {
-                logger.warn("Error closing subscriber connection", e);
+                logger.warn("Error closing subscriber connection: {}", RedisUriSanitizer.errorMessage(e));
             }
         }
     }
@@ -371,7 +371,8 @@ public final class RedisPubSub {
                 }
             }
         } catch (Exception e) {
-            logger.warn("RedisPubSub heartbeat ping failed (Lettuce will auto-reconnect): {}", e.getMessage());
+            logger.warn("RedisPubSub heartbeat ping failed (Lettuce will auto-reconnect): {}",
+                    RedisUriSanitizer.errorMessage(e));
         }
     }
 
@@ -458,7 +459,7 @@ public final class RedisPubSub {
         try {
             return sync().pubsubChannels(pattern);
         } catch (Exception e) {
-            logger.error("Error getting pubsub channels", e);
+            logger.error("Error getting pubsub channels: {}", RedisUriSanitizer.errorMessage(e));
             return List.of();
         }
     }
@@ -487,7 +488,7 @@ public final class RedisPubSub {
 
             return sb.toString();
         } catch (Exception e) {
-            return "RedisPubSub: Error getting info - " + e.getMessage();
+            return "RedisPubSub: Error getting info - " + RedisUriSanitizer.errorMessage(e);
         }
     }
 }

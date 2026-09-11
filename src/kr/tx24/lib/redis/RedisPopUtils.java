@@ -145,15 +145,17 @@ public final class RedisPopUtils {
             return unmarshall(result.getValue()); 
             
         } catch (RedisConnectionException e) {
-        	throw new Exception(MsgUtils.format("Redis Connection failed: {}", key, e));
+            throw new Exception(MsgUtils.format("Redis Connection failed for key: {} ({})", key,
+                    RedisUriSanitizer.errorMessage(e)));
         } catch (Exception e) {
-        	throw new Exception(MsgUtils.format("Redis Blocking POP failed for key: {} (Timeout: {}s)", key, timeoutSecond, e)); 
+            throw new Exception(MsgUtils.format("Redis Blocking POP failed for key: {} (Timeout: {}s, cause: {})",
+                    key, timeoutSecond, RedisUriSanitizer.errorMessage(e)));
         } finally {
             if (connection != null) {
                 try {
                     connection.close();
                 } catch (Exception closeEx) {
-                    logger.warn("Failed to close Redis connection: {}", closeEx.getMessage());
+                    logger.warn("Failed to close Redis connection: {}", RedisUriSanitizer.errorMessage(closeEx));
                 }
             }
         }
