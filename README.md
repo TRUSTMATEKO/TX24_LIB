@@ -71,6 +71,11 @@ JDBC 원인은 `getCause()`에, DBTrx가 수행한 정리 오류는 그 원인�
 이 경우 rollback과 직접 소유한 연결의 종료 오류는 `ex.getSuppressed()`에 함께 보존됩니다.
 기존 `rollback()` 호출도 유지되며, 원인 예외를 전달하지 않으면 정리 오류는 로그로 기록합니다.
 
+`DBTrx.select(String query, Object... obj)`는 `trx.select("SELECT * FROM TARGET WHERE id=? AND status=?", id, "active")`
+처럼 값을 직접 전달합니다. 기존 `Collection<Object>` 오버로드를 사용하므로 바인딩·예외·자원 정리 방식은 같습니다.
+단일 SQL NULL 값은 `select(query, (Object) null)`로 전달합니다. null 배열은 `(Object[]) null`로 지정하며,
+null 배열과 빈 배열은 값을 바인딩하지 않습니다.
+
 `DBTrxUpdate.executeWithResult()`도 `DBTrx`의 시작·commit·rollback 처리를 사용하며, 직접 얻은 연결은
 `try-with-resources`로 닫습니다. rollback은 연결을 닫기 전에 수행하고 각 SQL 문은 실행 직후 닫습니다.
 쿼리 실패 시 원인과 해당 SQL을 `DBException`에 보존합니다. 문장·rollback 오류는 원인 예외의
@@ -121,6 +126,8 @@ JDBC 원인은 `getCause()`에, DBTrx가 수행한 정리 오류는 그 원인�
 | 네트워크 | `NetUtils`, `IpMatcherUtils`, `URIUtils` | 네트워크 정보, IP 범위 매칭, URI/URL 및 쿼리 문자열 처리 |
 
 `SystemUtils.init()`은 시스템 속성, 로깅, 실행 환경 등 다른 공통 기능의 전제가 되므로 서버 시작 초기에 호출하는 것이 좋습니다.
+
+`SystemUtils.init()`은 Lettuce 초기화 전에 `io.lettuce.core.iouring=false`를 기본 설정합니다. Linux에서 epoll 채널에 io_uring Keepalive 옵션이 적용되는 불일치를 방지하며, Windows의 NIO 사용은 유지합니다. JVM 옵션 등으로 이미 지정한 값은 덮어쓰지 않습니다. 이 설정은 Lettuce 초기화 전에 적용해야 하며 변경 후 프로세스를 재시작해야 합니다.
 
 ### `kr.tx24.lib.lb`
 

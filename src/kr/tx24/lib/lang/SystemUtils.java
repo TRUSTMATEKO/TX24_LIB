@@ -90,6 +90,8 @@ public class SystemUtils {
     	if (isInitialized.get()) {
             return;
         }
+
+
     	
     	
         // Configure에서 설정 불러오기
@@ -107,7 +109,10 @@ public class SystemUtils {
         	path = Paths.get("./conf");
         }
 
+
+        // Redis 연결 채널과 Keepalive 옵션이 일치하도록 Lettuce 초기화 전에 기본값을 설정한다.
         // System property 기본값 설정
+        CommonUtils.setSystemPropertyIfAbsent("io.lettuce.core.iouring", "false");
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_CONFIG	, path.toAbsolutePath().normalize().toString());
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_PROCESS	, PROPERTY_NONE);
         CommonUtils.setSystemPropertyIfAbsent(PROPERTY_LOG_DIR	, "../logs");

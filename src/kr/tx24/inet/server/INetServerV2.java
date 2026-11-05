@@ -35,6 +35,7 @@ import kr.tx24.inet.handler.INetHandlerV2;
 import kr.tx24.inet.route.Router;
 import kr.tx24.lib.lang.MsgUtils;
 import kr.tx24.lib.lang.NetUtils;
+import kr.tx24.lib.lang.SystemUtils;
 
 /**
  * Bounded business executor와 overload backpressure를 적용한 INet server.
@@ -231,6 +232,11 @@ public class INetServerV2 {
     }
 
     private static void monitorBusinessExecutor() {
+
+        if (!SystemUtils.deepview()) {
+            return;
+        }
+
         ThreadPoolExecutor executor = businessExecutor;
         if (executor == null || executor.isShutdown()) {
             return;

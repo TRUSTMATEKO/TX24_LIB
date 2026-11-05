@@ -420,6 +420,19 @@ public class DBTrx{
 	
 	
 	/**
+	 * 현재 트랜잭션에서 SELECT의 ?에 가변 인자를 순서대로 바인딩하여 조회한다.
+	 * @param query placeholder가 포함된 SELECT 쿼리
+	 * @param obj 바인딩할 값. null 배열과 빈 배열은 바인딩하지 않으며 null 원소는 SQL NULL이다.
+	 * @return 조회 결과
+	 * @throws DBException SELECT 실행에 실패한 경우
+	 */
+	public RecordSet select(String query, Object... obj)throws DBException{
+
+		Collection<Object> values = obj == null ? null : Arrays.asList(obj);
+		return select(query, values);
+	}
+
+	/**
 	 * 트랜잭션을 commit하고 직접 소유한 연결만 닫는다. commit 실패 시 rollback한 뒤 원인 예외를 전달한다.
 	 * rollback과 연결 종료 오류는 원인 예외의 suppressed에 보존한다.
 	 * @throws DBException commit 또는 연결 종료에 실패한 경우. commit 후 종료만 실패하면 DB 반영은 완료된 상태다.

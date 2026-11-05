@@ -25,6 +25,7 @@ import io.lettuce.core.ScanCursor;
 import io.lettuce.core.SetArgs;
 import io.lettuce.core.TransactionResult;
 import io.lettuce.core.api.async.RedisAsyncCommands;
+import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import io.lettuce.core.output.ValueOutput;
 import io.lettuce.core.protocol.CommandArgs;
@@ -91,6 +92,22 @@ public final class RedisUtils {
 
     private RedisUtils() {
         throw new UnsupportedOperationException("Utility class");
+    }
+
+    /** 조건부 트랜잭션용 연결은 단절 시 폐기하며 호출부에서도 try-with-resources로 닫아야 한다. */
+    public static StatefulRedisConnection<String, Object> openConnection() {
+
+        Redis.getConnection();
+        StatefulRedisConnection<String, Object> connection = Redis.getClient().connect(new TypedRedisCodec());
+        connection.addListener(new io.lettuce.core.RedisConnectionStateListener() {
+            @Override
+            public void onRedisDisconnected(io.lettuce.core.RedisChannelHandler<?, ?> disconnected) {
+
+                // 재연결된 서버에는 기존 WATCH 상태가 없으므로 이 연결에서 처리를 재개하지 않는다.
+                if (!disconnected.isClosed()) disconnected.closeAsync();
+            }
+        });
+        return connection;
     }
     
     /**
