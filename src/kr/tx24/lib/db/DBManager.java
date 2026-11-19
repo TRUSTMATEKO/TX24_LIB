@@ -8,6 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +27,7 @@ import kr.tx24.lib.mapper.JacksonUtils;
 public class DBManager {
 	
 	private static Logger logger = LoggerFactory.getLogger(DBManager.class);
+	private static final Pattern JDBC_SECRET = Pattern.compile("(?i)((?:password|pwd)=)[^&;\\s]*|(jdbc:[a-z0-9]+://)[^\\s/@]*@");
 	private static volatile boolean initialized = false;
 	private static HikariDataSource ds		= null;
 	private String error					= "";
@@ -105,8 +107,8 @@ public class DBManager {
 
 				
 			}catch(Exception e) {
-				System.out.print("Jdbc        : initalize exception "+e.getMessage());
-				logger.warn("Failed to initialize HikariCP pool : {}",CommonUtils.getExceptionMessage(e));
+				System.out.print("Jdbc        : initalize exception "+safeMessage(e.getMessage()));
+				logger.warn("Failed to initialize HikariCP pool : {}",safeMessage(CommonUtils.getExceptionMessage(e)));
 			}
 		}
 	}
@@ -114,6 +116,10 @@ public class DBManager {
 	
 
 	
+	private static String safeMessage(String message) {
+		return message == null ? "" : JDBC_SECRET.matcher(message).replaceAll(m -> m.group(1) != null ? m.group(1) + "***" : m.group(2) + "***@");
+	}
+
 	private static SharedMap<String,Object> loadConfig() throws Exception{
 		Path configPath = SystemUtils.getDatabaseConfigPath();
 		

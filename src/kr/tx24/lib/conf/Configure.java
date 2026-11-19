@@ -73,7 +73,7 @@ public class Configure {
             kmsKey = KEY;
         }
         kmsKey = String.format("%-32s", kmsKey);
-        System.out.println("\n=> [" + kmsKey + "]");
+        System.out.println("\n=> [" + mask(kmsKey) + "]");
         props.setProperty("KMS_KEY", encrypt(kmsKey));
 
         System.out.println("\n기본 암호 Vector 를 설정하여 주시기 바랍니다.  : ");
@@ -82,7 +82,7 @@ public class Configure {
             kmsIv = IV;
         }
         kmsIv = String.format("%-16s", kmsIv);
-        System.out.println("\n=> [" + kmsIv + "]");
+        System.out.println("\n=> [" + mask(kmsIv) + "]");
         props.setProperty("KMS_IV", encrypt(kmsIv));
 
         System.out.println("\nREDIS (로그용) 암호를 설정하시기 바랍니다.  : ");
@@ -90,7 +90,7 @@ public class Configure {
         if (CommonUtils.isBlank(redisLogKey)) {
             redisLogKey = "";
         }
-        System.out.println("\n=> [" + redisLogKey + "]");
+        System.out.println("\n=> [" + mask(redisLogKey) + "]");
         props.setProperty("REDIS_LOG_KEY", encrypt(redisLogKey));
 
         System.out.println("\nREDIS (캐쉬용) 암호를 설정하시기 바랍니다.  : ");
@@ -98,7 +98,7 @@ public class Configure {
         if (CommonUtils.isBlank(redisCacheKey)) {
             redisCacheKey = "";
         }
-        System.out.println("\n=> [" + redisCacheKey + "]");
+        System.out.println("\n=> [" + mask(redisCacheKey) + "]");
         props.setProperty("REDIS_KEY", encrypt(redisCacheKey));
 
         try {
@@ -113,7 +113,7 @@ public class Configure {
                 properties = new String(Files.readAllBytes(path));
                 System.out.println("\nconfig save to " + path.toString());
             }
-            System.out.println("\nconfig = \n[" + properties + "]");
+            System.out.println("\nconfig keys = " + props.stringPropertyNames());
             System.err.println("\n\n'" + NAME + "' 을 tx24_lib_x.jar 에 추가하여 주시기 바랍니다.");
 
             // 설치 후 System Property 반영
@@ -130,7 +130,7 @@ public class Configure {
             if (map.get(k) == null) {
                 System.out.println(k + " = ");
             } else {
-                System.out.println(k + " = " + map.get(k));
+                System.out.println(k + " = " + mask(map.get(k)));
             }
         }
     }
@@ -176,7 +176,7 @@ public class Configure {
     public void encrypt() {
         System.out.println("\n평문 문자열을 입력하세요 : ");
         String plain = scanner.nextLine();
-        System.out.println("\nPlain   : [" + plain.trim() + "]");
+        System.out.println("\nPlain   : [" + mask(plain.trim()) + "]");
         System.out.println("\nEncrypt : [ENC:" + encrypt(plain.trim()) + "]");
     }
 
@@ -184,7 +184,15 @@ public class Configure {
         System.out.println("\n암호화 문자열을 입력하세요 : ");
         String encrypt = scanner.nextLine();
         System.out.println("\nEncrypt : [" + encrypt.trim() + "]");
-        System.out.println("\nPlain   : [" + decrypt(encrypt.trim()) + "]");
+        System.out.println("\nPlain   : [" + mask(decrypt(encrypt.trim())) + "]");
+    }
+
+    private static String mask(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        String head = value.length() > 4 ? value.substring(0, 2) : "";
+        return head + "**** (" + value.length() + ")";
     }
 
     private String getRootDirectory() {
