@@ -165,8 +165,7 @@ public class LoadBalancer {
         if (servers == null || servers.isEmpty()) return "UNKNOWN_SERVER:PORT";
 
         AtomicInteger pos = SERVER_POSITION.computeIfAbsent(key, k -> new AtomicInteger(0));
-        int index = pos.getAndUpdate(i -> (i + 1) % servers.size());
-        return servers.get(index);
+        return servers.get(Math.floorMod(pos.getAndIncrement(), servers.size()));
     }
 
     public static String getExcludeBrokenServer(String key) {
