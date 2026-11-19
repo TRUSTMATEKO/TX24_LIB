@@ -156,7 +156,7 @@ public class RedisAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
         }
     }
 
-    private static String safeRedisText(String value) {
+    static String safeRedisText(String value) {
         return value == null ? "" : REDIS_USER_INFO.matcher(value).replaceAll("$1***@");
     }
 

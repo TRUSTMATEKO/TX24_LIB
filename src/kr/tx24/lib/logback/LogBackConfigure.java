@@ -357,7 +357,7 @@ public class LogBackConfigure extends ContextAwareBase implements Configurator {
                             i++, 
                             getLevel.invoke(event), 
                             getLogger.invoke(event), 
-                            getMessage.invoke(event)
+                            RedisAppender.safeRedisText(String.valueOf(getMessage.invoke(event)))
                         );
                     } catch (Exception e) {
                         // ignore
